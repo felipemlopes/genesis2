@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Gênesis Labs</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              genesis: {
+                base: 'var(--color-bg-base)',
+                surface: 'var(--color-bg-surface)',
+                card: 'var(--color-bg-card)',
+                input: 'var(--color-bg-input)',
+                'border-subtle': 'var(--color-border-subtle)',
+                'border-default': 'var(--color-border-default)',
+                'text-primary': 'var(--color-text-primary)',
+                'text-secondary': 'var(--color-text-secondary)',
+                'text-muted': 'var(--color-text-muted)',
+                accent: 'var(--color-accent)',
+                'accent-dim': 'var(--color-accent-dim)',
+                'accent-border': 'var(--color-accent-border)',
+                positive: 'var(--color-positive)',
+                'positive-dim': 'var(--color-positive-dim)',
+                negative: 'var(--color-negative)',
+                'negative-dim': 'var(--color-negative-dim)',
+                warning: 'var(--color-warning)'
+              }
+            },
+            fontFamily: {
+              sans: ['Inter', 'system-ui', 'sans-serif'],
+              mono: ['monospace']
+            }
+          }
+        }
+      }
+    </script>
+    <style type="text/tailwindcss">
+      @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap');
+      
+      :root {
+        --color-bg-base: #000000;
+        --color-bg-surface: #050505;
+        --color-bg-card: #0a0a0a;
+        --color-bg-input: #050505;
+        --color-border-subtle: rgba(255, 255, 255, 0.05);
+        --color-border-default: rgba(255, 255, 255, 0.08);
+        --color-text-primary: #ffffff;
+        --color-text-secondary: #aaaaaa;
+        --color-text-muted: #666666;
+        --color-accent: #b026ff; 
+        --color-accent-dim: rgba(176, 38, 255, 0.1);
+        --color-accent-border: rgba(176, 38, 255, 0.3);
+        --color-positive: #39ff14;
+        --color-positive-dim: rgba(57, 255, 20, 0.1);
+        --color-negative: #ff003c;
+        --color-negative-dim: rgba(255, 0, 60, 0.1);
+        --color-warning: #f59e0b;
+      }
+      
+      @layer base {
+        body {
+          @apply text-genesis-text-primary antialiased font-normal bg-black;
+          background-image: 
+            radial-gradient(circle at 10% 20%, rgba(176, 38, 255, 0.05) 0%, transparent 40%),
+            radial-gradient(circle at 90% 80%, rgba(57, 255, 20, 0.05) 0%, transparent 40%);
+          background-attachment: fixed;
+        }
+      }
+      
+      ::-webkit-scrollbar { width: 3px; height: 3px; }
+      ::-webkit-scrollbar-track { background: transparent; }
+      ::-webkit-scrollbar-thumb { 
+        background: var(--color-border-default); 
+        border-radius: 2px; 
+      }
+      ::-webkit-scrollbar-thumb:hover { 
+        background: var(--color-border-subtle); 
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/index.tsx"></script>
+  </body>
+</html>
