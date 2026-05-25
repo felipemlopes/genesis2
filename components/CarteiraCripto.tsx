@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Download, Search, Plus, Wallet, Trash2, Edit2, TrendingUp, CheckCircle, PieChart as PieChartIcon } from 'lucide-react';
+﻿import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { Download, Search, Plus, Wallet, Trash2, Edit2, TrendingUp, TrendingDown, CheckCircle, X, PieChart as PieChartIcon } from 'lucide-react';
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line } from 'recharts';
 import { buscarPrecoSpot, buscarListaAtivos } from '../services/spotPriceService';
 import Papa from 'papaparse';
@@ -86,6 +86,17 @@ const CarteiraCripto = () => {
     preco_venda: '',
     data_venda: format(new Date(), 'yyyy-MM-dd')
   });
+
+  const [alvoAlerta, setAlvoAlerta] = useState<any>(null);
+
+  useEffect(() => {
+    const handler = (e: Event) => {
+      setAlvoAlerta((e as CustomEvent).detail);
+      setTimeout(() => setAlvoAlerta(null), 15000);
+    };
+    window.addEventListener('carteira:alvo-atingido', handler);
+    return () => window.removeEventListener('carteira:alvo-atingido', handler);
+  }, []);
 
   const { isAdmin } = useAppContext();
 
@@ -497,22 +508,18 @@ const CarteiraCripto = () => {
             >
                 Minha Carteira
             </button>
-            {isAdmin && (
             <button 
                onClick={() => setActiveTab('MAE')}
                className={`py-3 px-6 text-xs uppercase tracking-widest font-bold transition-all ${activeTab === 'MAE' ? 'text-green-500 border-b-2 border-green-500 bg-green-500/5' : 'text-genesis-text-secondary hover:text-white'}`}
             >
                 Carteira Mãe
             </button>
-            )}
-            {isAdmin && (
             <button 
                onClick={() => setActiveTab('GEMAS')}
                className={`py-3 px-6 text-xs uppercase tracking-widest font-bold transition-all ${activeTab === 'GEMAS' ? 'text-yellow-500 border-b-2 border-yellow-500 bg-yellow-500/5' : 'text-genesis-text-secondary hover:text-white'}`}
             >
                 Carteira de Gemas
             </button>
-            )}
         </div>
 
         {/* FILTROS E AÇÕES */}
@@ -742,6 +749,41 @@ const CarteiraCripto = () => {
            </div>
         )}
 
+        {/* POPUP ALVO ATINGIDO */}
+        {alvoAlerta && (
+            <div className="fixed top-24 left-1/2 -translate-x-1/2 z-[999999] pointer-events-auto bg-[#0a0a0f] border border-genesis-positive/40 rounded-xl p-5 w-[380px] shadow-[0_0_30px_rgba(16,185,129,0.2)] animate-in slide-in-from-top fade-in duration-500">
+                <div className="flex items-center gap-3 mb-3">
+                    <div className="w-10 h-10 rounded-full bg-genesis-positive/10 flex items-center justify-center">
+                        <TrendingUp size={20} className="text-genesis-positive" />
+                    </div>
+                    <div>
+                        <span className="text-[10px] font-bold text-genesis-positive uppercase tracking-widest block">ALVO ATINGIDO</span>
+                        <span className="font-bold text-white text-lg tracking-widest">{alvoAlerta.ativo}</span>
+                        <span className="text-[9px] text-gray-500 ml-2 uppercase">{alvoAlerta.corretora}</span>
+                    </div>
+                    <button onClick={() => setAlvoAlerta(null)} className="ml-auto text-gray-500 hover:text-white transition-colors">
+                        <X size={16} />
+                    </button>
+                </div>
+                <div className="grid grid-cols-3 gap-3 text-center mb-3">
+                    <div>
+                        <span className="text-[8px] text-gray-500 uppercase block mb-1">Entrada</span>
+                        <span className="text-xs font-mono text-white">${alvoAlerta.preco_entrada?.toFixed(4) || '-'}</span>
+                    </div>
+                    <div>
+                        <span className="text-[8px] text-gray-500 uppercase block mb-1">Alvo</span>
+                        <span className="text-xs font-mono text-genesis-positive">${alvoAlerta.alvo_saida?.toFixed(4) || alvoAlerta.alvo?.toFixed(4) || '-'}</span>
+                    </div>
+                    <div>
+                        <span className="text-[8px] text-gray-500 uppercase block mb-1">Variacao</span>
+                        <span className="text-xs font-mono text-genesis-positive">+{alvoAlerta.variacao || '0'}%</span>
+                    </div>
+                </div>
+                <div className="text-center pt-2 border-t border-white/5">
+                    <span className="text-[9px] text-gray-400">Considere realizar o lucro parcial ou total.</span>
+                </div>
+            </div>
+        )}
         {/* MODAIS AQUI */}
         {isAddModalOpen && (
             <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4">

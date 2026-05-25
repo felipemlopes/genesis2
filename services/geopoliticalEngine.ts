@@ -1,5 +1,7 @@
 import { Type } from "@google/genai";
 
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
+
 // --- TIPAGEM E CATEGORIAS ---
 export type Category = 'WAR' | 'ENERGY' | 'SHIPPING' | 'CENTRAL_BANK' | 'SANCTIONS' | 'SUPPLY_CHAIN' | 'CYBER' | 'ELECTION' | 'CIVIL_UNREST' | 'TRADE' | 'MILITARY' | 'DIPLOMACY' | 'COMMODITIES';
 
@@ -48,7 +50,7 @@ class GeopoliticalEngine {
   private maxRetries: number = 3;
 
   constructor() {
-    // Não inicia automaticamente
+    // NÃƒÂ£o inicia automaticamente
   }
 
   public stop() {
@@ -62,7 +64,7 @@ class GeopoliticalEngine {
     return this.interval !== null;
   }
 
-  // Utilitário para retry com exponential backoff
+  // UtilitÃƒÂ¡rio para retry com exponential backoff
   private async withRetry<T>(fn: () => Promise<T>, label: string): Promise<T | null> {
     let attempt = 0;
     while (attempt < this.maxRetries) {
@@ -75,7 +77,7 @@ class GeopoliticalEngine {
           await new Promise(r => setTimeout(r, delay));
           attempt++;
         } else {
-          console.error(`[${label}] Erro não recuperável:`, e);
+          console.error(`[${label}] Erro nÃƒÂ£o recuperÃƒÂ¡vel:`, e);
           return null;
         }
       }
@@ -87,7 +89,7 @@ class GeopoliticalEngine {
   private async fetchRawSignals(): Promise<any[]> {
     return this.withRetry(async () => {
       
-      const promptText = `Faça uma busca pelas notícias geopolíticas e macroeconômicas mais críticas e recentes (últimas 24h) com impacto no mercado financeiro global e criptomoedas. Retorne exatamente 3 ou 4 eventos mais relevantes.
+      const promptText = `FaÃƒÂ§a uma busca pelas notÃƒÂ­cias geopolÃƒÂ­ticas e macroeconÃƒÂ´micas mais crÃƒÂ­ticas e recentes (ÃƒÂºltimas 24h) com impacto no mercado financeiro global e criptomoedas. Retorne exatamente 3 ou 4 eventos mais relevantes.
 
 RETORNE ESTRITAMENTE EM FORMATO JSON UM ARRAY DE OBJETOS COM AS SEGUINTES PROPRIEDADES:
 [
@@ -110,9 +112,10 @@ RETORNE ESTRITAMENTE EM FORMATO JSON UM ARRAY DE OBJETOS COM AS SEGUINTES PROPRI
 Retorne apenas o JSON, sem nenhum texto adicional.`;
 
       try {
-        const response = await fetch('/api/gemini-proxy', {
+        const token = localStorage.getItem('genesis_token');
+        const response = await fetch(`${API_BASE}/v1/gemini-proxy`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
           body: JSON.stringify({
             model: 'gemini-2.5-flash',
             contents: promptText,
@@ -134,7 +137,7 @@ Retorne apenas o JSON, sem nenhum texto adicional.`;
         
         return JSON.parse(text);
       } catch (err) {
-        console.warn("[GeoEngine] Falha na chamada via proxy. Usando dados estáticos.", err);
+        console.warn("[GeoEngine] Falha na chamada via proxy. Usando dados estÃƒÂ¡ticos.", err);
         return this.getFallbackData();
       }
     }, "GeopoliticalScan");
@@ -143,8 +146,8 @@ Retorne apenas o JSON, sem nenhum texto adicional.`;
   private getFallbackData() {
     return [
       {
-        title: "Aperto Monetário no BCE",
-        summary: "Sinalização de política mais contracionista afeta perspectiva de liquidez.",
+        title: "Aperto MonetÃƒÂ¡rio no BCE",
+        summary: "SinalizaÃƒÂ§ÃƒÂ£o de polÃƒÂ­tica mais contracionista afeta perspectiva de liquidez.",
         category: "CENTRAL_BANK",
         region: "EUROPE",
         location: "Frankfurt",
@@ -152,25 +155,25 @@ Retorne apenas o JSON, sem nenhum texto adicional.`;
         bias: "BEARISH",
         asset: "EURUSD",
         impacted_assets: ["EUR", "DE30", "BTC"],
-        us_market_impact: "Força no índice DXY pelo enfraquecimento do Euro.",
+        us_market_impact: "ForÃƒÂ§a no ÃƒÂ­ndice DXY pelo enfraquecimento do Euro.",
         crypto_impact: "Efeito de liquidez moderadamente negativo no mercado crypto europeu.",
         sourceUrl: "#"
       }
     ];
   }
 
-  // 2. CAMADA DE NORMALIZAÇÃO, DEDUPLICAÇÃO E CACHE
+  // 2. CAMADA DE NORMALIZAÃƒâ€¡ÃƒÆ’O, DEDUPLICAÃƒâ€¡ÃƒÆ’O E CACHE
   private normalizeAndProcess(rawEvents: any[]): GeoEvent[] {
     if (!rawEvents || rawEvents.length === 0) return [];
     
     const newEvents: GeoEvent[] = [];
 
     for (const e of rawEvents) {
-      // Deduplicação simples por título
+      // DeduplicaÃƒÂ§ÃƒÂ£o simples por tÃƒÂ­tulo
       const cacheKey = e.title.toLowerCase().trim();
       if (this.eventCache.has(cacheKey)) {
         const cached = this.eventCache.get(cacheKey)!;
-        // Atualizar apenas timestamp e severidade se necessário
+        // Atualizar apenas timestamp e severidade se necessÃƒÂ¡rio
         cached.timestamp = Date.now();
         cached.severity = e.severity as Severity;
         continue;
@@ -213,7 +216,7 @@ Retorne apenas o JSON, sem nenhum texto adicional.`;
   }
 
   private getCoordinatesForRegion(region: string, location: string): [number, number] {
-    // Mapeamento básico de regiões para coordenadas centrais
+    // Mapeamento bÃƒÂ¡sico de regiÃƒÂµes para coordenadas centrais
     const regions: Record<string, [number, number]> = {
       'MIDDLE_EAST': [29.2985, 42.5510],
       'EUROPE': [48.5260, 15.2551],
@@ -226,7 +229,7 @@ Retorne apenas o JSON, sem nenhum texto adicional.`;
     };
     
     const base = regions[region.toUpperCase()] || [0, 0];
-    // Adicionar um pequeno jitter para não sobrepor exatamente no mesmo ponto
+    // Adicionar um pequeno jitter para nÃƒÂ£o sobrepor exatamente no mesmo ponto
     return [base[0] + (Math.random() - 0.5) * 5, base[1] + (Math.random() - 0.5) * 5];
   }
 
@@ -246,9 +249,9 @@ Retorne apenas o JSON, sem nenhum texto adicional.`;
     return Math.min(10, rel);
   }
 
-  // 3. CAMADA DE ANÁLISE ESTRATÉGICA (Gemini 2.5 Pro - Final Synthesis)
+  // 3. CAMADA DE ANÃƒÂLISE ESTRATÃƒâ€°GICA (Gemini 2.5 Pro - Final Synthesis)
   private async synthesizeWithGemini(events: GeoEvent[]): Promise<void> {
-    // DESATIVADO A PEDIDO DO USUÁRIO
+    // DESATIVADO A PEDIDO DO USUÃƒÂRIO
     return;
   }
 
@@ -275,7 +278,7 @@ Retorne apenas o JSON, sem nenhum texto adicional.`;
       for (const event of sorted) {
         this.events = [event, ...this.events].slice(0, 100);
         this.notify(event);
-        // Pequeno delay entre notificações para o frontend processar suavemente
+        // Pequeno delay entre notificaÃƒÂ§ÃƒÂµes para o frontend processar suavemente
         await new Promise(r => setTimeout(r, 1000));
       }
       

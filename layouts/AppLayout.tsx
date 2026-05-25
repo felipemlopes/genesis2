@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import { LogOut, Trophy, X, Menu } from 'lucide-react';
@@ -9,6 +9,7 @@ import MarketTicker from '../components/MarketTicker';
 import MarketWidget from '../components/MarketWidget';
 import GlobalGeopoliticalAlert from '../components/GlobalGeopoliticalAlert';
 import AlertaPopup from '../components/AlertaPopup';
+import OportunidadePopup from '../components/OportunidadePopup';
 import AdminPanel from '../components/AdminPanel';
 
 const AppLayout = () => {
@@ -19,8 +20,9 @@ const AppLayout = () => {
     setTargetHitPopup,
     isAuthenticated,
     setIsAuthenticated,
-    exchange,
-    selectedPair,
+    exchange, setExchange,
+    selectedPair, setSelectedPair,
+    timeframe, setTimeframe,
     marketData,
     cvdData,
   } = useAppContext();
@@ -157,7 +159,7 @@ const AppLayout = () => {
                     activeExchange={exchange}
                     data={marketData}
                     cvdData={cvdData}
-                    onAnalyzeAnomaly={() => {}}
+                    onAnalyzeAnomaly={(ex, pair, tf) => { setExchange(ex); setSelectedPair(pair); setTimeframe(tf); }}
                   />
                 </>
               )}
@@ -177,6 +179,7 @@ const AppLayout = () => {
 
       {showAdmin && <AdminPanel onClose={() => setShowAdmin(false)} />}
       <AlertaPopup />
+      <OportunidadePopup onAnalyze={(ex, pair, tf) => { setExchange(ex); setSelectedPair(pair); setTimeframe(tf); }} />
     </div>
   );
 };

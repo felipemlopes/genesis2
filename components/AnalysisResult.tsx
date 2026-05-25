@@ -17,11 +17,11 @@ interface AnalysisResultProps {
 
 const genesisFeatureFlags = {
   sessaoNoScore: false,
-  invalidacaoPipeline: false,
-  wyckoffSessaoMetricas: false,
+  invalidacaoPipeline: true,
+  wyckoffSessaoMetricas: true,
   dominanciaMacro: false,
   multiTimeframeSentimento: false,
-  tamanhoPosicao: false,
+  tamanhoPosicao: true,
 };
 
 const reportarErroBlocoGenesis = (nome: string, erro: string) => {
@@ -388,34 +388,12 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, currentPrice, cha
               
               {/* BLOCO 2 - INVALIDAÇÃO DA TESE */}
               <div className="bg-red-950/30 p-3 rounded border-red-900/50 mt-1 mb-2">
-                {!genesisFeatureFlags.invalidacaoPipeline ? (
-                  <>
-                    <span className="text-[9px] font-bold text-genesis-negative/80 block mb-1.5 uppercase tracking-wider flex items-center justify-between">
+                    <span className="text-[9px] font-bold text-genesis-negative/80 block mb-1.5 uppercase tracking-wider">
                       INVALIDAÇÃO DA TESE
-                      <span className="text-[8px] bg-yellow-500/20 text-yellow-500 border border-yellow-500/30 px-1 py-0.5 rounded ml-1">DEMO</span>
                     </span>
                     <p className="text-[10px] text-gray-400 font-mono leading-relaxed">
-                      {isLong ? "Tese inválida se fechar vela abaixo de $79.800 para setup long" : "Tese inválida se fechar vela acima de $82.100 para setup short"}
+                      {data.zonaInteresse?.invalidacao || data.execucao?.zonaInteresse?.invalidacao || "Zona de invalidação não calculada."}
                     </p>
-                  </>
-                ) : erroBloco.invalidacaoPipeline ? (
-                  <>
-                    <span className="text-[9px] font-bold text-genesis-negative/80 block mb-1.5 uppercase tracking-wider flex items-center justify-between">
-                      INVALIDAÇÃO DA TESE
-                      <span className="text-[8px] bg-red-500/20 text-red-500 border border-red-500/30 px-1 py-0.5 rounded ml-1">ERRO</span>
-                    </span>
-                    <p className="text-[10px] text-gray-400 font-mono leading-relaxed">
-                      {reportarErroBlocoGenesis('Invalidação', erroBloco.invalidacaoPipeline)}
-                    </p>
-                  </>
-                ) : (
-                  <>
-                    <span className="text-[9px] font-bold text-genesis-negative/80 block mb-1.5 uppercase tracking-wider">INVALIDAÇÃO DA TESE</span>
-                    <p className="text-[10px] text-gray-400 font-mono leading-relaxed">
-                      {dadosBloco.invalidacaoPipeline?.texto || ''}
-                    </p>
-                  </>
-                )}
               </div>
 
               {(setup.verificacao || data.zonaInteresse?.invalidacao) && (
@@ -583,22 +561,41 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, currentPrice, cha
                 <div className="flex justify-between items-center group">
                   <div className="flex items-center gap-2">
                     <span className="text-[9px] text-gray-500 uppercase font-bold tracking-wider">Wyckoff</span>
-                    {!genesisFeatureFlags.wyckoffSessaoMetricas ? (
-                      <span className="text-[8px] bg-yellow-500/20 text-yellow-500 border border-yellow-500/30 px-1 py-0.5 rounded">DEMO</span>
-                    ) : erroBloco.wyckoffSessaoMetricas ? (
-                      <span className="text-[8px] bg-red-500/20 text-red-500 border border-red-500/30 px-1 py-0.5 rounded">ERRO</span>
-                    ) : null}
                   </div>
-                  {!genesisFeatureFlags.wyckoffSessaoMetricas ? (
-                    <span className="text-[10px] text-genesis-negative font-mono">Distribuição</span>
-                  ) : erroBloco.wyckoffSessaoMetricas ? (
-                    <span className="text-[10px] text-genesis-negative font-mono" title={erroBloco.wyckoffSessaoMetricas}>Falha</span>
-                  ) : (
-                    <span className={`text-[10px] font-mono ${dadosBloco.wyckoffColorClass || 'text-white'}`}>{dadosBloco.wyckoff || 'N/A'}</span>
-                  )}
+                  <span className={`text-[10px] font-mono ${(data as any).wyckoff?.cor || 'text-white'}`}>
+                    {(data as any).wyckoff?.fase || 'N/A'}
+                  </span>
                 </div>
 
-                {/* SESSÃO - Removed per instruction */}
+                {/* SESSÃO */}
+                <div className="flex justify-between items-center group">
+                  <span className="text-[9px] text-gray-500 uppercase font-bold tracking-wider">Sessão</span>
+                  <span className={`text-[10px] font-mono ${(data as any).sessao?.cor || 'text-white'}`}>
+                    {(data as any).sessao?.nome || 'N/A'}
+                  </span>
+                </div>
+
+                {/* CONFLUÊNCIA TEMPORAL */}
+                {data.multiTimeframe && data.multiTimeframe.length > 0 && (
+                  <div className="mt-4 pt-4 border-t border-white/5 col-span-full">
+                    <span className="text-[10px] text-genesis-accent font-bold uppercase tracking-widest mb-3 block">
+                      Confluência Temporal
+                    </span>
+                    <div className="flex flex-wrap gap-2">
+                      {data.multiTimeframe.map((tf: any, idx: number) => {
+                        const biasColor = tf.bias === 'BULLISH' ? 'text-genesis-positive bg-genesis-positive/10 border-genesis-positive/20'
+                          : tf.bias === 'BEARISH' ? 'text-genesis-negative bg-genesis-negative/10 border-genesis-negative/20'
+                          : 'text-yellow-500 bg-yellow-500/10 border-yellow-500/20';
+                        return (
+                          <div key={idx} className={`flex items-center gap-2 px-3 py-1.5 rounded border ${biasColor}`}>
+                            <span className="text-[9px] font-bold uppercase">{tf.timeframe}</span>
+                            <span className="text-[9px] font-mono font-bold">{tf.bias}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
             

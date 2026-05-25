@@ -2,6 +2,8 @@ import React, { useEffect, useState, useRef } from 'react';
 import { Radar, Zap, Activity, ChevronDown, Sparkles, BarChart2, Layers, ShieldCheck, Search } from 'lucide-react';
 import { RSI, MACD, EMA, BollingerBands } from 'technicalindicators';
 
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
+
 // --- ICONS ---
 const BinanceLogo = () => (
   <svg viewBox="0 0 32 32" className="w-4 h-4" fill="none"><path d="M16 0L9.07 6.93L16 13.86L22.93 6.93L16 0ZM4.8 11.2L0 16L4.8 20.8L9.6 16L4.8 11.2ZM27.2 11.2L22.4 16L27.2 20.8L32 16L27.2 11.2ZM16 18.14L9.07 25.07L16 32L22.93 25.07L16 18.14ZM16 14.9L12.09 18.81L16 22.72L19.91 18.81L16 14.9Z" fill="#F0B90B"/></svg>
@@ -107,9 +109,10 @@ const OpportunityScanner: React.FC<OpportunityScannerProps> = ({ onAnalyze, save
     }
     setIsSearching(prev => ({ ...prev, [symbol]: true }));
     try {
-      const response = await fetch('/api/gemini-proxy', {
+      const token = localStorage.getItem('genesis_token');
+      const response = await fetch(`${API_BASE}/v1/gemini-proxy`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify({
           model: "gemini-2.5-flash",
           contents: `What is currently happening with ${symbol} crypto project that might impact its price? Provide a concise summary.`,
@@ -309,7 +312,7 @@ const OpportunityScanner: React.FC<OpportunityScannerProps> = ({ onAnalyze, save
                     // Fallback or ignore
                 }
 
-                // --- 1. SCORE DE RELEVÂNCIA (Técnico) ---
+                // --- 1. SCORE DE RELEVÃƒâ€šNCIA (TÃƒÂ©cnico) ---
                 let relevanceScore = 50;
                 
                 // RSI Extremes
@@ -360,7 +363,7 @@ const OpportunityScanner: React.FC<OpportunityScannerProps> = ({ onAnalyze, save
 
                 flowScore = Math.min(100, Math.max(0, flowScore));
 
-                // --- 3. SCORE DE QUALIDADE (Persistência & Ruído) ---
+                // --- 3. SCORE DE QUALIDADE (PersistÃƒÂªncia & RuÃƒÂ­do) ---
                 let qualityScore = 50;
                 let persistence = 0;
                 
@@ -403,11 +406,11 @@ const OpportunityScanner: React.FC<OpportunityScannerProps> = ({ onAnalyze, save
                 const finalScore = Math.round((relevanceScore * 0.4) + (flowScore * 0.4) + (qualityScore * 0.2));
 
                 // Justification logic
-                let justification = "Análise Quantitativa Padrão";
-                if (relevanceScore > 80 && flowScore > 80) justification = "Confluência Técnica + Fluxo Intenso";
+                let justification = "AnÃƒÂ¡lise Quantitativa PadrÃƒÂ£o";
+                if (relevanceScore > 80 && flowScore > 80) justification = "ConfluÃƒÂªncia TÃƒÂ©cnica + Fluxo Intenso";
                 else if (flowScore > 85) justification = "Anomalia de Fluxo e Open Interest";
-                else if (relevanceScore > 85) justification = "Extremo Técnico Estrutural";
-                else if (qualityScore > 85) justification = "Expansão com Alta Qualidade";
+                else if (relevanceScore > 85) justification = "Extremo TÃƒÂ©cnico Estrutural";
+                else if (qualityScore > 85) justification = "ExpansÃƒÂ£o com Alta Qualidade";
                 else if (meta.exchanges.size === 4 && flowScore > 70) justification = "Consenso Multi-Exchange";
 
                 // Only add if it's somewhat interesting
@@ -496,12 +499,12 @@ const OpportunityScanner: React.FC<OpportunityScannerProps> = ({ onAnalyze, save
     if (type === 'relevance') {
        content = (
           <>
-             <span className="font-bold text-blue-400  pb-1 mb-2 block uppercase tracking-wider">Score de Relevância</span>
-             <p className="text-gray-300 mb-2">Mede a força técnica do ativo baseada em indicadores clássicos de preço.</p>
+             <span className="font-bold text-blue-400  pb-1 mb-2 block uppercase tracking-wider">Score de RelevÃƒÂ¢ncia</span>
+             <p className="text-gray-300 mb-2">Mede a forÃƒÂ§a tÃƒÂ©cnica do ativo baseada em indicadores clÃƒÂ¡ssicos de preÃƒÂ§o.</p>
              <ul className="text-gray-400 space-y-1 list-disc pl-4">
-                <li><strong className="text-white">RSI:</strong> {data.metrics.rsi} (Níveis extremos ganham mais pontos)</li>
+                <li><strong className="text-white">RSI:</strong> {data.metrics.rsi} (NÃƒÂ­veis extremos ganham mais pontos)</li>
                 <li><strong className="text-white">Bandas de Bollinger:</strong> Proximidade das extremidades</li>
-                <li><strong className="text-white">MACD & EMAs:</strong> Alinhamento de tendência</li>
+                <li><strong className="text-white">MACD & EMAs:</strong> Alinhamento de tendÃƒÂªncia</li>
              </ul>
           </>
        );
@@ -509,7 +512,7 @@ const OpportunityScanner: React.FC<OpportunityScannerProps> = ({ onAnalyze, save
        content = (
           <>
              <span className="font-bold text-purple-400  pb-1 mb-2 block uppercase tracking-wider">Score de Fluxo</span>
-             <p className="text-gray-300 mb-2">Mede a pressão institucional e o posicionamento do mercado em tempo real.</p>
+             <p className="text-gray-300 mb-2">Mede a pressÃƒÂ£o institucional e o posicionamento do mercado em tempo real.</p>
              <ul className="text-gray-400 space-y-1 list-disc pl-4">
                 <li><strong className="text-white">Open Interest:</strong> ${(data.metrics.openInterest / 1000000).toFixed(1)}M</li>
                 <li><strong className="text-white">Funding Rate:</strong> {(data.metrics.fundingRate * 100).toFixed(4)}%</li>
@@ -521,10 +524,10 @@ const OpportunityScanner: React.FC<OpportunityScannerProps> = ({ onAnalyze, save
        content = (
           <>
              <span className="font-bold text-emerald-400  pb-1 mb-2 block uppercase tracking-wider">Score de Qualidade</span>
-             <p className="text-gray-300 mb-2">Mede a ausência de ruído e a persistência do movimento atual.</p>
+             <p className="text-gray-300 mb-2">Mede a ausÃƒÂªncia de ruÃƒÂ­do e a persistÃƒÂªncia do movimento atual.</p>
              <ul className="text-gray-400 space-y-1 list-disc pl-4">
-                <li><strong className="text-white">Persistência:</strong> {data.metrics.persistence}% de velas na mesma direção</li>
-                <li><strong className="text-white">Confirmação:</strong> Agressão de volume vs Preço</li>
+                <li><strong className="text-white">PersistÃƒÂªncia:</strong> {data.metrics.persistence}% de velas na mesma direÃƒÂ§ÃƒÂ£o</li>
+                <li><strong className="text-white">ConfirmaÃƒÂ§ÃƒÂ£o:</strong> AgressÃƒÂ£o de volume vs PreÃƒÂ§o</li>
              </ul>
           </>
        );
@@ -533,15 +536,15 @@ const OpportunityScanner: React.FC<OpportunityScannerProps> = ({ onAnalyze, save
           <>
              <span className="font-bold text-genesis-accent  pb-1 mb-2 block uppercase tracking-wider">Justificativa Quantitativa</span>
              <p className="text-white font-bold mb-2">{data.justification}</p>
-             <p className="text-gray-400">Esta é a principal razão matemática pela qual o radar destacou este ativo. Indica a convergência exata que disparou o alerta neste momento.</p>
+             <p className="text-gray-400">Esta ÃƒÂ© a principal razÃƒÂ£o matemÃƒÂ¡tica pela qual o radar destacou este ativo. Indica a convergÃƒÂªncia exata que disparou o alerta neste momento.</p>
           </>
        );
     } else if (type === 'finalScore') {
        content = (
           <>
              <span className="font-bold text-genesis-positive  pb-1 mb-2 block uppercase tracking-wider">Score Final: {data.scores.final}</span>
-             <p className="text-gray-300 mb-2">O Score Final é a média ponderada da Relevância (40%), Fluxo (40%) e Qualidade (20%).</p>
-             <p className="text-gray-400">Um score de <strong className="text-white">{data.scores.final}</strong> significa que o ativo apresenta uma assimetria {data.scores.final > 80 ? 'excelente' : 'muito boa'} para análise imediata.</p>
+             <p className="text-gray-300 mb-2">O Score Final ÃƒÂ© a mÃƒÂ©dia ponderada da RelevÃƒÂ¢ncia (40%), Fluxo (40%) e Qualidade (20%).</p>
+             <p className="text-gray-400">Um score de <strong className="text-white">{data.scores.final}</strong> significa que o ativo apresenta uma assimetria {data.scores.final > 80 ? 'excelente' : 'muito boa'} para anÃƒÂ¡lise imediata.</p>
           </>
        );
     }
@@ -567,7 +570,7 @@ const OpportunityScanner: React.FC<OpportunityScannerProps> = ({ onAnalyze, save
                       <Radar size={64} className="text-gray-700 group-hover:text-genesis-positive transition-all duration-500" strokeWidth={0.5} />
                   </div>
               </div>
-              <h1 className="text-4xl font-thin tracking-tighter text-white mb-4 uppercase">Radar <span className="font-bold text-genesis-positive ">Gênesis</span></h1>
+              <h1 className="text-4xl font-thin tracking-tighter text-white mb-4 uppercase">Radar <span className="font-bold text-genesis-positive ">GÃƒÂªnesis</span></h1>
               <p className="text-gray-500 text-xs font-mono mb-8 uppercase tracking-widest">Filtro Quantitativo Multi-Exchange</p>
               <div className="flex flex-col items-center gap-[16px] w-full max-w-xs">
                   <div className="relative w-full">
@@ -578,7 +581,7 @@ const OpportunityScanner: React.FC<OpportunityScannerProps> = ({ onAnalyze, save
                         <option value="2h">2 horas Intraday</option>
                         <option value="4h">4 horas Swing</option>
                         <option value="12h">12 horas Swing</option>
-                        <option value="1d">Diário Macro</option>
+                        <option value="1d">DiÃƒÂ¡rio Macro</option>
                         <option value="1w">Semanal Macro</option>
                     </select>
                     <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" size={14} />
@@ -608,7 +611,7 @@ const OpportunityScanner: React.FC<OpportunityScannerProps> = ({ onAnalyze, save
                       <h2 className="text-white text-base font-bold uppercase tracking-[0.5em] animate-pulse">Analisando Fluxo Multi-Exchange</h2>
                       <div className="h-[1px] w-24   success/40 "></div>
                   </div>
-                  <p className="text-gray-500 font-mono text-[9px] uppercase tracking-[0.3em] opacity-80">Binance • Bybit • Bitget • OKX</p>
+                  <p className="text-gray-500 font-mono text-[9px] uppercase tracking-[0.3em] opacity-80">Binance Ã¢â‚¬Â¢ Bybit Ã¢â‚¬Â¢ Bitget Ã¢â‚¬Â¢ OKX</p>
                   <div className="w-48 h-0.5 bg-white/5 rounded-full mx-auto overflow-hidden">
                       <div className="h-full bg-genesis-positive w-1/3 animate-[shimmer_2s_infinite]"></div>
                   </div>
@@ -628,7 +631,7 @@ const OpportunityScanner: React.FC<OpportunityScannerProps> = ({ onAnalyze, save
     <div className="h-full flex flex-col p-6 bg-black relative animate-in fade-in duration-500">
       <div className="flex items-center justify-between mb-8  pb-4">
          <div className="flex items-center gap-[16px]">
-             <h1 className="text-2xl font-thin text-white tracking-widest uppercase">Radar Gênesis</h1>
+             <h1 className="text-2xl font-thin text-white tracking-widest uppercase">Radar GÃƒÂªnesis</h1>
              <span className="text-[10px] font-bold text-genesis-positive bg-genesis-positive/5 px-2 py-1 rounded border-genesis-positive/20">TF: {selectedTimeframe}</span>
          </div>
          <button onClick={handleResetScan} className="px-6 py-2 bg-white/5 hover:bg-white/10  text-white rounded text-[10px] font-bold uppercase flex items-center gap-2 transition-all tracking-widest"><Radar size={12} /> Nova Busca</button>
@@ -656,7 +659,7 @@ const OpportunityScanner: React.FC<OpportunityScannerProps> = ({ onAnalyze, save
                  <div className="flex flex-col gap-3 w-[25%]">
                     <div className="cursor-help" onMouseEnter={(e) => setActiveTooltip({ type: 'relevance', data: opp, rect: e.currentTarget.getBoundingClientRect() })} onMouseLeave={() => setActiveTooltip(null)}>
                        <div className="flex items-center justify-between text-[10px] font-mono mb-1">
-                           <span className="text-gray-500 flex items-center gap-1"><BarChart2 size={12}/> Relevância</span>
+                           <span className="text-gray-500 flex items-center gap-1"><BarChart2 size={12}/> RelevÃƒÂ¢ncia</span>
                            <span className="text-white">{opp.scores.relevance}</span>
                        </div>
                        <ScoreBar score={opp.scores.relevance} colorClass="bg-blue-500" />

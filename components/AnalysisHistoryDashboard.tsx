@@ -1,7 +1,8 @@
-import React, { useState, useEffect, useMemo } from 'react';
+﻿import React, { useState, useEffect, useMemo } from 'react';
 import { SavedAnalysis } from '../types';
 import { Trash2, TrendingUp, TrendingDown, Target, Clock, Filter, Activity, CheckCircle, XCircle, AlertCircle } from 'lucide-react';
 import { fetchHistoricoAnalises } from '../services/api';
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
 
 const LOCAL_STORAGE_KEY = 'genesis_analysis_history';
 
@@ -122,6 +123,23 @@ const AnalysisHistoryDashboard: React.FC = () => {
            setHistory(newHistory);
            localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(newHistory));
            window.dispatchEvent(new Event('analysis_history_updated'));
+
+           // Sync resultados ao servidor
+           newHistory.forEach(async (analysis) => {
+             if (analysis.status === 'PENDENTE' || !analysis.id) return;
+             try {
+               const token = localStorage.getItem('genesis_token');
+                const url = API_BASE + '/v1/analises/' + analysis.id + '/resultado';
+                await fetch(url, {
+                 method: 'PUT',
+                  headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+                 body: JSON.stringify({
+                   resultado: analysis.status === 'ACERTOU' ? 'TP1_ATINGIDO' : 'STOP_ATINGIDO',
+                   preco_resultado: priceMap[analysis.symbol.replace('/', '').toUpperCase()] || 0,
+                 }),
+               });
+             } catch (e) { console.warn('Falha ao sync resultado:', e); }
+           });
         }
 
       } catch (err) {
@@ -198,8 +216,9 @@ const AnalysisHistoryDashboard: React.FC = () => {
   useEffect(() => {
       const loadSysStats = async () => {
           try {
-              const res = await fetch('/api/estatisticas-sistema', {
-                  headers: { 'authorization': `Bearer ${localStorage.getItem('genesis_token')}` }
+              const statsUrl = API_BASE + '/v1/estatisticas';
+              const res = await fetch(statsUrl, {
+                  headers: { 'Authorization': 'Bearer ' + localStorage.getItem('genesis_token') }
               });
               if (res.ok) {
                   const json = await res.json();

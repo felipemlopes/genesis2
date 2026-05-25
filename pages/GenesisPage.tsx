@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Zap,
@@ -352,7 +352,7 @@ const GenesisPage: React.FC = () => {
     <>
       <div className="flex flex-col lg:flex-row gap-6 pb-10 w-full mt-6">
         <div className="w-full lg:w-[640px] xl:w-[720px] flex-shrink-0 flex flex-col gap-6">
-          <div className="bg-[#060608] rounded-[24px] p-6 lg:p-8 flex flex-col relative overflow-visible shadow-[0_12px_40px_rgba(0,0,0,1)]">
+          <div className="bg-[#060608] rounded-[24px] p-6 lg:p-8 flex flex-col relative overflow-visible shadow-[0_12px_40px_rgba(0,0,0,1)]" data-analysis-form>
             <div className="absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-genesis-accent to-transparent opacity-50"></div>
 
             <div className="flex items-center justify-between mb-6">

@@ -1,6 +1,5 @@
 // hooks/useMonitoramentoCarteira.ts
-import { useEffect, useState } from 'react';
-import { buscarPrecoSpot } from '../services/spotPriceService';
+import { useEffect, useRef } from 'react';
 
 export interface AtivoMonitorado {
   id: number;
@@ -23,7 +22,7 @@ export const useMonitoramentoCarteira = (
   ativosMae: AtivoMonitorado[],
   isAdmin: boolean
 ) => {
-  const [ativosAtualizados, setAtivosAtualizados] = useState<AtivoMonitorado[]>([]);
+  const alertasDisparados = useRef(new Set<string>());
 
   useEffect(() => {
     let unmounted = false;
@@ -33,18 +32,54 @@ export const useMonitoramentoCarteira = (
         if (at.status !== 'ATIVO' || !at.preco_atual) return;
 
         if (tipo === 'MEMBRO' && at.alvo_saida && at.preco_atual >= at.alvo_saida) {
-          // Em um app real, lançaríamos uma toast/modal
+          const alertKey = `membro-${at.id}-${at.alvo_saida}`;
+          if (alertasDisparados.current.has(alertKey)) return;
+          alertasDisparados.current.add(alertKey);
+
+          window.dispatchEvent(new CustomEvent('carteira:alvo-atingido', {
+            detail: {
+              ativo: at.ativo,
+              corretora: at.corretora,
+              preco_entrada: at.preco_entrada,
+              preco_atual: at.preco_atual,
+              alvo_saida: at.alvo_saida,
+              variacao: ((at.preco_atual - at.preco_entrada) / at.preco_entrada * 100).toFixed(2),
+            }
+          }));
         }
 
         if (tipo === 'MAE') {
-          // DEV - TELEGRAM: quando o alvo da Carteira Mãe for atingido disparar a mensagem 
-          // configurada no campo telegram_mensagem para o canal do Telegram do Gênesis 
-          // usando o bot já configurado no projeto.
           if (at.alvo_cima && at.preco_atual >= at.alvo_cima) {
-             // disparar telegram alvo cima
+            const alertKey = `mae-cima-${at.id}-${at.alvo_cima}`;
+            if (!alertasDisparados.current.has(alertKey)) {
+              alertasDisparados.current.add(alertKey);
+              window.dispatchEvent(new CustomEvent('carteira:alvo-atingido', {
+                detail: {
+                  ativo: at.ativo,
+                  corretora: at.corretora,
+                  tipo_alvo: 'ALVO_CIMA',
+                  preco_atual: at.preco_atual,
+                  alvo: at.alvo_cima,
+                  mensagem: at.telegram_mensagem || '',
+                }
+              }));
+            }
           }
           if (at.alvo_baixo && at.preco_atual <= at.alvo_baixo) {
-             // disparar telegram alvo baixo
+            const alertKey = `mae-baixo-${at.id}-${at.alvo_baixo}`;
+            if (!alertasDisparados.current.has(alertKey)) {
+              alertasDisparados.current.add(alertKey);
+              window.dispatchEvent(new CustomEvent('carteira:alvo-atingido', {
+                detail: {
+                  ativo: at.ativo,
+                  corretora: at.corretora,
+                  tipo_alvo: 'ALVO_BAIXO',
+                  preco_atual: at.preco_atual,
+                  alvo: at.alvo_baixo,
+                  mensagem: at.telegram_mensagem || '',
+                }
+              }));
+            }
           }
         }
       });

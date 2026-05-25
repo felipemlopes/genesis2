@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+﻿import { useState, useEffect, useCallback, useRef } from 'react';
 import { connectAlertasSSE } from '../services/api';
 
 export interface AlertaGenesis {
@@ -9,6 +9,8 @@ export interface AlertaGenesis {
     direcao: 'BULLISH' | 'BEARISH' | 'NEUTRO';
     urgencia: 'ALTA' | 'MEDIA' | 'BAIXA';
     corretora: string;
+    timeframe: string;
+    score: number;
     preco_atual: number;
     variacao_pct: number;
     criado_em: string;
