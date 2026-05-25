@@ -9,15 +9,18 @@ export default defineConfig(({ mode }) => {
       server: {
         port: 3000,
         host: '0.0.0.0',
-        historyApiFallback: true,
-        proxy: {
-          '/api': {
-            target: env.VITE_API_URL?.replace(/\/api\/?$/, '') || 'http://localhost:8000',
-            changeOrigin: true,
-          }
-        }
+        allowedHosts: [
+          'sandbox.genesislabs.com.br',
+          'genesislabs.com.br',
+          'teste.genesislabs.com.br',
+          '*.genesislabs.com.br',
+        ],
       },
       plugins: [react()],
+      define: {
+        'process.env.API_BASE_URL': JSON.stringify(env.API_BASE_URL),
+        'process.env.AI_GATEWAY': JSON.stringify(env.AI_GATEWAY)
+      },
       resolve: {
         alias: {
           '@': path.resolve(__dirname, '.'),
