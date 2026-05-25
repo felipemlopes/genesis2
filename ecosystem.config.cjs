@@ -3,9 +3,8 @@ module.exports = {
         {
             name: "meu-next",
             script: "npm",
-            args: "run start",
+            args: "run preview -- --host 0.0.0.0 --port 3010",
             env: {
-                PORT: 3010,
                 NODE_ENV: "production"
             }
         }
