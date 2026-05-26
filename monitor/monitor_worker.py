@@ -41,10 +41,10 @@ SCORE_MINIMO = 68
 INTERVALO_DUPLICATAS = 300
 
 WS_URLS = {
-    'BINANCE': 'wss://fstream.binance.com/ws/',
+    'BINANCE': 'wss://fstream.binance.com/ws',
     'BYBIT': 'wss://stream.bybit.com/v5/public/linear',
     'OKX': 'wss://ws.okx.com:8443/ws/v5/public',
-    'BITGET': 'wss://ws.bitget.com/mix/v1/stream',
+    'BITGET': 'wss://ws.bitget.com/v2/ws/public',
 }
 
 logger = logging.getLogger('genesis-monitor')
@@ -156,7 +156,7 @@ class MonitorWorker:
                 'variacao_pct': alerta['variacao_pct'],
                 'score': alerta.get('score', 0),
             }
-            resp = requests.post(f"{laravel_url}/v1/admin/alertas", json=payload, timeout=5)
+            resp = requests.post(f"{laravel_url}/webhook/alertas", json=payload, timeout=5)
             if resp.status_code in (200, 201):
                 logger.info(f"Alerta enviado ao Laravel: {alerta['ativo']} - {alerta['tipo']}")
             else:
@@ -604,7 +604,7 @@ class MonitorWorker:
 
     def _on_open_bitget(self, ws):
         logger.info("✅ Conectado à Bitget WebSocket")
-        args = [{"instType": "UMCBL", "channel": f"candle{TIMEFRAME.upper()}", "instId": f"{s}"} for s in PARES_MONITORADOS]
+        args = [{"instType": "USDT-FUTURES", "channel": f"candle{TIMEFRAME.upper()}", "instId": f"{s}"} for s in PARES_MONITORADOS]
         subscribe_msg = {"op": "subscribe", "args": args}
         ws.send(json.dumps(subscribe_msg))
         logger.info(f"   Bitget: inscrito em {len(args)} pares ({TIMEFRAME})")
