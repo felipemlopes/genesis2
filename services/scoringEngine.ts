@@ -271,23 +271,19 @@ export const calcularScore = (dados: DadosScore): ResultadoScore => {
     pontosBullish = tcBullish + drBullish + mcBullish + stBullish;
     pontosBearish = tcBearish + drBearish + mcBearish + stBearish;
     
-    // Calcula pontos máximos possíveis baseado na presença do bloco técnico
-    const maxPoints = isTechnicalPresent ? 100 : 65;
-    
-    // Normaliza para 100 se o bloco técnico estiver ausente (pontos / 65 * 100)
-    let finalPontosBullish = pontosBullish;
-    let finalPontosBearish = pontosBearish;
-    
-    if (!isTechnicalPresent) {
-        finalPontosBullish = (pontosBullish / 65) * 100;
-        finalPontosBearish = (pontosBearish / 65) * 100;
+    // Calcula score final sem normalização artificial
+    let scoreFinal = 50;
+    if (pontosBullish > pontosBearish) {
+        scoreFinal = Math.min(50 + ((pontosBullish - pontosBearish) / 2), 100);
+    } else if (pontosBearish > pontosBullish) {
+        scoreFinal = Math.max(50 - ((pontosBearish - pontosBullish) / 2), 0);
     }
     
-    let scoreFinal = 50;
-    if (finalPontosBullish > finalPontosBearish) {
-        scoreFinal = Math.min(50 + ((finalPontosBullish - finalPontosBearish) / 2), 100);
-    } else if (finalPontosBearish > finalPontosBullish) {
-        scoreFinal = Math.max(50 - ((finalPontosBearish - finalPontosBullish) / 2), 0);
+    // Cap score em 65 quando dados técnicos estão ausentes (evita inflação artificial)
+    if (!isTechnicalPresent) {
+        if (scoreFinal > 65) scoreFinal = 65;
+        if (scoreFinal < 35) scoreFinal = 35;
+        flags.push('CONFIANCA_REDUZIDA_SEM_TECNICO');
     }
     
     let vies = 'NEUTRO';

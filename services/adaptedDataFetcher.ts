@@ -6,6 +6,11 @@ import { gerarContextoParaGemini, gerarFlagsVisuais, gerarSinteseScore } from '.
 import { RealtimeCVDService } from './realtimeCVDService';
 import { OrderBookImbalanceService } from './orderBookImbalanceService';
 import { calcularCorrelacaoDinamica, CorrelacaoDinamicaResult } from './intermarketCorrelationService';
+import { classificarEMAs, EMADetectada } from './emaClassifier';
+
+// Mínimo de candles necessários para calcular MACD com Signal Line via EMA(9):
+// 26 (EMA slow period) + 9 (Signal EMA period) = 35
+export const MACD_MIN_CANDLES = 35;
 
 // Helper to calculate EMA
 export const calculateEMA = (closes: number[], period: number) => {
@@ -115,13 +120,19 @@ export const obterIndicadorComFallback = (
             } else fallbackNecessario = true;
         }
         else if (nome === 'MACD') {
-            if (closes.length > 52) {
-                const emaFast = calculateEMA(closes, 12);
-                const emaSlow = calculateEMA(closes, 26);
-                if (emaFast !== null && emaSlow !== null && isFinite(emaFast) && isFinite(emaSlow)) {
-                    const macdLine = emaFast - emaSlow;
-                    const signalLine = macdLine * 0.9;
-                    calculado = { linha_macd: macdLine, linha_sinal: signalLine };
+            // Exige ≥ 35 candles (26 para EMA slow + 9 para Signal EMA) antes de calcular
+            if (klinesData.length >= MACD_MIN_CANDLES) {
+                const candlesForMACD = klinesData.map((k: any) => ({
+                    timestamp: k[0],
+                    open: parseFloat(k[1]),
+                    high: parseFloat(k[2]),
+                    low: parseFloat(k[3]),
+                    close: parseFloat(k[4]),
+                    volume: parseFloat(k[5])
+                }));
+                const macdResult = calcularMACD(candlesForMACD);
+                if (macdResult !== null) {
+                    calculado = { linha_macd: macdResult.macd, linha_sinal: macdResult.signal };
                 } else fallbackNecessario = true;
             } else fallbackNecessario = true;
         }
@@ -140,11 +151,21 @@ export const obterIndicadorComFallback = (
         }
         else if (nome === 'ADX') {
             if (klinesData.length >= 28) {
-                // Approximation, full math requires DM arrays, but check bounds
-                const adxEst = 22.5; 
-                if (adxEst >= 0 && adxEst <= 100) {
-                   calculado = adxEst;
-                } else fallbackNecessario = true;
+                // Convert klinesData to Candle[] format for indicatorEngine
+                const candlesForADX = klinesData.map((k: any) => ({
+                    timestamp: k[0],
+                    open: parseFloat(k[1]),
+                    high: parseFloat(k[2]),
+                    low: parseFloat(k[3]),
+                    close: parseFloat(k[4]),
+                    volume: parseFloat(k[5])
+                }));
+                const adxResult = calcularADX(candlesForADX, period);
+                if (adxResult !== null) {
+                    calculado = { adx: adxResult.adx, diPlus: adxResult.diPlus, diMinus: adxResult.diMinus };
+                } else {
+                    fallbackNecessario = true;
+                }
             } else fallbackNecessario = true;
         }
         else if (nome === 'ATR') {
@@ -293,6 +314,22 @@ export const buscarDadosAdaptados = async (jsonVisual: any, confirmedPair: strin
          }
     }
 
+    // Extrair EMAs detectadas de resultadosIndicadores e classificar
+    const emasDetectadas: EMADetectada[] = [];
+    for (const key of Object.keys(resultadosIndicadores)) {
+        if (key.includes('EMA') || key.includes('MM') || key.includes('MEDIA') || key.includes('MÉDIA')) {
+            const match = key.match(/(\d+)$/);
+            if (match) {
+                const periodo = parseInt(match[1]);
+                const valor = resultadosIndicadores[key].valor_atual;
+                if (periodo > 0 && typeof valor === 'number' && isFinite(valor) && valor > 0) {
+                    emasDetectadas.push({ periodo, valor });
+                }
+            }
+        }
+    }
+    const emasClassificadas = classificarEMAs(emasDetectadas);
+
     // Always fetch contextual items
     const [binanceData, cvd3h, dKlines, wKlines, lsData, oi1h, oi4h, vixData, dxyData, sp500Data] = await Promise.all([
         fetchBinanceData(confirmedPair).catch(()=>null),
@@ -438,6 +475,56 @@ export const buscarDadosAdaptados = async (jsonVisual: any, confirmedPair: strin
     const prevEma50 = calcEMA_IE(candlesForIE.slice(0, -1), 50);
     const prevEma200 = calcEMA_IE(candlesForIE.slice(0, -1), 200);
 
+    // EMAs dinâmicas: usar classificação como fonte primária quando disponível
+    const usarEmaCurta = emasClassificadas.curta !== null;
+    const usarEmaMedia = emasClassificadas.media !== null;
+    const usarEmaLonga = emasClassificadas.longa !== null;
+
+    // Fallback: quando nenhuma EMA é detectada no gráfico, usar EMAs fixas 21/50/200
+    // calculadas a partir dos candles (comportamento original como referência secundária)
+    const nenhumaEmaDetectada = !usarEmaCurta && !usarEmaMedia && !usarEmaLonga;
+    if (nenhumaEmaDetectada) {
+        console.info('[adaptedDataFetcher] Nenhuma EMA detectada no gráfico. Usando fallback: EMAs fixas 21/50/200.');
+    }
+
+    // Valores finais para DadosScore: EMAs dinâmicas como primárias, fixas 21/50/200 como fallback
+    const emaScoreCurta = usarEmaCurta ? emasClassificadas.curta!.valor : (ema21 || undefined);
+    const emaScoreMedia = usarEmaMedia ? emasClassificadas.media!.valor : (ema50 || undefined);
+    const emaScoreLonga = usarEmaLonga ? emasClassificadas.longa!.valor : (ema200 || undefined);
+
+    // Calcular emaSubindo para EMAs dinâmicas
+    let emaCurtaSubindo = false;
+    let emaMediaSubindo = false;
+    let emaLongaSubindo = false;
+
+    if (usarEmaCurta) {
+        // Para EMA dinâmica: calcular EMA do período detectado sobre candles atuais vs candles sem último
+        const periodoC = emasClassificadas.curta!.periodo;
+        const emaAtualC = calcEMA_IE(candlesForIE, periodoC);
+        const emaPrevC = calcEMA_IE(candlesForIE.slice(0, -1), periodoC);
+        emaCurtaSubindo = emaAtualC !== null && emaPrevC !== null ? emaAtualC > emaPrevC : false;
+    } else {
+        emaCurtaSubindo = ema21 !== null && prevEma21 !== null ? ema21 > prevEma21 : false;
+    }
+
+    if (usarEmaMedia) {
+        const periodoM = emasClassificadas.media!.periodo;
+        const emaAtualM = calcEMA_IE(candlesForIE, periodoM);
+        const emaPrevM = calcEMA_IE(candlesForIE.slice(0, -1), periodoM);
+        emaMediaSubindo = emaAtualM !== null && emaPrevM !== null ? emaAtualM > emaPrevM : false;
+    } else {
+        emaMediaSubindo = ema50 !== null && prevEma50 !== null ? ema50 > prevEma50 : false;
+    }
+
+    if (usarEmaLonga) {
+        const periodoL = emasClassificadas.longa!.periodo;
+        const emaAtualL = calcEMA_IE(candlesForIE, periodoL);
+        const emaPrevL = calcEMA_IE(candlesForIE.slice(0, -1), periodoL);
+        emaLongaSubindo = emaAtualL !== null && emaPrevL !== null ? emaAtualL > emaPrevL : false;
+    } else {
+        emaLongaSubindo = ema200 !== null && prevEma200 !== null ? ema200 > prevEma200 : false;
+    }
+
     const rsi = calcRSI_IE(candlesForIE, 14);
     const rsiArray = [];
     for (let i = Math.max(0, candlesForIE.length - 30); i < candlesForIE.length; i++) {
@@ -464,12 +551,12 @@ export const buscarDadosAdaptados = async (jsonVisual: any, confirmedPair: strin
     const dadosScore: DadosScore = {
         preco: currentPrice,
         bookImbalanceRatio: cvdData.bookImbalanceRatio,
-        ema21: ema21 || undefined,
-        ema50: ema50 || undefined,
-        ema200: ema200 || undefined,
-        ema21Subindo: ema21 !== null && prevEma21 !== null ? ema21 > prevEma21 : false,
-        ema50Subindo: ema50 !== null && prevEma50 !== null ? ema50 > prevEma50 : false,
-        ema200Subindo: ema200 !== null && prevEma200 !== null ? ema200 > prevEma200 : false,
+        ema21: emaScoreCurta,
+        ema50: emaScoreMedia,
+        ema200: emaScoreLonga,
+        ema21Subindo: emaCurtaSubindo,
+        ema50Subindo: emaMediaSubindo,
+        ema200Subindo: emaLongaSubindo,
         rsi: rsi || undefined,
         divergenciaRSI,
         adx: adxObj ? adxObj.adx : undefined,

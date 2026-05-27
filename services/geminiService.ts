@@ -2,7 +2,7 @@
 import { Type } from "@google/genai";
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
-import { TradeSetup, TradeDirection, ChartMetadata } from "../types";
+import { TradeSetup, TradeDirection, ChartMetadata, UnifiedChartResult } from "../types";
 import { ExchangeData } from "./cryptoApi";
 import { generateAdvancedContext } from "./advancedAnalytics";
 import { fetchDexScreenerContext, fetchFredMacroContext, fetchDefiLlamaContext, fetchAlternativeMeContext, fetchCryptoCompareContext } from "./externalContextService";
@@ -24,6 +24,7 @@ import { classifyRegime, RegimeClassifierResult } from "./regimeClassifierServic
 import { classifyVolatilityRegime, VolatilityRegimeResult } from "./volatilityRegimeService";
 import { buildPredictiveEntryPlan, PredictiveEntryPlannerResult } from "./predictiveEntryPlannerService";
 import { fetchWithProxy } from "./cryptoApi";
+import { normalizarPar } from "./normalizarPar";
 import { fetchInstitutionalFlow, InstitutionalFlowData } from "./institutionalDataService";
 import { fetchIntermarketCorrelations, IntermarketData } from "./intermarketCorrelationService";
 import { runSentimentEngine } from "./sentimentEngine";
@@ -90,20 +91,74 @@ const fileToGenerativePart = async (file: File): Promise<string> => {
 
 // ETAPA 1: O "OLHO" (Processamento Visual / OCR)
 // Modelo: gemini-3.1-pro-preview (Alta precisão visual)
-// ETAPA 1: OCR via Laravel backend
-export const scanChartMetadata = async (file: File): Promise<ChartMetadata> => {
+// ETAPA 1: Leitura Visual Unificada via Laravel backend
+
+/**
+ * unifiedChartAnalysis — Leitura visual unificada.
+ * Faz UMA ÚNICA chamada ao backend, retornando tanto metadata (par, exchange, timeframe)
+ * quanto dados visuais detalhados (suportes, resistências, trendlines, fibonacci, padrões).
+ * Elimina a perda de dados entre leituras separadas.
+ */
+/**
+ * Verifica se um erro é 503 ou timeout, indicando necessidade de fallback para modelo flash.
+ */
+export function isModelOverloadOrTimeout(error: unknown, status?: number): boolean {
+  if (status === 503) return true;
+  if (error instanceof Error) {
+    const msg = error.message.toLowerCase();
+    if (msg.includes('timeout') || msg.includes('timed out') || msg.includes('503')) return true;
+  }
+  if (error instanceof TypeError && error.message.includes('fetch')) return true;
+  return false;
+}
+
+export const unifiedChartAnalysis = async (file: File): Promise<UnifiedChartResult> => {
   const formData = new FormData();
   formData.append('image', file);
 
   const token = localStorage.getItem('genesis_token');
-  const res = await fetch(`${API_BASE}/v1/scangraph`, {
-    method: 'POST',
-    headers: token ? { 'Authorization': `Bearer ${token}` } : {},
-    body: formData,
-  });
 
-  if (!res.ok) throw new Error('Falha no scan do grafico');
-  const data = await res.json();
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}/v1/unified-scan`, {
+      method: 'POST',
+      headers: token ? { 'Authorization': `Bearer ${token}` } : {},
+      body: formData,
+    });
+  } catch (networkError) {
+    // Network error (timeout, connection refused) — try fallback with flash model
+    if (isModelOverloadOrTimeout(networkError)) {
+      console.warn('[Genesis] Leitura visual: modelo pro indisponível (network error), ativando fallback para gemini-2.0-flash');
+      const fallbackFormData = new FormData();
+      fallbackFormData.append('image', file);
+      fallbackFormData.append('model', 'flash');
+      res = await fetch(`${API_BASE}/v1/unified-scan`, {
+        method: 'POST',
+        headers: token ? { 'Authorization': `Bearer ${token}` } : {},
+        body: fallbackFormData,
+      });
+      if (!res.ok) throw new Error('Falha na leitura visual unificada (fallback flash)');
+    } else {
+      throw networkError;
+    }
+  }
+
+  // If response is 503, retry with flash model
+  if (res!.status === 503) {
+    console.warn('[Genesis] Leitura visual: modelo pro retornou 503, ativando fallback para gemini-2.0-flash');
+    const fallbackFormData = new FormData();
+    fallbackFormData.append('image', file);
+    fallbackFormData.append('model', 'flash');
+    res = await fetch(`${API_BASE}/v1/unified-scan`, {
+      method: 'POST',
+      headers: token ? { 'Authorization': `Bearer ${token}` } : {},
+      body: fallbackFormData,
+    });
+    if (!res.ok) throw new Error('Falha na leitura visual unificada (fallback flash)');
+  }
+
+  if (!res!.ok) throw new Error('Falha na leitura visual unificada');
+  const data = await res!.json();
 
   const content = data.content || '';
   let parsed: any;
@@ -113,11 +168,11 @@ export const scanChartMetadata = async (file: File): Promise<ChartMetadata> => {
     parsed = {};
   }
 
-  const symbolClean = (parsed.symbol || parsed.exchange || '')
-    ? (parsed.symbol || '').toUpperCase().replace('/', '').replace('PERP', '').replace('.P', '').trim()
-    : '';
+  const symbolRaw = (parsed.symbol || '').toUpperCase().replace('/', '').replace('PERP', '').replace('.P', '').trim();
+  const symbolClean = symbolRaw ? normalizarPar(parsed.symbol || '') : '';
 
   return {
+    // Metadata fields
     pair: symbolClean,
     exchange: parsed.exchange || 'Binance',
     timeframe: parsed.timeframe || '4h',
@@ -125,7 +180,20 @@ export const scanChartMetadata = async (file: File): Promise<ChartMetadata> => {
     price: parsed.price,
     detectedIndicators: parsed.detectedIndicators || [],
     detectedEMAs: parsed.detectedEMAs || [],
-  } as ChartMetadata;
+    // Visual data fields
+    supports: parsed.supports || [],
+    resistances: parsed.resistances || [],
+    trendlines: parsed.trendlines || [],
+    fibonacci: parsed.fibonacci || [],
+    patterns: parsed.patterns || [],
+  } as UnifiedChartResult;
+};
+
+// scanChartMetadata — wrapper que extrai apenas metadata do resultado unificado
+// Mantém compatibilidade com código que chama scanChartMetadata diretamente
+export const scanChartMetadata = async (file: File): Promise<ChartMetadata> => {
+  const unified = await unifiedChartAnalysis(file);
+  return unified as ChartMetadata;
 };
 // ETAPA 2: Analise completa via Laravel backend
 export const analyzeChart = async (
@@ -141,21 +209,65 @@ export const analyzeChart = async (
   const userPair = metadata.pair || "BTCUSDT";
   const userTimeframe = metadata.timeframe || "1D";
 
-  const formData = new FormData();
-  formData.append('image', file);
-  formData.append('symbol', userPair);
-  formData.append('timeframe', userTimeframe);
-  formData.append('leverage', String(userLeverage));
-  if (entryValue !== '' && entryValue !== 0) {
-    formData.append('entry_value', String(entryValue));
-  }
+  const buildFormData = (withFlashModel = false): FormData => {
+    const fd = new FormData();
+    fd.append('image', file);
+    fd.append('symbol', userPair);
+    fd.append('timeframe', userTimeframe);
+    fd.append('leverage', String(userLeverage));
+    if (entryValue !== '' && entryValue !== 0) {
+      fd.append('entry_value', String(entryValue));
+    }
+    if (withFlashModel) {
+      fd.append('model', 'flash');
+    }
+    return fd;
+  };
 
   const token = localStorage.getItem('genesis_token');
-  const res = await fetch(`${API_BASE}/v1/analyze`, {
-    method: 'POST',
-    headers: token ? { 'Authorization': `Bearer ${token}` } : {},
-    body: formData,
-  });
+  const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
+
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}/v1/analyze`, {
+      method: 'POST',
+      headers,
+      body: buildFormData(false),
+    });
+  } catch (networkError) {
+    // Network error (timeout, connection refused) — try fallback with flash model
+    if (isModelOverloadOrTimeout(networkError)) {
+      console.warn('[Genesis] Análise visual: modelo pro indisponível (network error), ativando fallback para gemini-2.0-flash');
+      res = await fetch(`${API_BASE}/v1/analyze`, {
+        method: 'POST',
+        headers,
+        body: buildFormData(true),
+      });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || 'Falha ao processar analise tecnica (fallback flash)');
+      }
+      const result = await res.json();
+      return result as TradeSetup;
+    }
+    throw networkError;
+  }
+
+  // If response is 503, retry with flash model
+  if (res.status === 503) {
+    console.warn('[Genesis] Análise visual: modelo pro retornou 503, ativando fallback para gemini-2.0-flash');
+    res = await fetch(`${API_BASE}/v1/analyze`, {
+      method: 'POST',
+      headers,
+      body: buildFormData(true),
+    });
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.error || 'Falha ao processar analise tecnica (fallback flash)');
+    }
+    const result = await res.json();
+    return result as TradeSetup;
+  }
 
   if (!res.ok) {
     const errData = await res.json().catch(() => ({}));

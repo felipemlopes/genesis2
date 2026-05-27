@@ -122,6 +122,25 @@ export interface ChartMetadata {
   pocPrice?: number | null; // New: Visually extracted POC (Point of Control)
   hvmNodes?: number[]; // New: High Volume Nodes
   lvmNodes?: number[]; // New: Low Volume Nodes
+  // Visual data fields (unified reading)
+  supports?: number[];
+  resistances?: number[];
+  trendlines?: Array<{ type: string; slope: string; touches: number }>;
+  fibonacci?: Array<{ level: number; price: number }>;
+  patterns?: string[];
+}
+
+/**
+ * UnifiedChartResult — resultado da leitura visual unificada.
+ * Contém tanto metadata (ChartMetadata) quanto dados visuais detalhados
+ * em uma única estrutura, eliminando perda de dados entre leituras.
+ */
+export interface UnifiedChartResult extends ChartMetadata {
+  supports: number[];
+  resistances: number[];
+  trendlines: Array<{ type: string; slope: string; touches: number }>;
+  fibonacci: Array<{ level: number; price: number }>;
+  patterns: string[];
 }
 
 export interface ActiveTrade {

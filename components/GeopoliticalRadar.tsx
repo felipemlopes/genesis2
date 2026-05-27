@@ -7,6 +7,7 @@ import { Power, PowerOff } from 'lucide-react';
 import { geoEngine, GeoEvent, Category } from '../services/geopoliticalEngine';
 import { Timeline, translateBias } from './Timeline';
 import { FilterBar } from './FilterBar';
+import { useGeoEngine } from '../contexts/GeoEngineContext';
 
 // --- COMPONENTES AUXILIARES ---
 const RadarTicker = ({ isScanning }: { isScanning: boolean }) => {
@@ -289,12 +290,11 @@ const ChaosGauge = ({ score, explanation }: { score: number, explanation?: strin
 };
 
 const GeopoliticalRadar = () => {
-  const [events, setEvents] = useState<GeoEvent[]>([]);
+  const { events, isScanning, toggle } = useGeoEngine();
   const [filteredEvents, setFilteredEvents] = useState<GeoEvent[]>([]);
   const [selectedEvent, setSelectedEvent] = useState<GeoEvent | null>(null);
   const [categoryFilter, setCategoryFilter] = useState<Category | 'ALL'>('ALL');
   const [timeFilter, setTimeFilter] = useState<'15m' | '1h' | '6h' | '24h'>('24h');
-  const [isScanning, setIsScanning] = useState(false);
   const [isHovering, setIsHovering] = useState(false);
   const [tourFinished, setTourFinished] = useState(false);
   
@@ -330,14 +330,8 @@ const GeopoliticalRadar = () => {
     return () => clearTimeout(timer);
   }, [isScanning, selectedEvent?.id, filteredEvents.length, tourFinished, isHovering]);
 
-  const toggleRadar = () => {
-    // DESATIVADO COMPLETAMENTE
-  };
-
   useEffect(() => {
     const unsubscribe = geoEngine.subscribe((newEvents, delta) => {
-      setEvents(newEvents);
-      
       if (delta && delta.isNew) {
         setSelectedEvent(delta);
         setTourFinished(false); // Reset tour when new info arrives
@@ -386,13 +380,7 @@ const GeopoliticalRadar = () => {
 
         <button 
           onClick={() => {
-            if (isScanning) {
-              geoEngine.stop();
-              setIsScanning(false);
-            } else {
-              geoEngine.start();
-              setIsScanning(true);
-            }
+            toggle();
           }}
           className={`group flex items-center gap-2 px-4 py-2 rounded-full border transition-all duration-300 ${
             isScanning 

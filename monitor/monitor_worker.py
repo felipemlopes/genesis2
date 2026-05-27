@@ -84,6 +84,9 @@ class MonitorWorker:
         self.intervalo_duplicatas = INTERVALO_DUPLICATAS
         self.candles_cache = {}
         self.volume_24h_cache = {}
+        self._oi_cache = {}
+        self._dados_extras_cache = {}
+        self._dados_extras_last_fetch = {}
         self.running = True
         self.ws_connections = {}
 
@@ -416,6 +419,56 @@ class MonitorWorker:
             variacao_pct=variacao_total
         )
 
+    def buscar_funding_rate(self, symbol):
+        """Busca funding rate atual via REST API Binance (/fapi/v1/premiumIndex)"""
+        try:
+            url = "https://fapi.binance.com/fapi/v1/premiumIndex"
+            resp = requests.get(url, params={"symbol": symbol}, timeout=5)
+            if resp.status_code == 200:
+                data = resp.json()
+                funding_rate = float(data.get("lastFundingRate", 0))
+                return funding_rate
+        except Exception as e:
+            logger.debug(f"Erro ao buscar funding rate para {symbol}: {e}")
+        return None
+
+    def buscar_open_interest(self, symbol):
+        """Busca Open Interest atual via REST API Binance (/fapi/v1/openInterest)"""
+        try:
+            url = "https://fapi.binance.com/fapi/v1/openInterest"
+            resp = requests.get(url, params={"symbol": symbol}, timeout=5)
+            if resp.status_code == 200:
+                data = resp.json()
+                oi = float(data.get("openInterest", 0))
+                return oi
+        except Exception as e:
+            logger.debug(f"Erro ao buscar open interest para {symbol}: {e}")
+        return None
+
+    def buscar_dados_extras(self, ativo):
+        """Busca dados extras reais (funding, OI) via REST API Binance para enriquecer detecção de anomalias"""
+        funding_rate = self.buscar_funding_rate(ativo)
+        oi_atual = self.buscar_open_interest(ativo)
+
+        # Determinar se OI está subindo comparando com cache anterior
+        cache_key = f"{ativo}_oi"
+        oi_anterior = self._oi_cache.get(cache_key)
+        oi_subindo = None
+        if oi_anterior is not None and oi_atual is not None:
+            oi_subindo = oi_atual > oi_anterior
+        if oi_atual is not None:
+            self._oi_cache[cache_key] = oi_atual
+
+        return {
+            'cvd_slope': 0,  # CVD requer dados de trades em tempo real (WebSocket depth)
+            'book_imbalance_ratio': None,  # Requer WebSocket de order book
+            'funding_rate': funding_rate,
+            'oi_subindo': oi_subindo,
+            'oi_atual': oi_atual,
+            'oi_anterior': oi_anterior,
+            'ls_ratio': None,  # Requer endpoint separado
+        }
+
     def detectar_spot_futures_divergencia(self, symbol, preco_futures, dados_mercado):
         try:
             pair = symbol if symbol.endswith("USDT") else symbol + "USDT"
@@ -486,11 +539,39 @@ class MonitorWorker:
             variacao = ((closes[-1] - closes[-2]) / closes[-2]) * 100
             self.detectar_movimento_brusco(variacao, dados_mercado)
 
-        dados_extras = {'cvd_slope': 0, 'book_imbalance_ratio': None, 'funding_rate': None, 'oi_subindo': None, 'ls_ratio': None}
+        # Buscar dados extras reais via REST API Binance
+        funding_rate = self.buscar_funding_rate(ativo)
+        oi_atual = self.buscar_open_interest(ativo)
+
+        # Determinar se OI está subindo comparando com cache anterior
+        oi_cache_key = f"{ativo}_oi"
+        oi_anterior = self._oi_cache.get(oi_cache_key)
+        oi_subindo = None
+        if oi_anterior is not None and oi_atual is not None:
+            oi_subindo = oi_atual > oi_anterior
+        if oi_atual is not None:
+            self._oi_cache[oi_cache_key] = oi_atual
+
+        dados_extras = {
+            'cvd_slope': 0,
+            'book_imbalance_ratio': None,
+            'funding_rate': funding_rate,
+            'oi_subindo': oi_subindo,
+            'oi_atual': oi_atual,
+            'oi_anterior': oi_anterior,
+            'ls_ratio': None,
+        }
         resultado_score = self.calcular_indicadores_e_score(candles, dados_extras)
 
         self.detectar_liquidation_cascade(candles, dados_mercado)
         self.detectar_spot_futures_divergencia(ativo, candles[-1]['close'], dados_mercado)
+
+        # Acionar detecção de anomalias com dados reais de funding e OI
+        if dados_extras.get('funding_rate') is not None:
+            self.detectar_funding_extremo(dados_extras['funding_rate'], dados_mercado)
+
+        if dados_extras.get('oi_anterior') is not None and dados_extras.get('oi_atual') is not None:
+            self.detectar_oi_spike(dados_extras['oi_anterior'], dados_extras['oi_atual'], dados_mercado)
 
         if resultado_score and self.filtrar_score(resultado_score['score_final']):
             logger.info(

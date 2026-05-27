@@ -4,6 +4,7 @@ import { RouterProvider } from 'react-router-dom';
 import { Chart, registerables } from 'chart.js';
 import { router } from './router';
 import { AppProvider } from './contexts/AppContext';
+import { GeoEngineProvider } from './contexts/GeoEngineContext';
 
 Chart.register(...registerables);
 
@@ -12,6 +13,8 @@ const root = createRoot(rootElement);
 
 root.render(
   <AppProvider>
-    <RouterProvider router={router} />
+    <GeoEngineProvider>
+      <RouterProvider router={router} />
+    </GeoEngineProvider>
   </AppProvider>
 );

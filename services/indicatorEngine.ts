@@ -99,7 +99,7 @@ const _calcularATR = (candles: Candle[], periodo: number = 14): number | null =>
 };
 
 const _calcularADX = (candles: Candle[], periodo: number = 14): { adx: number; diPlus: number; diMinus: number } | null => {
-    if (candles.length <= periodo * 2) return null; // Need more strictly for smoothing
+    if (candles.length < periodo * 2) return null; // Need at least periodo*2 candles for smoothing
     
     let trs = [];
     let pdms = [];
@@ -185,11 +185,8 @@ const _calcularMACD = (candles: Candle[]): { macd: number; signal: number; histo
     const slowPeriod = 26;
     const signalPeriod = 9;
     
+    // Mínimo: 26 (EMA slow) + 9 (Signal EMA) = 35 candles
     if (candles.length < slowPeriod + signalPeriod) return null;
-    
-    const emaFast = calcularEMA(candles, fastPeriod);
-    const emaSlow = calcularEMA(candles, slowPeriod);
-    if (emaFast === null || emaSlow === null) return null;
     
     const macdSeries = [];
     

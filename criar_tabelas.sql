@@ -10,9 +10,10 @@ CREATE TABLE IF NOT EXISTS genesis_alertas (
     direcao ENUM('BULLISH', 'BEARISH', 'NEUTRO') NOT NULL COMMENT 'Direção do viés do alerta',
     urgencia ENUM('ALTA', 'MEDIA', 'BAIXA') NOT NULL COMMENT 'Nível de urgência / importância do alerta',
     corretora VARCHAR(20) NOT NULL COMMENT 'Corretora onde a anomalia foi detectada (ex: BINANCE, BYBIT)',
+    timeframe VARCHAR(10) NOT NULL DEFAULT '1h' COMMENT 'Timeframe do alerta (ex: 1h, 4h, 1d)',
     preco_atual DECIMAL(20, 8) NOT NULL COMMENT 'Preço da criptomoeda no momento do alerta',
     variacao_pct DECIMAL(10, 4) NOT NULL COMMENT 'Variação percentual associada ao evento, se aplicável',
-    enviado_sse TINYINT(1) DEFAULT 0 COMMENT 'Flag de controle: 1 se foi enviado pela API SSE, 0 caso contrário',
+    enviado_sse TINYINT(1) NOT NULL DEFAULT 0 COMMENT 'Flag de controle: 1 se foi enviado pela API SSE, 0 caso contrário',
     enviado_telegram TINYINT(1) DEFAULT 0 COMMENT 'Flag de controle: 1 se foi enviado via Telegram, 0 caso contrário',
     criado_em DATETIME NOT NULL COMMENT 'Data e hora em que o alerta foi gerado pelo worker',
     

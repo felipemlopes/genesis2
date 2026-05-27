@@ -477,4 +477,67 @@ router.get('/estatisticas-sistema', requiresAuth, async (req, res) => {
     }
 });
 
+// ─── SSE: ALERTAS STREAM ──────────────────────────────────────
+// Endpoint SSE que faz polling na tabela genesis_alertas a cada 10 segundos
+// e transmite alertas novos (enviado_sse = 0) ao cliente.
+// Exclui campos 'direcao' e 'urgencia' do payload.
+// Envia `: ping` a cada 30s para manter conexão viva.
+router.get('/v1/alertas/stream', async (req, res) => {
+    // Set SSE headers
+    res.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+        'X-Accel-Buffering': 'no',
+    });
+
+    let lastPing = Date.now();
+    let closed = false;
+
+    req.on('close', () => {
+        closed = true;
+    });
+
+    const poll = async () => {
+        while (!closed) {
+            try {
+                const conn = await getConnection();
+                try {
+                    // Query unsent alerts
+                    const [rows] = await conn.query(
+                        'SELECT * FROM genesis_alertas WHERE enviado_sse = 0 ORDER BY created_at ASC LIMIT 50'
+                    );
+
+                    for (const alerta of rows) {
+                        // Exclude direcao and urgencia from payload
+                        const { direcao, urgencia, ...payload } = alerta;
+                        res.write(`data: ${JSON.stringify(payload)}\n\n`);
+
+                        // Mark as sent
+                        await conn.query(
+                            'UPDATE genesis_alertas SET enviado_sse = 1 WHERE id = ?',
+                            [alerta.id]
+                        );
+                    }
+                } finally {
+                    conn.release();
+                }
+            } catch (err) {
+                console.error('[SSE] Erro ao buscar alertas:', err.message);
+            }
+
+            // Send ping every 30 seconds to keep connection alive
+            if (Date.now() - lastPing >= 30000) {
+                res.write(': ping\n\n');
+                lastPing = Date.now();
+            }
+
+            // Wait 10 seconds before next poll
+            await new Promise(resolve => setTimeout(resolve, 10000));
+        }
+    };
+
+    poll();
+});
+
 module.exports = router;

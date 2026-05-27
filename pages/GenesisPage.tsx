@@ -19,8 +19,9 @@ import OrderBookImbalance from '../components/OrderBookImbalance';
 import TrendQuality from '../components/TrendQuality';
 import LiquidationHeatmap from '../components/LiquidationHeatmap';
 import SectorSentiment from '../components/SectorSentiment';
-import { analyzeChart, scanChartMetadata } from '../services/geminiService';
-import { TradeSetup, ChartMetadata, SavedAnalysis } from '../types';
+import { analyzeChart, scanChartMetadata, unifiedChartAnalysis } from '../services/geminiService';
+import { normalizarPar } from '../services/normalizarPar';
+import { TradeSetup, ChartMetadata, SavedAnalysis, UnifiedChartResult } from '../types';
 import { fetchBinanceData, fetchBybitData, fetchBitgetData, fetchOkxData, formatPrice, ExchangeData } from '../services/cryptoApi';
 import { calculateLiquidationPrice } from '../services/futuresCalculations';
 import { saveAnalysisToHistory } from '../components/AnalysisHistoryDashboard';
@@ -235,12 +236,12 @@ const GenesisPage: React.FC = () => {
 
       setIsScanning(true);
       try {
-        const metadata = await scanChartMetadata(file);
-        setChartMetadata(metadata);
+        const unifiedResult = await unifiedChartAnalysis(file);
+        setChartMetadata(unifiedResult);
 
         let newExchange = exchange;
-        if (metadata.exchange && metadata.exchange !== 'UNK') {
-          const cleanEx = metadata.exchange.toLowerCase();
+        if (unifiedResult.exchange && unifiedResult.exchange !== 'UNK') {
+          const cleanEx = unifiedResult.exchange.toLowerCase();
           if (cleanEx.includes('binance')) newExchange = 'Binance';
           else if (cleanEx.includes('bybit')) newExchange = 'Bybit';
           else if (cleanEx.includes('bitget')) newExchange = 'Bitget';
@@ -249,10 +250,8 @@ const GenesisPage: React.FC = () => {
         }
 
         let newPair = '';
-        if (metadata.pair && metadata.pair !== 'UNK') {
-          let cleanPair = metadata.pair.toUpperCase().replace('/', '').trim();
-          if (cleanPair.endsWith('USD')) cleanPair += 'T';
-          if (!cleanPair.endsWith('USDT')) cleanPair += 'USDT';
+        if (unifiedResult.pair && unifiedResult.pair !== 'UNK') {
+          const cleanPair = normalizarPar(unifiedResult.pair);
           newPair = cleanPair;
           setSelectedPair(cleanPair);
           setRefreshTrigger((prev) => prev + 1);
@@ -260,7 +259,7 @@ const GenesisPage: React.FC = () => {
           setSelectedPair('');
         }
 
-        if (metadata.timeframe && metadata.timeframe !== 'UNK') {
+        if (unifiedResult.timeframe && unifiedResult.timeframe !== 'UNK') {
           const tfMap: Record<string, string> = {
             '1M': '1M', 'MONTHLY': '1M', 'M': '1M', 'MONTH': '1M',
             '1W': '1w', 'WEEKLY': '1w', 'W': '1w', 'WEEK': '1w',
@@ -272,7 +271,7 @@ const GenesisPage: React.FC = () => {
             '1H': '1h', 'H1': '1h', '60M': '1h',
             '15M': '15m', 'M15': '15m',
           };
-          const normalizedTf = tfMap[metadata.timeframe.toUpperCase()] || metadata.timeframe;
+          const normalizedTf = tfMap[unifiedResult.timeframe.toUpperCase()] || unifiedResult.timeframe;
           if (['15m', '1h', '2h', '3h', '4h', '12h', '1d', '1w', '1M'].includes(normalizedTf)) {
             setTimeframe(normalizedTf);
           }

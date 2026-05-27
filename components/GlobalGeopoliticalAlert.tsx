@@ -1,32 +1,33 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { Globe, AlertTriangle, X, ArrowRight, MapPin, ExternalLink } from 'lucide-react';
-import { geoEngine, GeoEvent } from '../services/geopoliticalEngine';
+import { GeoEvent } from '../services/geopoliticalEngine';
+import { useGeoEngine } from '../contexts/GeoEngineContext';
 
 interface Props {
   onNavigateToRadar: () => void;
 }
 
 const GlobalGeopoliticalAlert: React.FC<Props> = ({ onNavigateToRadar }) => {
+  const { events } = useGeoEngine();
   const [alert, setAlert] = useState<GeoEvent | null>(null);
+  const prevEventsLengthRef = useRef(events.length);
 
   useEffect(() => {
-    const unsubscribe = geoEngine.subscribe((events, newCriticalEvent) => {
-      if (newCriticalEvent && newCriticalEvent.relevance >= 8) {
-        setAlert(newCriticalEvent);
-        
+    // Detect new critical events by comparing with previous events count
+    if (events.length > prevEventsLengthRef.current) {
+      const newEvents = events.slice(prevEventsLengthRef.current);
+      const criticalEvent = newEvents.find(e => e.relevance >= 8);
+      if (criticalEvent) {
+        setAlert(criticalEvent);
+
         // Auto-hide after 10 seconds
         setTimeout(() => {
           setAlert(null);
         }, 10000);
       }
-    });
-
-    return () => {
-      unsubscribe();
-      // We don't stop the engine here because we want it running in the background if it was started
-      // geoEngine.stop();
-    };
-  }, []);
+    }
+    prevEventsLengthRef.current = events.length;
+  }, [events]);
 
   if (!alert) return null;
 
