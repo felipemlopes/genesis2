@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { connectAlertasSSE } from '../services/api';
 
 export interface AlertaGenesis {
@@ -49,6 +49,8 @@ export const useAlertas = () => {
     }, [fecharAlerta]);
 
     useEffect(() => {
+        // Desativado a pedido do usuário: O frontend não vai mais se comunicar com o SSE de alertas.
+        /*
         let originEventSource: EventSource | null = null;
         let reconnectTimeout: NodeJS.Timeout;
 
@@ -68,13 +70,16 @@ export const useAlertas = () => {
         };
 
         connectSSE();
+        */
 
         // Cleanup da conexão e temporizadores ao desmontar o hook
         return () => {
+            /*
             if (originEventSource) {
                 originEventSource.close();
             }
             clearTimeout(reconnectTimeout);
+            */
             // Limpa todos os temporizadores pendentes
             Object.values(temporizadoresRef.current).forEach(clearTimeout);
         };
