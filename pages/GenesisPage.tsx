@@ -255,8 +255,6 @@ const GenesisPage: React.FC = () => {
           newPair = cleanPair;
           setSelectedPair(cleanPair);
           setRefreshTrigger((prev) => prev + 1);
-        } else {
-          setSelectedPair('');
         }
 
         if (unifiedResult.timeframe && unifiedResult.timeframe !== 'UNK') {
@@ -287,7 +285,6 @@ const GenesisPage: React.FC = () => {
         }
       } catch (err: any) {
         console.error('Auto-scan failed', err);
-        setSelectedPair('');
         alert('Não foi possível detectar automaticamente a moeda do gráfico. Por favor, digite manualmente no campo Par.');
       } finally {
         setIsScanning(false);
