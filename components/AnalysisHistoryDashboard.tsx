@@ -1,19 +1,24 @@
 ﻿import React, { useState, useEffect, useMemo } from 'react';
 import { SavedAnalysis } from '../types';
 import { Trash2, TrendingUp, TrendingDown, Target, Clock, Filter, Activity, CheckCircle, XCircle, AlertCircle } from 'lucide-react';
-import { fetchHistoricoAnalises } from '../services/api';
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
+import { fetchHistoricoAnalises, storeAnalise, updateResultadoAnalise, deleteAllAnalises, fetchEstatisticas, fetchPrice } from '../services/api';
 
-const LOCAL_STORAGE_KEY = 'genesis_analysis_history';
-
-export const saveAnalysisToHistory = (analysis: SavedAnalysis) => {
+// Salva análise via API — sem localStorage
+// Aceita dados extras opcionais para enviar campos completos ao servidor
+export const saveAnalysisToHistory = async (analysis: SavedAnalysis, extraData?: Record<string, any>) => {
   try {
-    const existing = localStorage.getItem(LOCAL_STORAGE_KEY);
-    const history: SavedAnalysis[] = existing ? JSON.parse(existing) : [];
-    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify([analysis, ...history]));
+    await storeAnalise({
+      ativo: analysis.symbol,
+      timeframe: analysis.interval,
+      direcao: analysis.direction,
+      score: analysis.score,
+      stop_loss: analysis.stop_loss,
+      take_profit_1: analysis.target_price,
+      ...extraData,
+    });
     window.dispatchEvent(new Event('analysis_history_updated'));
   } catch (error) {
-    console.error('Failed to save analysis to history', error);
+    console.error('Falha ao salvar análise via API', error);
   }
 };
 
@@ -25,6 +30,7 @@ const AnalysisHistoryDashboard: React.FC = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
 
+  // Carrega histórico exclusivamente do servidor (MySQL)
   const loadHistory = async () => {
     try {
       const data = await fetchHistoricoAnalises();
@@ -41,24 +47,18 @@ const AnalysisHistoryDashboard: React.FC = () => {
           adx: 0,
           entry_price: 0,
           target_price: parseFloat(row.take_profit_1) || 0,
+          target_price2: parseFloat(row.take_profit_2) || 0,
+          target_price3: parseFloat(row.take_profit_3) || 0,
           stop_loss: parseFloat(row.stop_loss) || 0,
           status: row.resultado === 'PENDENTE' ? 'PENDENTE' : (row.resultado?.includes('TP') ? 'ACERTOU' : 'ERROU')
         }));
         setHistory(serverHistory);
-        return;
+      } else {
+        setHistory([]);
       }
     } catch (error) {
-      console.warn("Erro ao buscar historico do servidor. Usando fallback local.", error);
-    }
-    
-    // Fallback para cache local
-    try {
-      const existing = localStorage.getItem(LOCAL_STORAGE_KEY);
-      if (existing) {
-        setHistory(JSON.parse(existing));
-      }
-    } catch (e) {
-      console.error(e);
+      console.error("Erro ao buscar histórico do servidor.", error);
+      setHistory([]);
     }
   };
 
@@ -69,108 +69,165 @@ const AnalysisHistoryDashboard: React.FC = () => {
     return () => window.removeEventListener('analysis_history_updated', handleUpdate);
   }, []);
 
-  // Auto-monitoramento de preços para fechar análises (sem custo Gemini)
+  // Estado de progresso percentual para cada análise pendente
+  const [progressMap, setProgressMap] = useState<Record<string, { tp1: number; tp2: number; tp3: number; stop: number }>>({});
+
+  // Função utilitária: clamp entre 0 e 100
+  const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
+
+  // Calcula progresso percentual de um alvo
+  const calcProgress = (direction: string, entryPrice: number, currentPrice: number, targetPrice: number): number => {
+    if (targetPrice === entryPrice || targetPrice <= 0 || entryPrice <= 0) return 0;
+    if (direction === 'LONG') {
+      return clamp(((currentPrice - entryPrice) / (targetPrice - entryPrice)) * 100, 0, 100);
+    }
+    // SHORT
+    return clamp(((entryPrice - currentPrice) / (entryPrice - targetPrice)) * 100, 0, 100);
+  };
+
+  // Auto-monitoramento de preços via proxy do servidor (sem chamada direta a exchanges)
   useEffect(() => {
+    let cancelled = false;
+
     const checkPrices = async () => {
-      // Find all symbols that are still pending
-      const pendingAnalyses = history.filter(h => h.status === 'PENDENTE');
+      // Busca análises pendentes
+      const pendingAnalyses = history.filter((h: SavedAnalysis) => h.status === 'PENDENTE');
       if (pendingAnalyses.length === 0) return;
 
-      const symbols = [...new Set(pendingAnalyses.map(h => h.symbol.replace('/', '').toUpperCase()))];
-      
-      try {
-        // Fetch current prices from Binance public API (100% free, no Gemini used)
-        const response = await fetch('https://api.binance.com/api/v3/ticker/price');
-        if (!response.ok) return;
-        const data = await response.json();
-        
-        const priceMap: Record<string, number> = {};
-        data.forEach((item: {symbol: string, price: string}) => {
-          priceMap[item.symbol] = parseFloat(item.price);
-        });
+      // Símbolos únicos para consultar
+      const uniqueSymbols = Array.from(new Set<string>(pendingAnalyses.map((h: SavedAnalysis) => h.symbol.replace('/', '').toUpperCase())));
 
-        let updated = false;
-        const newHistory = [...history];
-
-        newHistory.forEach(analysis => {
-          if (analysis.status !== 'PENDENTE') return;
-
-          const symbol = analysis.symbol.replace('/', '').toUpperCase();
-          const currentPrice = priceMap[symbol];
-          
-          if (!currentPrice || currentPrice <= 0) return;
-
-          if (analysis.direction === 'LONG') {
-             if (analysis.target_price > 0 && currentPrice >= analysis.target_price) {
-                analysis.status = 'ACERTOU';
-                updated = true;
-             } else if (analysis.stop_loss > 0 && currentPrice <= analysis.stop_loss) {
-                analysis.status = 'ERROU';
-                updated = true;
-             }
-          } else if (analysis.direction === 'SHORT') {
-             if (analysis.target_price > 0 && currentPrice <= analysis.target_price) {
-                analysis.status = 'ACERTOU';
-                updated = true;
-             } else if (analysis.stop_loss > 0 && currentPrice >= analysis.stop_loss) {
-                analysis.status = 'ERROU';
-                updated = true;
-             }
+      // Busca preços via proxy do servidor (GET /api/price/:symbol)
+      const priceMap: Record<string, number> = {};
+      await Promise.all(
+        uniqueSymbols.map(async (symbol) => {
+          try {
+            const result = await fetchPrice(symbol);
+            if (result && result.price > 0) {
+              priceMap[symbol] = result.price;
+            }
+          } catch {
+            // Falha silenciosa — tenta novamente no próximo ciclo
           }
-        });
+        })
+      );
 
-        if (updated) {
-           setHistory(newHistory);
-           localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(newHistory));
-           window.dispatchEvent(new Event('analysis_history_updated'));
+      if (cancelled) return;
 
-           // Sync resultados ao servidor
-           newHistory.forEach(async (analysis) => {
-             if (analysis.status === 'PENDENTE' || !analysis.id) return;
-             try {
-               const token = localStorage.getItem('genesis_token');
-                const url = API_BASE + '/v1/analises/' + analysis.id + '/resultado';
-                await fetch(url, {
-                 method: 'PUT',
-                  headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
-                 body: JSON.stringify({
-                   resultado: analysis.status === 'ACERTOU' ? 'TP1_ATINGIDO' : 'STOP_ATINGIDO',
-                   preco_resultado: priceMap[analysis.symbol.replace('/', '').toUpperCase()] || 0,
-                 }),
-               });
-             } catch (e) { console.warn('Falha ao sync resultado:', e); }
-           });
+      let updated = false;
+      const newHistory = [...history];
+      const newProgressMap: Record<string, { tp1: number; tp2: number; tp3: number; stop: number }> = {};
+
+      for (const analysis of newHistory) {
+        if (analysis.status !== 'PENDENTE') continue;
+
+        const symbol = analysis.symbol.replace('/', '').toUpperCase();
+        const currentPrice = priceMap[symbol];
+        if (!currentPrice || currentPrice <= 0) continue;
+
+        const entryPrice = analysis.entry_price || 0;
+        if (entryPrice <= 0) continue;
+
+        // Calcula progresso para cada alvo
+        const tp1Progress = analysis.target_price > 0
+          ? calcProgress(analysis.direction, entryPrice, currentPrice, analysis.target_price) : 0;
+        const tp2Progress = analysis.target_price2 > 0
+          ? calcProgress(analysis.direction, entryPrice, currentPrice, analysis.target_price2) : 0;
+        const tp3Progress = analysis.target_price3 > 0
+          ? calcProgress(analysis.direction, entryPrice, currentPrice, analysis.target_price3) : 0;
+        const stopProgress = analysis.stop_loss > 0
+          ? calcProgress(analysis.direction === 'LONG' ? 'SHORT' : 'LONG', entryPrice, currentPrice, analysis.stop_loss) : 0;
+
+        newProgressMap[analysis.id] = { tp1: tp1Progress, tp2: tp2Progress, tp3: tp3Progress, stop: stopProgress };
+
+        // Verifica se algum alvo foi atingido (progresso >= 100%)
+        let resultado: string | null = null;
+        if (analysis.direction === 'LONG') {
+          if (analysis.target_price > 0 && currentPrice >= analysis.target_price) {
+            resultado = 'TP1_ATINGIDO';
+          } else if (analysis.target_price2 > 0 && currentPrice >= analysis.target_price2) {
+            resultado = 'TP2_ATINGIDO';
+          } else if (analysis.target_price3 > 0 && currentPrice >= analysis.target_price3) {
+            resultado = 'TP3_ATINGIDO';
+          } else if (analysis.stop_loss > 0 && currentPrice <= analysis.stop_loss) {
+            resultado = 'STOP_ATINGIDO';
+          }
+        } else {
+          if (analysis.target_price > 0 && currentPrice <= analysis.target_price) {
+            resultado = 'TP1_ATINGIDO';
+          } else if (analysis.target_price2 > 0 && currentPrice <= analysis.target_price2) {
+            resultado = 'TP2_ATINGIDO';
+          } else if (analysis.target_price3 > 0 && currentPrice <= analysis.target_price3) {
+            resultado = 'TP3_ATINGIDO';
+          } else if (analysis.stop_loss > 0 && currentPrice >= analysis.stop_loss) {
+            resultado = 'STOP_ATINGIDO';
+          }
         }
 
-      } catch (err) {
-         console.warn("Failed to auto-check prices for history:", err);
+        if (resultado) {
+          analysis.status = resultado.includes('TP') ? 'ACERTOU' : 'ERROU';
+          updated = true;
+
+          // Envia PUT para persistir resultado no servidor
+          try {
+            await updateResultadoAnalise(parseInt(analysis.id), {
+              resultado,
+              preco_resultado: currentPrice,
+            });
+          } catch (e) {
+            console.warn('Falha ao sync resultado:', e);
+          }
+        }
+      }
+
+      if (cancelled) return;
+
+      setProgressMap(newProgressMap);
+      if (updated) {
+        setHistory(newHistory);
       }
     };
 
-    // Check every 15 seconds
+    // Verifica a cada 15 segundos
     const intervalId = setInterval(checkPrices, 15000);
-    checkPrices(); // Initial check
-    
-    return () => clearInterval(intervalId);
+    checkPrices(); // Verificação inicial
+
+    return () => {
+      cancelled = true;
+      clearInterval(intervalId);
+    };
   }, [history]);
 
-
-  const updateStatus = (id: string, newStatus: 'ACERTOU' | 'ERROU') => {
+  // Atualiza status via API — sem localStorage
+  const updateStatus = async (id: string, newStatus: 'ACERTOU' | 'ERROU') => {
     const updatedHistory = history.map(item => 
       item.id === id ? { ...item, status: newStatus } : item
     );
     setHistory(updatedHistory);
-    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(updatedHistory));
-  };
 
-  const clearHistory = () => {
-    if (confirm("Tem certeza que deseja apagar todo o histórico de análises?")) {
-      setHistory([]);
-      localStorage.removeItem(LOCAL_STORAGE_KEY);
+    try {
+      await updateResultadoAnalise(parseInt(id), {
+        resultado: newStatus === 'ACERTOU' ? 'TP1_ATINGIDO' : 'STOP_ATINGIDO',
+      });
+    } catch (e) {
+      console.warn('Falha ao atualizar resultado no servidor:', e);
     }
   };
 
-  // Metrics calculation
+  // Limpa histórico via API — sem localStorage
+  const clearHistory = async () => {
+    if (confirm("Tem certeza que deseja apagar todo o histórico de análises?")) {
+      try {
+        await deleteAllAnalises();
+        setHistory([]);
+      } catch (e) {
+        console.error('Falha ao limpar histórico no servidor:', e);
+        setHistory([]);
+      }
+    }
+  };
+
+  // Cálculo de métricas
   const metrics = useMemo(() => {
     const completed = history.filter(h => h.status === 'ACERTOU' || h.status === 'ERROU');
     const hits = completed.filter(h => h.status === 'ACERTOU').length;
@@ -199,7 +256,7 @@ const AnalysisHistoryDashboard: React.FC = () => {
     return { total: history.length, completedTotal: total, hits, winRate, tfStats, bestTf, bestTfRate };
   }, [history]);
 
-  // Filtering
+  // Filtragem
   const filteredHistory = useMemo(() => {
     let result = history;
     if (filterSymbol) result = result.filter(h => h.symbol.toLowerCase().includes(filterSymbol.toLowerCase()));
@@ -211,19 +268,13 @@ const AnalysisHistoryDashboard: React.FC = () => {
   const totalPages = Math.ceil(filteredHistory.length / itemsPerPage);
   const currentData = filteredHistory.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
 
-  // DEV - CONECTAR: Esta seção depende do resultVerifierService estar ativo no servidor.
+  // Estatísticas do sistema via API
   const [sysStats, setSysStats] = useState<any>(null);
   useEffect(() => {
       const loadSysStats = async () => {
           try {
-              const statsUrl = API_BASE + '/v1/estatisticas';
-              const res = await fetch(statsUrl, {
-                  headers: { 'Authorization': 'Bearer ' + localStorage.getItem('genesis_token') }
-              });
-              if (res.ok) {
-                  const json = await res.json();
-                  if (json.success) setSysStats(json.data);
-              }
+              const json = await fetchEstatisticas();
+              if (json.success) setSysStats(json.data);
           } catch(e) {
               console.warn("Erro ao buscar estatisticas-sistema", e);
           }
@@ -234,7 +285,7 @@ const AnalysisHistoryDashboard: React.FC = () => {
   return (
     <div className="flex flex-col gap-6 pb-10">
 
-      {/* DASHBOARD SECTION EXCL. ESTATISTICAS */}
+      {/* SEÇÃO ESTATÍSTICAS DO SISTEMA */}
       {sysStats && (
         <div className="bg-[#0a0a0f] border border-white/5 p-6 rounded-2xl shadow-2xl relative overflow-hidden">
           <div className="absolute -right-10 -top-10 opacity-5">
@@ -279,8 +330,8 @@ const AnalysisHistoryDashboard: React.FC = () => {
           </div>
         </div>
       )}
-      
-      {/* DASHBOARD SECTION */}
+
+      {/* SEÇÃO DASHBOARD */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-[16px]">
         
         {/* Total Metric */}
@@ -351,7 +402,7 @@ const AnalysisHistoryDashboard: React.FC = () => {
         </div>
       </div>
 
-      {/* HISTORY TABLE SECTION */}
+      {/* SEÇÃO TABELA DE HISTÓRICO */}
       <div className="bg-genesis-input rounded-[8px] p-[12px_14px]   rounded-[10px] p-[16px] shadow-2xl flex flex-col flex-1">
          <div className="flex flex-col md:flex-row items-start md:items-center justify-between mb-6 gap-[16px]">
              <div className="flex items-center gap-3">
@@ -410,7 +461,9 @@ const AnalysisHistoryDashboard: React.FC = () => {
                      <th className="py-4 px-2 tracking-widest text-center">TF</th>
                      <th className="py-4 px-2 tracking-widest text-center">Direção</th>
                      <th className="py-4 px-2 tracking-widest text-center">Entrada</th>
-                     <th className="py-4 px-2 tracking-widest text-center">Alvo</th>
+                     <th className="py-4 px-2 tracking-widest text-center">TP1</th>
+                     <th className="py-4 px-2 tracking-widest text-center">TP2</th>
+                     <th className="py-4 px-2 tracking-widest text-center">TP3</th>
                      <th className="py-4 px-2 tracking-widest text-center">Score</th>
                      <th className="py-4 px-2 tracking-widest text-center">Status</th>
                      <th className="py-4 px-2 tracking-widest text-right">Resultado</th>
@@ -419,7 +472,7 @@ const AnalysisHistoryDashboard: React.FC = () => {
                <tbody className="divide-y divide-white/5">
                   {currentData.length === 0 ? (
                      <tr>
-                        <td colSpan={9} className="py-12 text-center">
+                        <td colSpan={11} className="py-12 text-center">
                            <div className="flex flex-col items-center justify-center text-gray-600">
                                <AlertCircle size={32} className="mb-3 opacity-50" />
                                <span className="text-xs uppercase tracking-widest font-bold">Nenhum registro encontrado</span>
@@ -444,7 +497,60 @@ const AnalysisHistoryDashboard: React.FC = () => {
                                  </span>
                               </td>
                               <td className="py-4 px-2 text-[11px] font-mono text-gray-400 text-center">{item.entry_price ? item.entry_price.toLocaleString() : '-'}</td>
-                              <td className="py-4 px-2 text-[11px] font-mono text-gray-400 text-center">{item.target_price ? item.target_price.toLocaleString() : '-'}</td>
+                              <td className="py-4 px-2 text-center">
+                                {item.target_price !== undefined && item.target_price !== null ? (
+                                  <div className="flex flex-col items-center gap-0.5">
+                                    <div className="relative w-8 h-8">
+                                      <svg className="w-8 h-8 -rotate-90" viewBox="0 0 36 36">
+                                        <circle cx="18" cy="18" r="15" fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth="3" />
+                                        <circle cx="18" cy="18" r="15" fill="none" stroke="#22c55e" strokeWidth="3"
+                                          strokeDasharray={`${(progressMap[item.id]?.tp1 || 0) * 0.9425} 94.25`}
+                                          strokeLinecap="round" />
+                                      </svg>
+                                      <span className="absolute inset-0 flex items-center justify-center text-[7px] font-mono text-white">
+                                        {Math.round(progressMap[item.id]?.tp1 || 0)}%
+                                      </span>
+                                    </div>
+                                    <span className="text-[9px] font-mono text-gray-500">{item.target_price.toLocaleString()}</span>
+                                  </div>
+                                ) : '-'}
+                              </td>
+                              <td className="py-4 px-2 text-center">
+                                {item.target_price2 !== undefined && item.target_price2 !== null ? (
+                                  <div className="flex flex-col items-center gap-0.5">
+                                    <div className="relative w-8 h-8">
+                                      <svg className="w-8 h-8 -rotate-90" viewBox="0 0 36 36">
+                                        <circle cx="18" cy="18" r="15" fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth="3" />
+                                        <circle cx="18" cy="18" r="15" fill="none" stroke="#22c55e" strokeWidth="3"
+                                          strokeDasharray={`${(progressMap[item.id]?.tp2 || 0) * 0.9425} 94.25`}
+                                          strokeLinecap="round" />
+                                      </svg>
+                                      <span className="absolute inset-0 flex items-center justify-center text-[7px] font-mono text-white">
+                                        {Math.round(progressMap[item.id]?.tp2 || 0)}%
+                                      </span>
+                                    </div>
+                                    <span className="text-[9px] font-mono text-gray-500">{item.target_price2.toLocaleString()}</span>
+                                  </div>
+                                ) : '-'}
+                              </td>
+                              <td className="py-4 px-2 text-center">
+                                {item.target_price3 !== undefined && item.target_price3 !== null ? (
+                                  <div className="flex flex-col items-center gap-0.5">
+                                    <div className="relative w-8 h-8">
+                                      <svg className="w-8 h-8 -rotate-90" viewBox="0 0 36 36">
+                                        <circle cx="18" cy="18" r="15" fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth="3" />
+                                        <circle cx="18" cy="18" r="15" fill="none" stroke="#22c55e" strokeWidth="3"
+                                          strokeDasharray={`${(progressMap[item.id]?.tp3 || 0) * 0.9425} 94.25`}
+                                          strokeLinecap="round" />
+                                      </svg>
+                                      <span className="absolute inset-0 flex items-center justify-center text-[7px] font-mono text-white">
+                                        {Math.round(progressMap[item.id]?.tp3 || 0)}%
+                                      </span>
+                                    </div>
+                                    <span className="text-[9px] font-mono text-gray-500">{item.target_price3.toLocaleString()}</span>
+                                  </div>
+                                ) : '-'}
+                              </td>
                               <td className="py-4 px-2 text-center">
                                  <span className="text-xs font-mono font-bold text-genesis-accent">{item.score}/100</span>
                               </td>

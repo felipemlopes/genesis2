@@ -187,6 +187,49 @@ export async function updateResultadoAnalise(id: number, data: any) {
   return res.json();
 }
 
+export async function deleteAnalise(id: number) {
+  const res = await fetch(`${API_BASE}/v1/analises/${id}`, {
+    method: 'DELETE',
+    headers: getAuthHeaders(),
+  });
+  return res.json();
+}
+
+export async function deleteAllAnalises() {
+  const res = await fetch(`${API_BASE}/v1/analises`, {
+    method: 'DELETE',
+    headers: getAuthHeaders(),
+  });
+  return res.json();
+}
+
+// ─── CRÉDITOS ─────────────────────────────────────────────────
+
+export async function consumeCredits(type: string, idempotencyKey?: string): Promise<{ success: boolean; credits?: number; error?: string }> {
+  const body: Record<string, string> = { type };
+  if (idempotencyKey) body.idempotency_key = idempotencyKey;
+  const res = await fetch(`${API_BASE}/v1/credits/consume/${type}`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify(body),
+  });
+  const data = await res.json();
+  if (!res.ok) return { success: false, error: data.message || 'Erro ao debitar créditos' };
+  return { success: true, credits: data.credits };
+}
+
+// ─── PROXY DE PREÇOS ──────────────────────────────────────────
+
+export async function fetchPrice(symbol: string): Promise<{ price: number; exchange: string; symbol: string; timestamp: string } | null> {
+  try {
+    const res = await fetch(`${API_BASE}/v1/price/${encodeURIComponent(symbol)}`, { headers: getAuthHeaders() });
+    if (!res.ok) return null;
+    return res.json();
+  } catch {
+    return null;
+  }
+}
+
 // ─── ESTATISTICAS ─────────────────────────────────────────────
 
 export async function fetchEstatisticas() {

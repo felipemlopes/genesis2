@@ -1,6 +1,7 @@
 ﻿import React, { useEffect, useState } from 'react';
-import { Activity, ArrowRight } from 'lucide-react';
+import { Activity, ArrowRight, Loader2 } from 'lucide-react';
 import { useAlertas, AlertaGenesis } from '../hooks/useAlertas';
+import { consumeCredits } from '../services/api';
 
 interface ConfluenceScoreProps {
     onAnalyzeAnomaly?: (ex: string, pair: string, tf: string) => void;
@@ -9,6 +10,8 @@ interface ConfluenceScoreProps {
 export const ConfluenceScore: React.FC<ConfluenceScoreProps> = ({ onAnalyzeAnomaly }) => {
     const { alertas } = useAlertas();
     const [currentAlerta, setCurrentAlerta] = useState<AlertaGenesis | null>(null);
+    const [isDebiting, setIsDebiting] = useState(false);
+    const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
     useEffect(() => {
         if (alertas.length > 0) {
@@ -18,8 +21,19 @@ export const ConfluenceScore: React.FC<ConfluenceScoreProps> = ({ onAnalyzeAnoma
         }
     }, [alertas]);
 
-    const handleAnalyze = () => {
-        if (onAnalyzeAnomaly && currentAlerta) {
+    const handleAnalyze = async () => {
+        if (isDebiting || !onAnalyzeAnomaly || !currentAlerta) return;
+        setIsDebiting(true);
+        setErrorMsg(null);
+
+        const idempotencyKey = crypto.randomUUID();
+        try {
+            const result = await consumeCredits('micro_radar', idempotencyKey);
+            if (!result.success) {
+                setErrorMsg(result.error || 'Créditos insuficientes');
+                return;
+            }
+            // Débito ok — navegar para análise
             onAnalyzeAnomaly(
                 currentAlerta.corretora || 'BINANCE',
                 currentAlerta.ativo,
@@ -31,6 +45,10 @@ export const ConfluenceScore: React.FC<ConfluenceScoreProps> = ({ onAnalyzeAnoma
                     block: 'start'
                 });
             }, 100);
+        } catch {
+            setErrorMsg('Erro de rede. Tente novamente.');
+        } finally {
+            setIsDebiting(false);
         }
     };
 
@@ -80,13 +98,27 @@ export const ConfluenceScore: React.FC<ConfluenceScoreProps> = ({ onAnalyzeAnoma
 
                                 <button
                                     onClick={handleAnalyze}
-                                    className="w-full flex items-center justify-center gap-2 bg-genesis-accent hover:bg-genesis-accent/90 text-white font-bold py-1.5 rounded-md text-[9px] uppercase tracking-wider transition-all mb-1.5 focus:outline-none focus:ring-1 focus:ring-genesis-accent"
+                                    disabled={isDebiting}
+                                    className="w-full flex items-center justify-center gap-2 bg-genesis-accent hover:bg-genesis-accent/90 text-white font-bold py-1.5 rounded-md text-[9px] uppercase tracking-wider transition-all mb-1.5 focus:outline-none focus:ring-1 focus:ring-genesis-accent disabled:opacity-50 disabled:cursor-not-allowed"
                                 >
-                                    Analisar Agora <ArrowRight size={10} />
+                                    {isDebiting ? (
+                                        <><Loader2 size={10} className="animate-spin" /> Debitando...</>
+                                    ) : (
+                                        <>Analisar Agora <ArrowRight size={10} /></>
+                                    )}
                                 </button>
 
-                                <div className="text-center">
-                                    <span className="text-[8px] text-gray-500 font-mono tracking-wide">50 creditos</span>
+                                {errorMsg && (
+                                    <div className="text-center mb-1">
+                                        <span className="text-[8px] text-red-400 font-mono">{errorMsg}</span>
+                                    </div>
+                                )}
+
+                                <div className="text-center relative group/cost cursor-help">
+                                    <span className="text-[8px] text-gray-500 font-mono tracking-wide">75 creditos</span>
+                                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-44 p-2.5 bg-black border border-white/5 rounded-lg shadow-[0_10px_40px_rgba(0,0,0,0.9)] opacity-0 invisible group-hover/cost:opacity-100 group-hover/cost:visible transition-all duration-300 pointer-events-none z-[999999] scale-95 group-hover/cost:scale-100 origin-bottom text-center">
+                                        <span className="text-[10px] text-gray-300 leading-relaxed">Cada análise do Micro Radar consome 75 créditos do seu saldo.</span>
+                                    </div>
                                 </div>
                             </>
                         ) : (

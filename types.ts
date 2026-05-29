@@ -172,6 +172,8 @@ export interface SavedAnalysis {
   adx: number;
   entry_price: number;
   target_price: number;
+  target_price2: number;
+  target_price3: number;
   stop_loss: number;
   status: 'PENDENTE' | 'ACERTOU' | 'ERROU';
   profit_loss?: number;

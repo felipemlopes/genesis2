@@ -189,33 +189,16 @@ const GenesisPage: React.FC = () => {
           stop_loss: extractNum(data.execucao?.setup?.stop || 0),
           status: 'PENDENTE',
         };
-        saveAnalysisToHistory(savedAnalysis);
-
-        try {
-          const token = localStorage.getItem('genesis_token');
-          if (token) {
-            fetch('/api/salvar-analise', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json', authorization: `Bearer ${token}` },
-              body: JSON.stringify({
-                ativo: data.pair || pairToUse,
-                corretora: exchange || 'BINANCE',
-                timeframe: analysisMetadata.timeframe || timeframe,
-                score: score,
-                vies: data.vies || data.viés || data.confluenciaRecomendada || '',
-                direcao: data.direcaoProvavel || '',
-                alavancagem: data.gestaoRisco?.alavancagemRecomendada || '',
-                resumo_analise: (data.sinteseDaAnalise || '').substring(0, 500),
-                setup_entrada: JSON.stringify(data.execucao?.setup || {}).substring(0, 500),
-                stop_loss: extractNum(data.execucao?.setup?.stop || 0),
-                take_profit_1: extractNum(data.execucao?.setup?.tp1 || 0),
-                take_profit_2: extractNum(data.execucao?.setup?.tp2 || 0),
-                take_profit_3: extractNum(data.execucao?.setup?.tp3 || 0),
-                risco_retorno: data.execucao?.setup?.rr1 || '',
-              }),
-            }).catch(() => {});
-          }
-        } catch (e) {}
+        saveAnalysisToHistory(savedAnalysis, {
+          corretora: exchange || 'BINANCE',
+          vies: data.vies || data.viés || data.confluenciaRecomendada || '',
+          alavancagem: data.gestaoRisco?.alavancagemRecomendada || '',
+          resumo_analise: (data.sinteseDaAnalise || '').substring(0, 500),
+          setup_entrada: JSON.stringify(data.execucao?.setup || {}).substring(0, 500),
+          take_profit_2: extractNum(data.execucao?.setup?.tp2 || 0),
+          take_profit_3: extractNum(data.execucao?.setup?.tp3 || 0),
+          risco_retorno: data.execucao?.setup?.rr1 || '',
+        });
       }
 
       setResult(data);
