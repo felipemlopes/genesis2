@@ -364,7 +364,7 @@ const GeopoliticalRadar = () => {
   };
 
   return (
-    <div className="h-full min-h-[800px] w-full flex flex-col relative bg-[#050505] text-white overflow-hidden font-sans rounded-3xl">
+    <div className="h-full w-full flex flex-col relative bg-[#050505] text-white overflow-hidden font-sans rounded-3xl" style={{ height: 'calc(100vh - 160px)' }}>
       
       {/* Header - Reposicionado e mais leve */}
       <div className="absolute top-6 left-6 z-[1000] flex items-center gap-[16px]">
@@ -417,7 +417,7 @@ const GeopoliticalRadar = () => {
       </div>
 
       {/* Map Container */}
-      <div className="flex-1 relative z-0">
+      <div className="flex-1 relative z-0 min-h-0">
         {/* Efeito de Varredura (Scanning) */}
         {isScanning && (
           <div className="absolute inset-0 pointer-events-none z-[400] overflow-hidden">

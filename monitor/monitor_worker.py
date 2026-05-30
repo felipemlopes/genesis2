@@ -145,27 +145,36 @@ class MonitorWorker:
             return False
 
     def gravar_banco(self, alerta, enviado_telegram):
+        """Grava alerta direto no MySQL (evita timeout do artisan serve single-thread)"""
         try:
-            laravel_url = os.getenv('LARAVEL_API_URL', 'http://localhost:8000/api')
-            payload = {
-                'ativo': alerta['ativo'],
-                'tipo': alerta['tipo'],
-                'mensagem': alerta['mensagem'],
-                'direcao': alerta['direcao'],
-                'urgencia': alerta['urgencia'],
-                'corretora': alerta['corretora'],
-                'timeframe': alerta.get('timeframe', '1h'),
-                'preco_atual': alerta['preco_atual'],
-                'variacao_pct': alerta['variacao_pct'],
-                'score': alerta.get('score', 0),
-            }
-            resp = requests.post(f"{laravel_url}/webhook/alertas", json=payload, timeout=5)
-            if resp.status_code in (200, 201):
-                logger.info(f"Alerta enviado ao Laravel: {alerta['ativo']} - {alerta['tipo']}")
-            else:
-                logger.error(f"Laravel respondeu {resp.status_code}: {resp.text[:200]}")
+            conn = self.conectar_bd()
+            if not conn:
+                logger.error("Não foi possível conectar ao banco para gravar alerta.")
+                return
+
+            with conn.cursor() as cursor:
+                sql = """
+                    INSERT INTO genesis_alertas (ativo, tipo, mensagem, direcao, urgencia, corretora, timeframe, preco_atual, variacao_pct, enviado_sse, enviado_telegram, created_at, updated_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 0, %s, NOW(), NOW())
+                """
+                cursor.execute(sql, (
+                    alerta['ativo'],
+                    alerta['tipo'],
+                    alerta['mensagem'],
+                    alerta['direcao'],
+                    alerta['urgencia'],
+                    alerta['corretora'],
+                    alerta.get('timeframe', '1h'),
+                    alerta['preco_atual'],
+                    alerta['variacao_pct'],
+                    1 if enviado_telegram else 0,
+                ))
+                conn.commit()
+                logger.info(f"Alerta gravado no banco: {alerta['ativo']} - {alerta['tipo']}")
+
+            conn.close()
         except Exception as e:
-            logger.error(f"Erro ao enviar alerta ao Laravel: {e}")
+            logger.error(f"Erro ao gravar alerta no banco: {e}")
 
     def processar_alerta(self, ativo, tipo, mensagem, direcao, urgencia, corretora, preco_atual, variacao_pct=0.0, score=0):
         chave_cache = f"{ativo}_{tipo}_{corretora}"

@@ -247,6 +247,7 @@ export function connectAlertasSSE(onMessage: (data: any) => void): EventSource {
     if (event.data === 'ping') return;
     try {
       const data = JSON.parse(event.data);
+      if (data._reconnect) return; // Servidor pediu reconexão — EventSource reconecta sozinho
       onMessage(data);
     } catch (_) {}
   };
