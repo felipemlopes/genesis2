@@ -7,9 +7,14 @@ interface GeoEngineContextType {
   events: GeoEvent[];
   isScanning: boolean;
   chaosScore: number;
+  isOnRadarPage: boolean;
+  pendingToastEvents: GeoEvent[];
   start: () => void;
   stop: () => void;
   toggle: () => void;
+  setIsOnRadarPage: (value: boolean) => void;
+  dismissToast: (eventId: string) => void;
+  dismissAllToasts: () => void;
 }
 
 const GeoEngineContext = createContext<GeoEngineContextType | undefined>(undefined);
@@ -24,12 +29,25 @@ export const GeoEngineProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const [events, setEvents] = useState<GeoEvent[]>(() => geoEngine.getEvents());
   const [isScanning, setIsScanning] = useState(() => geoEngine.isActive());
   const [chaosScore, setChaosScore] = useState(0);
+  const [isOnRadarPage, setIsOnRadarPage] = useState(false);
+  const [pendingToastEvents, setPendingToastEvents] = useState<GeoEvent[]>([]);
   const initialized = useRef(false);
+  const isOnRadarPageRef = useRef(isOnRadarPage);
 
-  // Subscribe to engine events
+  // Keep ref in sync with state
   useEffect(() => {
-    const unsubscribe = geoEngine.subscribe((newEvents) => {
+    isOnRadarPageRef.current = isOnRadarPage;
+  }, [isOnRadarPage]);
+
+  // Subscribe to engine events and trigger toasts for new events when not on radar page
+  useEffect(() => {
+    const unsubscribe = geoEngine.subscribe((newEvents, delta) => {
       setEvents(newEvents);
+
+      // If a new event arrived and user is NOT on the radar page, queue toast
+      if (delta && !isOnRadarPageRef.current) {
+        setPendingToastEvents(prev => [...prev, delta]);
+      }
     });
     return () => { unsubscribe(); };
   }, []);
@@ -80,8 +98,28 @@ export const GeoEngineProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     }
   }, [start, stop]);
 
+  const dismissToast = useCallback((eventId: string) => {
+    setPendingToastEvents(prev => prev.filter(e => e.id !== eventId));
+  }, []);
+
+  const dismissAllToasts = useCallback(() => {
+    setPendingToastEvents([]);
+  }, []);
+
   return (
-    <GeoEngineContext.Provider value={{ events, isScanning, chaosScore, start, stop, toggle }}>
+    <GeoEngineContext.Provider value={{
+      events,
+      isScanning,
+      chaosScore,
+      isOnRadarPage,
+      pendingToastEvents,
+      start,
+      stop,
+      toggle,
+      setIsOnRadarPage,
+      dismissToast,
+      dismissAllToasts,
+    }}>
       {children}
     </GeoEngineContext.Provider>
   );

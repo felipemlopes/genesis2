@@ -282,3 +282,40 @@ export async function analyze(imageFile: File, params: Record<string, any>) {
   });
   return res.json();
 }
+
+// ─── ALERTAS — CONFIGURAÇÃO E MONITORAMENTO ───────────────────
+
+export async function fetchAlertaConfig() {
+  const res = await fetch(`${API_BASE}/v1/admin/alerta-config`, { headers: getAuthHeaders() });
+  return res.json();
+}
+
+export async function updateAlertaConfig(carteira: string, data: { passo_valorizacao: number; passo_desvalorizacao: number; intervalo_minutos: number; ativo: boolean }) {
+  const res = await fetch(`${API_BASE}/v1/admin/alerta-config/${encodeURIComponent(carteira)}`, {
+    method: 'PUT',
+    headers: getAuthHeaders(),
+    body: JSON.stringify(data),
+  });
+  return res.json();
+}
+
+export async function fetchMonitorStatus() {
+  const res = await fetch(`${API_BASE}/v1/admin/monitor/status`, { headers: getAuthHeaders() });
+  return res.json();
+}
+
+export async function resetMonitorAlerta(carteira: string) {
+  const res = await fetch(`${API_BASE}/v1/admin/monitor/reset/${encodeURIComponent(carteira)}`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+  });
+  return res.json();
+}
+
+export async function fetchMonitorLog(page?: number) {
+  const url = page
+    ? `${API_BASE}/v1/admin/monitor/log?page=${page}`
+    : `${API_BASE}/v1/admin/monitor/log`;
+  const res = await fetch(url, { headers: getAuthHeaders() });
+  return res.json();
+}

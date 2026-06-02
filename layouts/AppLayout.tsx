@@ -8,7 +8,9 @@ import Sidebar from '../components/Sidebar';
 import MarketTicker from '../components/MarketTicker';
 import MarketWidget from '../components/MarketWidget';
 import GlobalGeopoliticalAlert from '../components/GlobalGeopoliticalAlert';
+import GeoNotificationToast from '../components/GeoNotificationToast';
 import AlertaPopup from '../components/AlertaPopup';
+import RadarNewsPopup from '../components/RadarNewsPopup';
 import OportunidadePopup from '../components/OportunidadePopup';
 import AdminPanel from '../components/AdminPanel';
 
@@ -62,6 +64,7 @@ const AppLayout = () => {
   return (
     <div className="flex h-screen bg-genesis-base text-genesis-text-primary overflow-hidden font-sans selection:bg-genesis-positive selection:text-black animate-in fade-in duration-1000">
       <GlobalGeopoliticalAlert onNavigateToRadar={() => navigate('/dashboard/geopolitica')} />
+      <GeoNotificationToast onNavigateToRadar={() => navigate('/dashboard/geopolitica')} />
 
       {targetHitPopup.show && targetHitPopup.trade && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 animate-in fade-in zoom-in duration-300">
@@ -179,6 +182,7 @@ const AppLayout = () => {
 
       {showAdmin && <AdminPanel onClose={() => setShowAdmin(false)} />}
       <AlertaPopup />
+      <RadarNewsPopup />
       <OportunidadePopup onAnalyze={(ex, pair, tf) => { setExchange(ex); setSelectedPair(pair); setTimeframe(tf); }} />
     </div>
   );

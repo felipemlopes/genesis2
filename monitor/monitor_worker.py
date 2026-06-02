@@ -27,8 +27,7 @@ MYSQL_USER = os.getenv('MYSQL_USER', 'root')
 MYSQL_PASSWORD = os.getenv('MYSQL_PASSWORD', '')
 MYSQL_DATABASE = os.getenv('MYSQL_DATABASE', 'genesis_db')
 MYSQL_PORT = int(os.getenv('MYSQL_PORT', 3306))
-TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
-TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
+
 
 PARES_MONITORADOS = [
     "BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT",
@@ -117,32 +116,7 @@ class MonitorWorker:
             logger.error(f"Erro ao conectar no banco de dados: {e}")
             return None
 
-    def enviar_telegram(self, alerta):
-        if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
-            return False
 
-        url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-
-        emoji_dir = "🟢" if alerta['direcao'] == 'BULLISH' else ("🔴" if alerta['direcao'] == 'BEARISH' else "⚪")
-        msg = (
-            f"🚨 *GENESIS ALERTA: {alerta['urgencia']}* 🚨\n\n"
-            f"📌 *Ativo:* {alerta['ativo']} ({alerta['corretora']})\n"
-            f"🔄 *Tipo:* {alerta['tipo']}\n"
-            f"📈 *Direção:* {emoji_dir} {alerta['direcao']}\n"
-            f"💰 *Preço:* ${alerta['preco_atual']:,.4f}\n\n"
-            f"📝 *Detalhes:* {alerta['mensagem']}"
-        )
-
-        try:
-            resposta = requests.post(url, json={
-                "chat_id": TELEGRAM_CHAT_ID,
-                "text": msg,
-                "parse_mode": "Markdown"
-            }, timeout=5)
-            return resposta.status_code == 200
-        except Exception as e:
-            logger.error(f"Erro ao enviar Telegram: {e}")
-            return False
 
     def gravar_banco(self, alerta, enviado_telegram):
         """Grava alerta direto no MySQL (evita timeout do artisan serve single-thread)"""
@@ -202,8 +176,7 @@ class MonitorWorker:
 
         logger.info(f"🔔 Novo Alerta Detectado! {alerta['tipo']} - {alerta['ativo']} ({alerta['corretora']})")
 
-        enviado_telegram = self.enviar_telegram(alerta)
-        self.gravar_banco(alerta, enviado_telegram)
+        self.gravar_banco(alerta, False)
 
     def filtrar_volume(self, ativo, volume_24h):
         if volume_24h < VOLUME_MINIMO_DIARIO:
