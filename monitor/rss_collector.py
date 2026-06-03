@@ -161,14 +161,14 @@ class RSSCollector:
             parsed_entry = self._parse_entry(entry, name)
             if parsed_entry:
                 # Filtrar entradas antigas (>6h) para evitar flood na primeira execução
-                if self._is_recent(entry, hours=1):
+                if self._is_recent(entry, hours=0, minutes=10):
                     entries.append(parsed_entry)
 
         return entries
 
     @staticmethod
-    def _is_recent(entry, hours: int = 6) -> bool:
-        """Verifica se a entrada foi publicada nas últimas N horas."""
+    def _is_recent(entry, hours: int = 0, minutes: int = 10) -> bool:
+        """Verifica se a entrada foi publicada nos últimos N minutos."""
         import time as _time
         from calendar import timegm
 
@@ -179,7 +179,7 @@ class RSSCollector:
 
         try:
             entry_timestamp = timegm(published_parsed)
-            cutoff = _time.time() - (hours * 3600)
+            cutoff = _time.time() - (hours * 3600) - (minutes * 60)
             return entry_timestamp >= cutoff
         except (TypeError, ValueError):
             return True

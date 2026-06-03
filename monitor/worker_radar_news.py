@@ -177,21 +177,42 @@ class RadarNewsWorker:
             else:
                 classified = []
 
-            # Dispatch Telegram para entradas CRITICAL/HIGH (max 5 por ciclo)
+            # Dispatch Telegram — apenas a notícia mais crítica do ciclo (1 por vez)
+            # Só envia se ainda não foi despachada pro Telegram (telegram_sent=0)
             if classified:
-                dispatched = 0
-                for entry in classified:
-                    if dispatched >= 5:
+                # Prioriza CRITICAL, depois HIGH
+                critical = [e for e in classified if e.get('severity') == 'CRITICAL']
+                high = [e for e in classified if e.get('severity') == 'HIGH']
+                candidates_tg = critical + high
+                sent = False
+                for top_entry in candidates_tg:
+                    if sent:
                         break
-                    sev = entry.get('severity', 'LOW')
-                    if sev == 'CRITICAL':
-                        self.telegram_dispatcher.send_news_alert(entry)
-                        dispatched += 1
-                        time.sleep(3)
-                    elif sev == 'HIGH':
-                        self.telegram_dispatcher.send_news_alert(entry)
-                        dispatched += 1
-                        time.sleep(3)
+                    # Verifica no banco se já foi enviado pro Telegram
+                    conn_check = self.conectar_bd()
+                    if conn_check:
+                        try:
+                            with conn_check.cursor() as cur:
+                                cur.execute(
+                                    "SELECT telegram_sent FROM genesis_radar_news WHERE title_hash = %s LIMIT 1",
+                                    (top_entry.get('title_hash', ''),)
+                                )
+                                row = cur.fetchone()
+                                if row and row.get('telegram_sent'):
+                                    continue  # já enviado, pula
+                            # Envia
+                            self.telegram_dispatcher.send_news_alert(top_entry)
+                            # Marca como enviado no banco
+                            with conn_check.cursor() as cur:
+                                cur.execute(
+                                    "UPDATE genesis_radar_news SET telegram_sent = 1 WHERE title_hash = %s",
+                                    (top_entry.get('title_hash', ''),)
+                                )
+                            conn_check.commit()
+                            sent = True
+                            logger.info(f"[Telegram] Despachado: {top_entry.get('title', '')[:60]}... ({top_entry.get('severity')})")
+                        finally:
+                            conn_check.close()
             logger.info(f"Ciclo RSS concluído. {len(entries)} entrada(s) nova(s) após dedup.")
         except Exception as e:
             logger.error(f"Erro no ciclo RSS: {e}")
