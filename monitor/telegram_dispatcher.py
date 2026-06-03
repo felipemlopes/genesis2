@@ -27,7 +27,6 @@ BIAS_LABELS = {
     'NEUTRAL': '➖ NEUTRAL',
 }
 
-SIGNATURE = '-- @cripto.ico'
 MAX_SUMMARY_LENGTH = 500
 
 
@@ -139,9 +138,6 @@ class TelegramDispatcher:
         if source_url:
             lines.append(f'🔗 <a href="{source_url}">Fonte</a>')
 
-        lines.append('')
-        lines.append(SIGNATURE)
-
         return '\n'.join(lines)
 
     def _format_discovery_message(self, entry: dict) -> str:
@@ -171,9 +167,6 @@ class TelegramDispatcher:
 
         if source_url:
             lines.append(f'🔗 <a href="{source_url}">CoinGecko</a>')
-
-        lines.append('')
-        lines.append(SIGNATURE)
 
         return '\n'.join(lines)
 
