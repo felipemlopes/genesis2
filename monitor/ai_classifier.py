@@ -84,6 +84,8 @@ class AIClassifier:
     def classify(self, entries: list[dict]) -> list[dict]:
         """Classifica uma lista de entradas de notícias via Gemini 2.5 Flash.
 
+        Envia em batches de 5 para evitar truncamento de resposta.
+
         Args:
             entries: Lista de dicts com pelo menos 'title', 'source', 'summary'.
 
@@ -99,26 +101,40 @@ class AIClassifier:
             logger.error("[AI] GEMINI_API_KEY não configurada. Pulando classificação.")
             return []
 
-        # Monta texto das entradas para o prompt
-        entries_text = self._format_entries_for_prompt(entries)
-        prompt = CLASSIFICATION_PROMPT.format(entries_text=entries_text)
+        BATCH_SIZE = 5
+        all_classified = []
 
-        # Chama Gemini API (com retry)
-        raw_response = self._call_gemini(prompt)
-        if raw_response is None:
-            logger.error("[AI] Falha ao obter resposta do Gemini. Nenhuma entrada classificada.")
-            return []
+        for i in range(0, len(entries), BATCH_SIZE):
+            batch = entries[i:i + BATCH_SIZE]
+            logger.info(f"[AI] Classificando batch {i // BATCH_SIZE + 1} ({len(batch)} entradas)...")
 
-        # Parseia resposta JSON
-        classifications = self._parse_response(raw_response)
-        if classifications is None:
-            logger.error("[AI] Falha ao parsear resposta do Gemini.")
-            return []
+            # Monta texto das entradas para o prompt
+            entries_text = self._format_entries_for_prompt(batch)
+            prompt = CLASSIFICATION_PROMPT.format(entries_text=entries_text)
 
-        # Enriquece entradas originais com classificação
-        classified = self._merge_classifications(entries, classifications)
-        logger.info(f"[AI] {len(classified)}/{len(entries)} entrada(s) classificada(s) com sucesso.")
-        return classified
+            # Chama Gemini API (com retry)
+            raw_response = self._call_gemini(prompt)
+            if raw_response is None:
+                logger.warning(f"[AI] Falha no batch {i // BATCH_SIZE + 1}. Pulando.")
+                continue
+
+            # Parseia resposta JSON
+            classifications = self._parse_response(raw_response)
+            if classifications is None:
+                logger.warning(f"[AI] Parse falhou no batch {i // BATCH_SIZE + 1}. Pulando.")
+                continue
+
+            # Enriquece entradas originais com classificação
+            classified = self._merge_classifications(batch, classifications)
+            all_classified.extend(classified)
+
+            # Pequena pausa entre batches para evitar rate limit
+            if i + BATCH_SIZE < len(entries):
+                import time
+                time.sleep(1)
+
+        logger.info(f"[AI] {len(all_classified)}/{len(entries)} entrada(s) classificada(s) com sucesso.")
+        return all_classified
 
     def score_discoveries(self, entries: list[dict]) -> list[dict]:
         """Atribui discovery_score (1-10) a tokens via Gemini 2.5 Flash.
