@@ -22,10 +22,7 @@ module.exports = {
             args: "monitor/worker_radar_news.py",
             autorestart: true,
             max_restarts: 10,
-            restart_delay: 5000,
-            env: {
-                NODE_ENV: "production"
-            }
+            restart_delay: 5000
         }
     ]
 };

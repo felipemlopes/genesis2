@@ -19,7 +19,7 @@ from ai_classifier import AIClassifier
 from telegram_dispatcher import TelegramDispatcher
 from discovery_radar import DiscoveryRadar
 
-load_dotenv()
+load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env'))
 
 # ─── Variáveis de ambiente ────────────────────────────────────────────────────
 

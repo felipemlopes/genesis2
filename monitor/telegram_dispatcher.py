@@ -12,9 +12,6 @@ import requests
 
 logger = logging.getLogger('radar-news')
 
-TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN', '')
-TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID', '')
-TELEGRAM_API_URL = f'https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage'
 TELEGRAM_TIMEOUT = 15  # seconds
 RETRY_DELAY = 10       # seconds
 HIGH_SEVERITY_DELAY = 180  # 3 minutes in seconds
@@ -51,8 +48,8 @@ class TelegramDispatcher:
     """Formata e envia alertas para Telegram via Bot API."""
 
     def __init__(self, bot_token: str | None = None, chat_id: str | None = None):
-        self.bot_token = bot_token or TELEGRAM_BOT_TOKEN
-        self.chat_id = chat_id or TELEGRAM_CHAT_ID
+        self.bot_token = bot_token or os.getenv('TELEGRAM_BOT_TOKEN', '')
+        self.chat_id = chat_id or os.getenv('TELEGRAM_CHAT_ID', '')
         self.api_url = f'https://api.telegram.org/bot{self.bot_token}/sendMessage'
 
     def send_news_alert(self, entry: dict) -> bool:
