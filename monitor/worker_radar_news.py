@@ -177,15 +177,21 @@ class RadarNewsWorker:
             else:
                 classified = []
 
-            # Dispatch Telegram para entradas CRITICAL/HIGH
+            # Dispatch Telegram para entradas CRITICAL/HIGH (max 5 por ciclo)
             if classified:
+                dispatched = 0
                 for entry in classified:
+                    if dispatched >= 5:
+                        break
                     sev = entry.get('severity', 'LOW')
                     if sev == 'CRITICAL':
                         self.telegram_dispatcher.send_news_alert(entry)
+                        dispatched += 1
+                        time.sleep(3)
                     elif sev == 'HIGH':
-                        # HIGH será despachado com delay em task 6.4
                         self.telegram_dispatcher.send_news_alert(entry)
+                        dispatched += 1
+                        time.sleep(3)
             logger.info(f"Ciclo RSS concluído. {len(entries)} entrada(s) nova(s) após dedup.")
         except Exception as e:
             logger.error(f"Erro no ciclo RSS: {e}")
