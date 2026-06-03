@@ -350,7 +350,11 @@ class DiscoveryRadar:
 
             # 2. Volume mínimo > $5M USD
             volume = c.get('volume_24h', 0)
-            if not isinstance(volume, (int, float)) or volume <= MIN_VOLUME_24H:
+            try:
+                volume = float(volume) if volume else 0
+            except (ValueError, TypeError):
+                volume = 0
+            if volume <= MIN_VOLUME_24H:
                 logger.debug(
                     f'[Discovery][Filter] {symbol} excluído — volume '
                     f'${volume:,.0f} <= ${MIN_VOLUME_24H:,.0f}.'

@@ -17,28 +17,20 @@ logger = logging.getLogger('radar-news')
 
 RSS_FEEDS = [
     {
-        'name': 'Reuters',
-        'url': 'https://www.reutersagency.com/feed/?best-topics=business-finance&post_type=best',
-    },
-    {
-        'name': 'Bloomberg',
-        'url': 'https://feeds.bloomberg.com/markets/news.rss',
-    },
-    {
         'name': 'CoinDesk',
         'url': 'https://www.coindesk.com/arc/outboundfeeds/rss/',
-    },
-    {
-        'name': 'The Block',
-        'url': 'https://www.theblock.co/rss.xml',
     },
     {
         'name': 'Decrypt',
         'url': 'https://decrypt.co/feed',
     },
     {
-        'name': 'FT Markets',
-        'url': 'https://www.ft.com/markets?format=rss',
+        'name': 'Cointelegraph',
+        'url': 'https://cointelegraph.com/rss',
+    },
+    {
+        'name': 'Bitcoin Magazine',
+        'url': 'https://bitcoinmagazine.com/feed',
     },
 ]
 

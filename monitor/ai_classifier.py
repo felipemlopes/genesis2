@@ -79,7 +79,7 @@ class AIClassifier:
         Args:
             api_key: Gemini API key. Se None, usa GEMINI_API_KEY do ambiente.
         """
-        self.api_key = api_key or GEMINI_API_KEY
+        self.api_key = api_key or os.getenv('GEMINI_API_KEY', '')
 
     def classify(self, entries: list[dict]) -> list[dict]:
         """Classifica uma lista de entradas de notícias via Gemini 2.5 Flash.
