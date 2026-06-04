@@ -132,7 +132,6 @@ class TelegramDispatcher:
             '',
             f'📊 <b>Impacto:</b> {impact}',
             f'💰 <b>Ativos:</b> {assets_str}',
-            f'{bias_label.split(" ")[0]} <b>Viés:</b> {bias}',
         ]
 
         if source_url:
