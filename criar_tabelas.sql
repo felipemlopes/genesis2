@@ -13,14 +13,20 @@ CREATE TABLE IF NOT EXISTS genesis_alertas (
     timeframe VARCHAR(10) NOT NULL DEFAULT '1h' COMMENT 'Timeframe do alerta (ex: 1h, 4h, 1d)',
     preco_atual DECIMAL(20, 8) NOT NULL COMMENT 'Preço da criptomoeda no momento do alerta',
     variacao_pct DECIMAL(10, 4) NOT NULL COMMENT 'Variação percentual associada ao evento, se aplicável',
+    motivos JSON DEFAULT NULL COMMENT 'Array JSON com os motivos/indicadores que geraram o alerta',
+    timeframes JSON DEFAULT NULL COMMENT 'Array JSON com timeframes onde o sinal aparece',
+    score INT UNSIGNED NOT NULL DEFAULT 0 COMMENT 'Score de confiança do alerta (0-100)',
+    expires_at DATETIME DEFAULT NULL COMMENT 'Data/hora em que o alerta expira e não deve mais ser exibido',
     enviado_sse TINYINT(1) NOT NULL DEFAULT 0 COMMENT 'Flag de controle: 1 se foi enviado pela API SSE, 0 caso contrário',
     enviado_telegram TINYINT(1) DEFAULT 0 COMMENT 'Flag de controle: 1 se foi enviado via Telegram, 0 caso contrário',
     criado_em DATETIME NOT NULL COMMENT 'Data e hora em que o alerta foi gerado pelo worker',
+    updated_at DATETIME DEFAULT NULL COMMENT 'Última atualização do registro',
     
     -- Índices para melhorar a performance nas buscas do SSE e controle de duplicadas
     INDEX idx_enviado_sse (enviado_sse),
     INDEX idx_criado_em (criado_em),
-    INDEX idx_multiplo (ativo, tipo, criado_em)
+    INDEX idx_multiplo (ativo, tipo, criado_em),
+    INDEX idx_expires_at (expires_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Query de verificação (pode ser executada para checar os últimos registros lidos no SSE)

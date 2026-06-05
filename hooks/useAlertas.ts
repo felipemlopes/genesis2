@@ -1,22 +1,28 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
 
 export interface AlertaGenesis {
     id: number;
-    ativo: string;
     tipo: 'SPIKE_VOLUME' | 'MOVIMENTO_BRUSCO' | 'CVD_DIVERGENCIA' | 'FUNDING_EXTREMO' | 'OI_SPIKE' | 'BOOK_IMBALANCE';
     mensagem: string;
     direcao: 'BULLISH' | 'BEARISH' | 'NEUTRO';
     urgencia: 'ALTA' | 'MEDIA' | 'BAIXA';
-    corretora: string;
     timeframe: string;
     score: number;
-    preco_atual: number;
     variacao_pct: number;
     created_at: string;
     criado_em: string;
     timestamp_local: number;
+    // New required fields
+    motivos: { label: string; value: string }[];
+    timeframes: string[];
+    expires_at: string;
+    // Paywall — optional until revealed
+    ativo?: string;
+    corretora?: string;
+    preco_atual?: number;
+    revelado?: boolean;
     is_teste?: boolean;
 }
 
@@ -88,68 +94,28 @@ function subscribePolling(listener: AlertaListener) {
 
 export const useAlertas = () => {
     const [alertas, setAlertas] = useState<AlertaGenesis[]>([]);
-    const temporizadoresRef = useRef<{ [id: number]: NodeJS.Timeout }>({});
-    
+
     const fecharAlerta = useCallback((id: number) => {
         setAlertas(prev => prev.filter(alerta => alerta.id !== id));
-        if (temporizadoresRef.current[id]) {
-            clearTimeout(temporizadoresRef.current[id]);
-            delete temporizadoresRef.current[id];
-        }
     }, []);
 
     const adicionarAlerta = useCallback((novoAlerta: AlertaGenesis) => {
         setAlertas(prev => {
             if (prev.some(a => a.id === novoAlerta.id)) return prev;
-            const novaLista = [novoAlerta, ...prev].slice(0, 5);
-            return novaLista;
+            // Only keep the latest alert — new one replaces all previous
+            return [novoAlerta];
         });
-
-        temporizadoresRef.current[novoAlerta.id] = setTimeout(() => {
-            fecharAlerta(novoAlerta.id);
-        }, 12000);
-    }, [fecharAlerta]);
+    }, []);
 
     useEffect(() => {
         const unsubscribe = subscribePolling(adicionarAlerta);
         return () => {
             unsubscribe();
-            Object.values(temporizadoresRef.current).forEach(clearTimeout);
         };
     }, [adicionarAlerta]);
-
-    const dispararAlertaTeste = useCallback((mockDados?: Partial<AlertaGenesis>) => {
-        const fakeId = Date.now() + Math.floor(Math.random() * 1000);
-        const alertaMock: AlertaGenesis = {
-            id: fakeId,
-            ativo: mockDados?.ativo || 'BTCUSDT',
-            tipo: mockDados?.tipo || 'SPIKE_VOLUME',
-            mensagem: mockDados?.mensagem || 'Spike massivo detectado em simulacao de teste.',
-            direcao: mockDados?.direcao || 'BULLISH',
-            urgencia: mockDados?.urgencia || 'ALTA',
-            corretora: mockDados?.corretora || 'BINANCE',
-            timeframe: mockDados?.timeframe || '1h',
-            score: mockDados?.score || 85,
-            preco_atual: mockDados?.preco_atual || 65000.50,
-            variacao_pct: mockDados?.variacao_pct || 2.5,
-            criado_em: new Date().toISOString(),
-            timestamp_local: Date.now(),
-            is_teste: true,
-            ...mockDados
-        };
-        adicionarAlerta(alertaMock);
-    }, [adicionarAlerta]);
-    
-    const limparAlertasTeste = useCallback(() => {
-        setAlertas([]);
-        Object.values(temporizadoresRef.current).forEach(clearTimeout);
-        temporizadoresRef.current = {};
-    }, []);
 
     return { 
         alertas, 
-        fecharAlerta, 
-        dispararAlertaTeste,
-        limparAlertasTeste
+        fecharAlerta
     };
 };

@@ -128,8 +128,8 @@ class MonitorWorker:
 
             with conn.cursor() as cursor:
                 sql = """
-                    INSERT INTO genesis_alertas (ativo, tipo, mensagem, direcao, urgencia, corretora, timeframe, preco_atual, variacao_pct, enviado_sse, enviado_telegram, created_at, updated_at)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 0, %s, NOW(), NOW())
+                    INSERT INTO genesis_alertas (ativo, tipo, mensagem, direcao, urgencia, corretora, timeframe, preco_atual, variacao_pct, score, enviado_sse, enviado_telegram, created_at, updated_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 0, %s, NOW(), NOW())
                 """
                 cursor.execute(sql, (
                     alerta['ativo'],
@@ -141,6 +141,7 @@ class MonitorWorker:
                     alerta.get('timeframe', '1h'),
                     alerta['preco_atual'],
                     alerta['variacao_pct'],
+                    alerta.get('score', 0),
                     1 if enviado_telegram else 0,
                 ))
                 conn.commit()
@@ -150,7 +151,7 @@ class MonitorWorker:
         except Exception as e:
             logger.error(f"Erro ao gravar alerta no banco: {e}")
 
-    def processar_alerta(self, ativo, tipo, mensagem, direcao, urgencia, corretora, preco_atual, variacao_pct=0.0, score=0):
+    def processar_alerta(self, ativo, tipo, mensagem, direcao, urgencia, corretora, preco_atual, variacao_pct=0.0, score=0, motivos=None, timeframes=None):
         chave_cache = f"{ativo}_{tipo}_{corretora}"
         agora = time.time()
 
@@ -160,6 +161,14 @@ class MonitorWorker:
             return
 
         self.ultimos_alertas[chave_cache] = agora
+
+        # Build motivos from provided list or default from tipo/mensagem
+        if motivos is None:
+            motivos = [{'label': tipo, 'value': mensagem}]
+
+        # Build timeframes from provided list or default to current TIMEFRAME
+        if timeframes is None:
+            timeframes = [TIMEFRAME]
 
         alerta = {
             'ativo': ativo,
@@ -172,6 +181,8 @@ class MonitorWorker:
             'preco_atual': preco_atual,
             'variacao_pct': variacao_pct,
             'score': score,
+            'motivos': motivos,
+            'timeframes': timeframes,
         }
 
         logger.info(f"🔔 Novo Alerta Detectado! {alerta['tipo']} - {alerta['ativo']} ({alerta['corretora']})")

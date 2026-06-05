@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
-import { ActiveTrade, ChartMetadata } from '../types';
+import { ActiveTrade, ChartMetadata, TradeSetup } from '../types';
 import {
   fetchBinancePairs,
   fetchBybitPairs,
@@ -72,6 +72,11 @@ interface AppContextType {
     lastTimeframe: string;
     scanOffset: number;
   }>>;
+
+  analysisResult: TradeSetup | null;
+  setAnalysisResult: React.Dispatch<React.SetStateAction<TradeSetup | null>>;
+  currentAnaliseId: string | null;
+  setCurrentAnaliseId: React.Dispatch<React.SetStateAction<string | null>>;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -118,6 +123,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     lastTimeframe: '4h',
     scanOffset: 0,
   });
+
+  const [analysisResult, setAnalysisResult] = useState<TradeSetup | null>(null);
+  const [currentAnaliseId, setCurrentAnaliseId] = useState<string | null>(null);
 
   const currentPrice = marketData[exchange.toLowerCase() as keyof ExchangeData]?.price;
   const change24h = marketData[exchange.toLowerCase() as keyof ExchangeData]?.change24h;
@@ -334,6 +342,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setTargetHitPopup,
         scannerState,
         setScannerState,
+        analysisResult,
+        setAnalysisResult,
+        currentAnaliseId,
+        setCurrentAnaliseId,
       }}
     >
       {children}

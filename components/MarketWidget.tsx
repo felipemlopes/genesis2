@@ -393,7 +393,7 @@ const MarketWidget: React.FC<MarketWidgetProps> = ({ selectedPair, activeExchang
           </div>
       </div>
 
-      <ConfluenceScore onAnalyzeAnomaly={onAnalyzeAnomaly} />
+      <ConfluenceScore />
 
     </div>
   );

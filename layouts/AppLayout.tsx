@@ -9,9 +9,7 @@ import MarketTicker from '../components/MarketTicker';
 import MarketWidget from '../components/MarketWidget';
 import GlobalGeopoliticalAlert from '../components/GlobalGeopoliticalAlert';
 import GeoNotificationToast from '../components/GeoNotificationToast';
-import AlertaPopup from '../components/AlertaPopup';
 import RadarNewsPopup from '../components/RadarNewsPopup';
-import OportunidadePopup from '../components/OportunidadePopup';
 import AdminPanel from '../components/AdminPanel';
 
 const AppLayout = () => {
@@ -181,9 +179,7 @@ const AppLayout = () => {
       </main>
 
       {showAdmin && <AdminPanel onClose={() => setShowAdmin(false)} />}
-      <AlertaPopup />
       <RadarNewsPopup />
-      <OportunidadePopup onAnalyze={(ex, pair, tf) => { setExchange(ex); setSelectedPair(pair); setTimeframe(tf); }} />
     </div>
   );
 };

@@ -13,7 +13,6 @@ import {
 } from '../services/api';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import AlertConfigPanel from './AlertConfigPanel';
 import MonitorStatusWidget from './MonitorStatusWidget';
 
 interface Ativo {
@@ -753,7 +752,6 @@ const CarteiraCripto = () => {
 
         {isAdmin && (
           <div className="space-y-6 mt-4">
-            <AlertConfigPanel />
             <MonitorStatusWidget />
           </div>
         )}

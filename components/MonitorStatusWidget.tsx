@@ -8,8 +8,11 @@ import {
   TrendingDown,
   CheckCircle,
   XCircle,
+  Settings,
+  X,
 } from 'lucide-react';
 import { fetchMonitorStatus, fetchMonitorLog, resetMonitorAlerta } from '../services/api';
+import AlertConfigPanel from './AlertConfigPanel';
 
 interface CarteiraStatus {
   ultimo_check: string | null;
@@ -70,6 +73,7 @@ const MonitorStatusWidget: React.FC = () => {
   const [logMeta, setLogMeta] = useState<LogMeta>({ current_page: 1, last_page: 1 });
   const [loading, setLoading] = useState(true);
   const [resetting, setResetting] = useState<string | null>(null);
+  const [configModalOpen, setConfigModalOpen] = useState(false);
 
   const loadStatus = useCallback(async () => {
     try {
@@ -85,11 +89,15 @@ const MonitorStatusWidget: React.FC = () => {
   const loadLogs = useCallback(async (page?: number) => {
     try {
       const res = await fetchMonitorLog(page);
-      if (res.data) {
+      if (Array.isArray(res.data)) {
         setLogs(res.data);
+      } else if (res.data && Array.isArray(res.data.data)) {
+        setLogs(res.data.data);
       }
       if (res.meta) {
         setLogMeta({ current_page: res.meta.current_page, last_page: res.meta.last_page });
+      } else if (res.data && res.data.meta) {
+        setLogMeta({ current_page: res.data.meta.current_page, last_page: res.data.meta.last_page });
       }
     } catch {
       // silently fail
@@ -136,6 +144,7 @@ const MonitorStatusWidget: React.FC = () => {
   }
 
   function renderStatusCard(title: string, carteira: 'mae' | 'gemas', data: CarteiraStatus) {
+    if (!data) return null;
     const variacao = formatVariacao(data.variacao_atual);
     const isResetting = resetting === carteira;
 
@@ -145,16 +154,26 @@ const MonitorStatusWidget: React.FC = () => {
           <h3 className="text-[10px] text-gray-500 uppercase font-bold tracking-widest">
             {title}
           </h3>
-          <button
-            type="button"
-            onClick={() => handleReset(carteira)}
-            disabled={isResetting}
-            className="flex items-center gap-1.5 bg-red-500/10 border border-red-500/20 hover:bg-red-500/20 text-red-400 text-[9px] uppercase font-bold tracking-widest rounded-lg px-3 py-1.5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            aria-label={`Reset alertas ${title}`}
-          >
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setConfigModalOpen(true)}
+              className="flex items-center gap-1.5 bg-genesis-accent/10 border border-genesis-accent/30 hover:bg-genesis-accent/20 text-genesis-accent text-[9px] uppercase font-bold tracking-widest rounded-lg px-2.5 py-1.5 transition-colors"
+              aria-label={`Configurar alertas ${title}`}
+            >
+              <Settings size={12} />
+            </button>
+            <button
+              type="button"
+              onClick={() => handleReset(carteira)}
+              disabled={isResetting}
+              className="flex items-center gap-1.5 bg-red-500/10 border border-red-500/20 hover:bg-red-500/20 text-red-400 text-[9px] uppercase font-bold tracking-widest rounded-lg px-3 py-1.5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              aria-label={`Reset alertas ${title}`}
+            >
             <RotateCcw size={10} className={isResetting ? 'animate-spin' : ''} />
             {isResetting ? 'Resetando...' : 'Reset'}
           </button>
+          </div>
         </div>
 
         <div className="space-y-4">
@@ -235,15 +254,26 @@ const MonitorStatusWidget: React.FC = () => {
             </p>
           </div>
         </div>
-        <button
-          type="button"
-          onClick={() => { loadStatus(); loadLogs(logMeta.current_page); }}
-          className="flex items-center gap-1.5 bg-white/5 border border-white/10 hover:bg-white/10 text-gray-400 text-[9px] uppercase font-bold tracking-widest rounded-lg px-3 py-1.5 transition-colors"
-          aria-label="Atualizar status"
-        >
-          <RefreshCw size={10} />
-          Atualizar
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setConfigModalOpen(true)}
+            className="flex items-center gap-1.5 bg-genesis-accent/10 border border-genesis-accent/30 hover:bg-genesis-accent/20 text-genesis-accent text-[9px] uppercase font-bold tracking-widest rounded-lg px-3 py-1.5 transition-colors"
+            aria-label="Configurar alertas"
+          >
+            <Settings size={12} />
+            Config
+          </button>
+          <button
+            type="button"
+            onClick={() => { loadStatus(); loadLogs(logMeta.current_page); }}
+            className="flex items-center gap-1.5 bg-white/5 border border-white/10 hover:bg-white/10 text-gray-400 text-[9px] uppercase font-bold tracking-widest rounded-lg px-3 py-1.5 transition-colors"
+            aria-label="Atualizar status"
+          >
+            <RefreshCw size={10} />
+            Atualizar
+          </button>
+        </div>
       </div>
 
       {/* Status Cards */}
@@ -281,7 +311,7 @@ const MonitorStatusWidget: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {logs.map((log) => (
+                  {(logs || []).map((log) => (
                     <tr key={log.id} className="border-b border-white/5 last:border-b-0">
                       <td className="text-xs text-white font-mono py-3 pr-4">
                         {formatDatetime(log.criado_em)}
@@ -348,6 +378,23 @@ const MonitorStatusWidget: React.FC = () => {
           </>
         )}
       </div>
+
+      {/* Config Modal */}
+      {configModalOpen && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-[#0a0a0f] border border-white/10 rounded-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto p-6 relative">
+            <button
+              type="button"
+              onClick={() => setConfigModalOpen(false)}
+              className="absolute top-4 right-4 text-gray-400 hover:text-white transition-colors"
+              aria-label="Fechar configurações"
+            >
+              <X size={18} />
+            </button>
+            <AlertConfigPanel />
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -4,9 +4,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import {
   Terminal,
   Zap,
-  PlayCircle,
   BarChart2,
-  History,
   Wallet,
   Radar,
   Shapes,
@@ -31,7 +29,6 @@ const ROUTE_MAP: Record<string, string> = {
   carteira: '/dashboard/carteira',
   active_trades: '/dashboard/trades',
   analysis_history: '/dashboard/performance',
-  history: '/dashboard/historico',
   scanner: '/dashboard/scanner',
   patterns: '/dashboard/padroes',
   trend_analyzer: '/dashboard/tendencia',
@@ -61,9 +58,7 @@ const MENU_SECTIONS: { title: string; items: MenuItem[] }[] = [
     items: [
       { id: 'genesis', icon: Zap, label: 'Gênesis' },
       { id: 'carteira', icon: Wallet, label: 'Carteira Cripto' },
-      { id: 'active_trades', icon: PlayCircle, label: 'Ativos' },
       { id: 'analysis_history', icon: BarChart2, label: 'Performance' },
-      { id: 'history', icon: History, label: 'Histórico Exec.' },
     ],
   },
   {
@@ -136,6 +131,7 @@ const SidebarContent: React.FC<{ onLogoClick: () => void; onLogout: () => void; 
                 <NavLink
                   key={item.id}
                   to={ROUTE_MAP[item.id]}
+                  end={ROUTE_MAP[item.id] === '/dashboard'}
                   onClick={onNavigate}
                   className={({ isActive }) =>
                     `w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-300 group mb-[2px] ${

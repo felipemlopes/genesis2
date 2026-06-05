@@ -1,5 +1,5 @@
-﻿import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+﻿import React, { useState, useEffect, useRef } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Zap,
   ChevronDown,
@@ -81,6 +81,7 @@ const TRADING_QUOTES = [
 
 const GenesisPage: React.FC = () => {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const {
     exchange, setExchange,
     selectedPair, setSelectedPair,
@@ -96,6 +97,8 @@ const GenesisPage: React.FC = () => {
     isDataLoading,
     refreshTrigger, setRefreshTrigger,
     activeTrades, setActiveTrades,
+    analysisResult, setAnalysisResult,
+    currentAnaliseId, setCurrentAnaliseId,
   } = useAppContext();
 
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -103,8 +106,61 @@ const GenesisPage: React.FC = () => {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [hoverAnalyze, setHoverAnalyze] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
-  const [result, setResult] = useState<TradeSetup | null>(null);
+  const result = analysisResult;
+  const setResult = setAnalysisResult;
   const [quoteIndex, setQuoteIndex] = useState(0);
+  const [radarId, setRadarId] = useState<string | null>(null);
+  const analysisFormRef = useRef<HTMLDivElement>(null);
+
+  // Pre-fill form from URL query params (e.g. after reveal redirect from AlertCard)
+  useEffect(() => {
+    const symbol = searchParams.get('symbol');
+    const exchangeParam = searchParams.get('exchange');
+    const timeframeParam = searchParams.get('timeframe');
+    const radarIdParam = searchParams.get('radar_id');
+
+    if (!symbol && !exchangeParam && !timeframeParam && !radarIdParam) return;
+
+    if (symbol) {
+      setSelectedPair(symbol.toUpperCase());
+      setRefreshTrigger((prev) => prev + 1);
+    }
+
+    if (exchangeParam) {
+      // Normalize exchange value to match dropdown options
+      const exchangeMap: Record<string, string> = {
+        binance: 'Binance',
+        bybit: 'Bybit',
+        bitget: 'Bitget',
+        okx: 'OKX',
+      };
+      const resolvedExchange = exchangeMap[exchangeParam.toLowerCase()] || exchangeParam.charAt(0).toUpperCase() + exchangeParam.slice(1).toLowerCase();
+      setExchange(resolvedExchange);
+    }
+
+    if (timeframeParam) {
+      const validTimeframes = ['15m', '1h', '2h', '3h', '4h', '12h', '1d', '1w', '1M'];
+      if (validTimeframes.includes(timeframeParam)) {
+        setTimeframe(timeframeParam);
+      }
+    }
+
+    if (radarIdParam) {
+      setRadarId(radarIdParam);
+    }
+
+    // Clean up query params from URL after reading them
+    setSearchParams({}, { replace: true });
+
+    // Scroll to form and focus exchange select so user notices the pre-fill
+    setTimeout(() => {
+      const el = document.getElementById('exchange-select');
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        setTimeout(() => el.focus(), 400);
+      }
+    }, 150);
+  }, [searchParams]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (isAnalyzing) {
@@ -189,16 +245,21 @@ const GenesisPage: React.FC = () => {
           stop_loss: extractNum(data.execucao?.setup?.stop || 0),
           status: 'PENDENTE',
         };
-        saveAnalysisToHistory(savedAnalysis, {
+        const entradaValue = extractNum(data.execucao?.setup?.entrada || data.entradaSugerida?.planoA || data.execucao?.setup?.tp1 || 0);
+        const savedId = await saveAnalysisToHistory(savedAnalysis, {
           corretora: exchange || 'BINANCE',
           vies: data.vies || data.viés || data.confluenciaRecomendada || '',
           alavancagem: data.gestaoRisco?.alavancagemRecomendada || '',
           resumo_analise: (data.sinteseDaAnalise || '').substring(0, 500),
           setup_entrada: JSON.stringify(data.execucao?.setup || {}).substring(0, 500),
+          entrada: entradaValue,
+          plano_a: extractNum(data.entradaSugerida?.planoA || 0),
+          plano_b: extractNum(data.entradaSugerida?.planoB || 0),
           take_profit_2: extractNum(data.execucao?.setup?.tp2 || 0),
           take_profit_3: extractNum(data.execucao?.setup?.tp3 || 0),
           risco_retorno: data.execucao?.setup?.rr1 || '',
         });
+        setCurrentAnaliseId(savedId);
       }
 
       setResult(data);
@@ -243,19 +304,49 @@ const GenesisPage: React.FC = () => {
         if (unifiedResult.timeframe && unifiedResult.timeframe !== 'UNK') {
           const tfMap: Record<string, string> = {
             '1M': '1M', 'MONTHLY': '1M', 'M': '1M', 'MONTH': '1M',
-            '1W': '1w', 'WEEKLY': '1w', 'W': '1w', 'WEEK': '1w',
-            '1D': '1d', 'DAILY': '1d', 'D': '1d', 'DAY': '1d',
+            '1W': '1w', 'WEEKLY': '1w', 'W': '1w', 'WEEK': '1w', 'SEMANAL': '1w',
+            '1D': '1d', 'DAILY': '1d', 'D': '1d', 'DAY': '1d', 'DIARIO': '1d', 'DIÁRIO': '1d',
             '12H': '12h', 'H12': '12h',
             '4H': '4h', 'H4': '4h',
             '3H': '3h', 'H3': '3h',
             '2H': '2h', 'H2': '2h', '120M': '2h',
-            '1H': '1h', 'H1': '1h', '60M': '1h',
+            '1H': '1h', 'H1': '1h', '60M': '1h', 'HOURLY': '1h',
             '15M': '15m', 'M15': '15m',
+            '5M': '5m', 'M5': '5m',
           };
-          const normalizedTf = tfMap[unifiedResult.timeframe.toUpperCase()] || unifiedResult.timeframe;
-          if (['15m', '1h', '2h', '3h', '4h', '12h', '1d', '1w', '1M'].includes(normalizedTf)) {
+          const rawTf = unifiedResult.timeframe;
+          const upperTf = rawTf.toUpperCase().trim();
+          const normalizedTf = tfMap[upperTf] || rawTf.toLowerCase().trim();
+          const validTimeframes = ['15m', '5m', '1h', '2h', '3h', '4h', '12h', '1d', '1w', '1M'];
+
+          console.log('[TF-DEBUG] Raw timeframe from scan:', JSON.stringify(rawTf));
+          console.log('[TF-DEBUG] Uppercase lookup key:', JSON.stringify(upperTf));
+          console.log('[TF-DEBUG] tfMap result:', JSON.stringify(tfMap[upperTf]));
+          console.log('[TF-DEBUG] Final normalizedTf:', JSON.stringify(normalizedTf));
+          console.log('[TF-DEBUG] Is valid?', validTimeframes.includes(normalizedTf));
+          console.log('[TF-DEBUG] Current timeframe before set:', timeframe);
+
+          if (validTimeframes.includes(normalizedTf)) {
+            console.log('[TF-DEBUG] ✅ Setting timeframe to:', normalizedTf);
             setTimeframe(normalizedTf);
+          } else {
+            // Fallback: try regex extraction for formats like "1d", "4h", etc.
+            const regexMatch = rawTf.match(/^(\d+)(m|h|d|w|M)$/i);
+            if (regexMatch) {
+              const fallbackTf = `${regexMatch[1]}${regexMatch[2].toLowerCase()}`;
+              console.log('[TF-DEBUG] Regex fallback matched:', fallbackTf);
+              if (validTimeframes.includes(fallbackTf)) {
+                console.log('[TF-DEBUG] ✅ Setting timeframe via regex fallback:', fallbackTf);
+                setTimeframe(fallbackTf);
+              } else {
+                console.warn('[TF-DEBUG] ❌ Regex fallback not in valid list:', fallbackTf);
+              }
+            } else {
+              console.warn('[TF-DEBUG] ❌ No match found for timeframe:', rawTf);
+            }
           }
+        } else {
+          console.log('[TF-DEBUG] ⚠️ No timeframe detected or UNK. Raw value:', unifiedResult?.timeframe);
         }
 
         if (newPair) {
@@ -279,6 +370,7 @@ const GenesisPage: React.FC = () => {
     setResult(null);
     setSelectedFile(null);
     setChartMetadata(null);
+    setCurrentAnaliseId(null);
   };
 
   const handleSaveTrade = () => {
@@ -331,7 +423,7 @@ const GenesisPage: React.FC = () => {
     <>
       <div className="flex flex-col lg:flex-row gap-6 pb-10 w-full mt-6">
         <div className="w-full lg:w-[640px] xl:w-[720px] flex-shrink-0 flex flex-col gap-6">
-          <div className="bg-[#060608] rounded-[24px] p-6 lg:p-8 flex flex-col relative overflow-visible shadow-[0_12px_40px_rgba(0,0,0,1)]" data-analysis-form>
+          <div ref={analysisFormRef} className="bg-[#060608] rounded-[24px] p-6 lg:p-8 flex flex-col relative overflow-visible shadow-[0_12px_40px_rgba(0,0,0,1)]" data-analysis-form>
             <div className="absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-genesis-accent to-transparent opacity-50"></div>
 
             <div className="flex items-center justify-between mb-6">
@@ -364,6 +456,7 @@ const GenesisPage: React.FC = () => {
                   <label className="block text-[9px] font-bold text-genesis-text-secondary uppercase mb-2 tracking-wider">Corretora</label>
                   <div className="relative">
                     <select
+                      id="exchange-select"
                       value={exchange}
                       onChange={(e) => setExchange(e.target.value)}
                       className="w-full bg-[#050505] border border-white/5 rounded-md px-3 py-2.5 text-xs text-white appearance-none focus:border-white/20 focus:outline-none transition-all uppercase tracking-wide"
@@ -558,6 +651,7 @@ const GenesisPage: React.FC = () => {
                 isPositiveChange={!!isPositiveChange}
                 onSaveTrade={handleSaveTrade}
                 onReset={handleResetAnalysis}
+                analiseId={currentAnaliseId}
               />
             ) : (
               <div className="h-full flex flex-col items-center justify-center text-center">

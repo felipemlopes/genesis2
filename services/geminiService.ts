@@ -157,14 +157,28 @@ export const unifiedChartAnalysis = async (file: File): Promise<UnifiedChartResu
     if (!res.ok) throw new Error('Falha na leitura visual unificada (fallback flash)');
   }
 
-  if (!res!.ok) throw new Error('Falha na leitura visual unificada');
+  if (!res!.ok) {
+    const errorBody = await res!.text().catch(() => 'Unable to read response body');
+    console.error('[SCAN-DEBUG] ❌ unified-scan failed:', {
+      status: res!.status,
+      statusText: res!.statusText,
+      body: errorBody,
+    });
+    throw new Error(`Falha na leitura visual unificada (HTTP ${res!.status}: ${errorBody.substring(0, 200)})`);
+  }
   const data = await res!.json();
 
   const content = data.content || '';
   let parsed: any;
   try {
-    parsed = typeof content === 'string' ? JSON.parse(content) : content;
-  } catch {
+    // Strip markdown code fences (```json ... ```) that Gemini sometimes wraps around JSON
+    let cleanContent = typeof content === 'string' ? content.trim() : '';
+    if (cleanContent.startsWith('```')) {
+      cleanContent = cleanContent.replace(/^```(?:json)?\s*\n?/, '').replace(/\n?```\s*$/, '');
+    }
+    parsed = cleanContent ? JSON.parse(cleanContent) : (typeof content === 'object' ? content : {});
+  } catch (e) {
+    console.error('[SCAN-DEBUG] Failed to parse unified-scan content:', content, e);
     parsed = {};
   }
 

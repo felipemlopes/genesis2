@@ -170,12 +170,15 @@ export async function fetchHistoricoAnalises() {
 }
 
 export async function storeAnalise(data: any) {
+  console.log('[storeAnalise] Enviando payload:', JSON.stringify(data));
   const res = await fetch(`${API_BASE}/v1/analises`, {
     method: 'POST',
     headers: getAuthHeaders(),
     body: JSON.stringify(data),
   });
-  return res.json();
+  const json = await res.json();
+  console.log('[storeAnalise] Resposta:', JSON.stringify(json));
+  return json;
 }
 
 export async function updateResultadoAnalise(id: number, data: any) {
@@ -203,6 +206,25 @@ export async function deleteAllAnalises() {
   return res.json();
 }
 
+// ─── ZONA SELECIONADA ─────────────────────────────────────────
+
+export async function selecionarZona(analiseId: string | number, zona: 'A' | 'B', userId: string | number): Promise<{ success: boolean; error?: string }> {
+  try {
+    const res = await fetch(`${API_BASE}/v1/analises/${analiseId}/zona-selecionada`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ zona, user_id: userId }),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      return { success: false, error: data.message || 'Erro ao salvar zona selecionada' };
+    }
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Erro de rede ao salvar zona' };
+  }
+}
+
 // ─── CRÉDITOS ─────────────────────────────────────────────────
 
 export async function consumeCredits(type: string, idempotencyKey?: string): Promise<{ success: boolean; credits?: number; error?: string }> {
@@ -216,6 +238,32 @@ export async function consumeCredits(type: string, idempotencyKey?: string): Pro
   const data = await res.json();
   if (!res.ok) return { success: false, error: data.message || 'Erro ao debitar créditos' };
   return { success: true, credits: data.credits };
+}
+
+// ─── REVEAL ALERTA ────────────────────────────────────────────
+
+export interface RevealResponse {
+  success: boolean;
+  ativo: string;
+  corretora: string;
+  preco_atual: number;
+  timeframes: string[];
+  credits_remaining: number;
+  error?: string;
+}
+
+export async function revealAlerta(alertaId: number, idempotencyKey: string): Promise<RevealResponse> {
+  const res = await fetch(`${API_BASE}/v1/alertas/${alertaId}/reveal`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify({ idempotency_key: idempotencyKey }),
+  });
+  const json = await res.json();
+  if (!res.ok) {
+    return { success: false, ativo: '', corretora: '', preco_atual: 0, timeframes: [], credits_remaining: 0, error: json.message || json.error || 'Erro ao revelar alerta' };
+  }
+  const payload = json.data || json;
+  return { success: true, ativo: payload.ativo, corretora: payload.corretora, preco_atual: payload.preco_atual, timeframes: payload.timeframes || [], credits_remaining: payload.credits_remaining || 0 };
 }
 
 // ─── PROXY DE PREÇOS ──────────────────────────────────────────

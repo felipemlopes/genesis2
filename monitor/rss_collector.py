@@ -17,10 +17,6 @@ logger = logging.getLogger('radar-news')
 
 RSS_FEEDS = [
     {
-        'name': 'CoinDesk',
-        'url': 'https://www.coindesk.com/arc/outboundfeeds/rss/',
-    },
-    {
         'name': 'Decrypt',
         'url': 'https://decrypt.co/feed',
     },
@@ -31,6 +27,26 @@ RSS_FEEDS = [
     {
         'name': 'Bitcoin Magazine',
         'url': 'https://bitcoinmagazine.com/feed',
+    },
+    {
+        'name': 'The Block',
+        'url': 'https://www.theblock.co/rss.xml',
+    },
+    {
+        'name': 'CryptoSlate',
+        'url': 'https://cryptoslate.com/feed/',
+    },
+    {
+        'name': 'NewsBTC',
+        'url': 'https://www.newsbtc.com/feed/',
+    },
+    {
+        'name': 'Bloomberg',
+        'url': 'https://feeds.bloomberg.com/markets/news.rss',
+    },
+    {
+        'name': 'FT Markets',
+        'url': 'https://www.ft.com/markets?format=rss',
     },
 ]
 
@@ -160,8 +176,8 @@ class RSSCollector:
         for entry in parsed.entries:
             parsed_entry = self._parse_entry(entry, name)
             if parsed_entry:
-                # Filtrar entradas antigas (>6h) para evitar flood na primeira execução
-                if self._is_recent(entry, hours=0, minutes=10):
+                # Filtrar entradas antigas (>3h) para evitar flood na primeira execução
+                if self._is_recent(entry, hours=3, minutes=0):
                     entries.append(parsed_entry)
 
         return entries

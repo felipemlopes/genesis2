@@ -5,6 +5,7 @@ import {
   CheckCircle2, AlertTriangle, XCircle, ChevronDown, ChevronUp
 } from 'lucide-react';
 import { TradeSetup } from '../types';
+import { selecionarZona, getMe } from '../services/api';
 
 interface AnalysisResultProps {
   data: TradeSetup;
@@ -13,6 +14,7 @@ interface AnalysisResultProps {
   isPositiveChange?: boolean;
   onSaveTrade?: () => void;
   onReset?: () => void;
+  analiseId?: string | null;
 }
 
 const genesisFeatureFlags = {
@@ -33,8 +35,11 @@ const getLogoUrl = (pair: string) => {
   return `https://cryptologos.cc/logos/${symbol}-${symbol}-logo.png`;
 };
 
-const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, currentPrice, change24h, isPositiveChange, onSaveTrade, onReset }) => {
+const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, currentPrice, change24h, isPositiveChange, onSaveTrade, onReset, analiseId }) => {
   const [showIndicators, setShowIndicators] = useState(false);
+  const [selectedZone, setSelectedZone] = useState<'A' | 'B' | null>(null);
+  const [zoneSaveStatus, setZoneSaveStatus] = useState<'idle' | 'saving' | 'success' | 'error'>('idle');
+  const [zoneSaveError, setZoneSaveError] = useState<string | null>(null);
   
   // Variáveis para simular/receber as conexões, permitindo os 3 estados
   const [erroBloco, setErroBloco] = useState<Record<string, string | null>>({
@@ -51,6 +56,55 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, currentPrice, cha
     multiTimeframe: { diario: "BULLISH", h4: "NEUTRO", h1: "BULLISH" },
     tamanhoPosicao: "$1.500 em contratos — baseado em 2% de $5.000 de capital configurado."
   });
+
+  const handleZoneSelect = async (zone: 'A' | 'B') => {
+    setSelectedZone(zone);
+    setZoneSaveStatus('idle');
+    setZoneSaveError(null);
+
+    let idToUse = analiseId;
+
+    // Se não tem analiseId, buscar a última análise do usuário como fallback
+    if (!idToUse) {
+      try {
+        const { fetchHistoricoAnalises } = await import('../services/api');
+        const resp = await fetchHistoricoAnalises();
+        const lista = resp?.data || resp || [];
+        if (Array.isArray(lista) && lista.length > 0) {
+          idToUse = String(lista[0].id);
+        }
+      } catch (_) {}
+    }
+
+    if (!idToUse) {
+      setZoneSaveStatus('error');
+      setZoneSaveError('Análise não encontrada no servidor. Tente analisar novamente.');
+      return;
+    }
+
+    setZoneSaveStatus('saving');
+    try {
+      const user = await getMe();
+      if (!user || !user.id) {
+        setZoneSaveStatus('error');
+        setZoneSaveError('Não foi possível identificar o usuário');
+        return;
+      }
+
+      const result = await selecionarZona(idToUse, zone, user.id);
+      if (result.success) {
+        setZoneSaveStatus('success');
+        // Auto-dismiss success after 3 seconds
+        setTimeout(() => setZoneSaveStatus('idle'), 3000);
+      } else {
+        setZoneSaveStatus('error');
+        setZoneSaveError(result.error || 'Erro ao salvar zona');
+      }
+    } catch (err: any) {
+      setZoneSaveStatus('error');
+      setZoneSaveError(err.message || 'Erro ao salvar zona');
+    }
+  };
 
   const handleShare = async () => {
     const element = document.getElementById('analysis-capture');
@@ -311,8 +365,34 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, currentPrice, cha
             {/* Bloco 1: ENTRADA */}
             <div className="w-full lg:w-1/3 bg-white/[0.02]  rounded-lg p-5 border-l-genesis-accent hover:bg-white/[0.04] transition-colors relative h-full min-h-[140px]">
               <span className="text-[10px] font-bold text-genesis-accent uppercase tracking-widest block mb-3">Zona de Entrada</span>
+              {/* Zone save feedback */}
+              {zoneSaveStatus === 'saving' && (
+                <div className="flex items-center gap-1 mb-2 text-[9px] text-genesis-accent font-mono">
+                  <div className="w-2 h-2 border border-genesis-accent border-t-transparent rounded-full animate-spin" />
+                  Salvando...
+                </div>
+              )}
+              {zoneSaveStatus === 'success' && (
+                <div className="flex items-center gap-1 mb-2 text-[9px] text-genesis-positive font-mono">
+                  <CheckCircle2 size={10} />
+                  Zona salva com sucesso
+                </div>
+              )}
+              {zoneSaveStatus === 'error' && (
+                <div className="flex items-center gap-1 mb-2 text-[9px] text-genesis-negative font-mono">
+                  <XCircle size={10} />
+                  {zoneSaveError || 'Erro ao salvar zona'}
+                </div>
+              )}
               <div className="space-y-4">
-                <div>
+                <div
+                  onClick={() => handleZoneSelect('A')}
+                  className={`cursor-pointer rounded-lg p-3 -m-3 transition-all duration-200 ${
+                    selectedZone === 'A'
+                      ? 'border border-genesis-accent bg-genesis-accent/10 ring-1 ring-genesis-accent/40'
+                      : 'border border-transparent hover:border-white/10 hover:bg-white/[0.03]'
+                  }`}
+                >
                   <div className="flex justify-between items-baseline mb-1">
                     <span className="text-xs font-bold text-white">Plano A</span>
                     <span className="font-mono font-bold text-lg text-white">${data.entradaSugerida?.planoA || setup.entrada}</span>
@@ -322,7 +402,14 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, currentPrice, cha
                   </p>
                 </div>
                 {data.entradaSugerida?.planoB && (
-                <div className=" pt-3">
+                <div
+                  onClick={() => handleZoneSelect('B')}
+                  className={`cursor-pointer rounded-lg p-3 -m-3 mt-1 transition-all duration-200 ${
+                    selectedZone === 'B'
+                      ? 'border border-genesis-accent bg-genesis-accent/10 ring-1 ring-genesis-accent/40'
+                      : 'border border-transparent hover:border-white/10 hover:bg-white/[0.03]'
+                  }`}
+                >
                   <div className="flex justify-between items-baseline mb-1">
                     <span className="text-xs font-bold text-gray-400">Plano B</span>
                     <span className="font-mono font-bold text-sm text-gray-300">${data.entradaSugerida.planoB}</span>

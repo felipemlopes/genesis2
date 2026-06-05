@@ -14,7 +14,6 @@ logger = logging.getLogger('radar-news')
 
 TELEGRAM_TIMEOUT = 15  # seconds
 RETRY_DELAY = 10       # seconds
-HIGH_SEVERITY_DELAY = 180  # 3 minutes in seconds
 
 SEVERITY_EMOJI = {
     'CRITICAL': '🔴',
@@ -82,31 +81,36 @@ class TelegramDispatcher:
     def dispatch(self, entry: dict) -> bool:
         """Decide se e quando enviar alerta com base na severidade.
 
-        - CRITICAL: envia imediatamente
-        - HIGH: envia com delay de 3 minutos (threading.Timer)
+        - CRITICAL: envia imediatamente sempre
+        - HIGH: primeira do ciclo envia imediatamente, demais com delay de 30s
         - MEDIUM/LOW: não envia (skip)
 
         Args:
             entry: dict com keys de notícia classificada (severity, title, etc.)
 
         Returns:
-            True se despacho foi agendado/executado, False se ignorado (MEDIUM/LOW).
+            True se despacho foi executado/agendado, False se ignorado (MEDIUM/LOW).
         """
         severity = entry.get('severity', 'LOW').upper()
 
         if severity == 'CRITICAL':
             logger.info(f'[Dispatch] CRITICAL — enviando imediatamente: {entry.get("title", "")[:80]}')
+            self._first_sent = True
             return self.send_news_alert(entry)
 
         if severity == 'HIGH':
-            logger.info(
-                f'[Dispatch] HIGH — agendando envio em {HIGH_SEVERITY_DELAY}s: '
-                f'{entry.get("title", "")[:80]}'
-            )
-            timer = threading.Timer(HIGH_SEVERITY_DELAY, self.send_news_alert, args=[entry])
-            timer.daemon = True
-            timer.start()
-            return True
+            if not getattr(self, '_first_sent', False):
+                # Primeira notícia — envia na hora
+                logger.info(f'[Dispatch] HIGH — enviando imediatamente (primeira): {entry.get("title", "")[:80]}')
+                self._first_sent = True
+                return self.send_news_alert(entry)
+            else:
+                # Demais — delay de 30s pra não spammar
+                logger.info(f'[Dispatch] HIGH — agendando envio em {HIGH_SEVERITY_DELAY}s: {entry.get("title", "")[:80]}')
+                timer = threading.Timer(HIGH_SEVERITY_DELAY, self.send_news_alert, args=[entry])
+                timer.daemon = True
+                timer.start()
+                return True
 
         # MEDIUM / LOW — skip
         logger.debug(f'[Dispatch] {severity} — ignorando: {entry.get("title", "")[:80]}')
@@ -118,8 +122,8 @@ class TelegramDispatcher:
         """Formata mensagem de notícia para Telegram (HTML)."""
         severity = entry.get('severity', 'MEDIUM')
         emoji = SEVERITY_EMOJI.get(severity, '🟡')
-        title = entry.get('title', 'Sem título')
-        impact = truncate_summary(entry.get('impact_summary', ''))
+        title = self._translate_to_pt(entry.get('title', 'Sem título'))
+        impact = truncate_summary(self._translate_to_pt(entry.get('impact_summary', '')))
         assets = entry.get('affected_assets', [])
         source_url = entry.get('source_url', '')
         bias = entry.get('market_bias', 'NEUTRAL')
@@ -131,7 +135,6 @@ class TelegramDispatcher:
             f'{emoji} <b>{title}</b>',
             '',
             f'📊 <b>Impacto:</b> {impact}',
-            f'💰 <b>Ativos:</b> {assets_str}',
         ]
 
         if source_url:
@@ -170,6 +173,28 @@ class TelegramDispatcher:
         return '\n'.join(lines)
 
     # ─── Envio ────────────────────────────────────────────────────────────────
+
+    def _translate_to_pt(self, text: str) -> str:
+        """Traduz texto para português usando Google Translate API gratuita."""
+        if not text or not text.strip():
+            return text
+        try:
+            url = 'https://translate.googleapis.com/translate_a/single'
+            params = {
+                'client': 'gtx',
+                'sl': 'en',
+                'tl': 'pt',
+                'dt': 't',
+                'q': text,
+            }
+            resp = requests.get(url, params=params, timeout=5)
+            if resp.status_code == 200:
+                data = resp.json()
+                translated = ''.join(part[0] for part in data[0] if part[0])
+                return translated
+        except Exception as e:
+            logger.debug(f'[Translate] Falha ao traduzir, usando original: {e}')
+        return text
 
     def _send_message(self, text: str) -> bool:
         """Envia mensagem para Telegram com retry (1x após 10s em caso de erro).

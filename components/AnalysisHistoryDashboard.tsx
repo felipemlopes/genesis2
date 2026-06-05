@@ -5,9 +5,9 @@ import { fetchHistoricoAnalises, storeAnalise, updateResultadoAnalise, deleteAll
 
 // Salva análise via API — sem localStorage
 // Aceita dados extras opcionais para enviar campos completos ao servidor
-export const saveAnalysisToHistory = async (analysis: SavedAnalysis, extraData?: Record<string, any>) => {
+export const saveAnalysisToHistory = async (analysis: SavedAnalysis, extraData?: Record<string, any>): Promise<string | null> => {
   try {
-    await storeAnalise({
+    const response = await storeAnalise({
       ativo: analysis.symbol,
       timeframe: analysis.interval,
       direcao: analysis.direction,
@@ -17,8 +17,15 @@ export const saveAnalysisToHistory = async (analysis: SavedAnalysis, extraData?:
       ...extraData,
     });
     window.dispatchEvent(new Event('analysis_history_updated'));
+    // Return the server-generated analysis ID if available
+    const serverId = response?.data?.id || response?.id;
+    if (!serverId) {
+      console.warn('[saveAnalysisToHistory] API não retornou ID. Response:', JSON.stringify(response));
+    }
+    return serverId ? String(serverId) : null;
   } catch (error) {
     console.error('Falha ao salvar análise via API', error);
+    return null;
   }
 };
 
@@ -28,30 +35,41 @@ const AnalysisHistoryDashboard: React.FC = () => {
   const [filterTF, setFilterTF] = useState<string>('');
   const [filterStatus, setFilterStatus] = useState<string>('');
   const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 10;
+  const itemsPerPage = 15;
 
   // Carrega histórico exclusivamente do servidor (MySQL)
   const loadHistory = async () => {
     try {
       const data = await fetchHistoricoAnalises();
       if (data.data && data.data.length > 0) {
-        const serverHistory = data.data.map((row: any) => ({
-          id: row.id.toString(),
-          timestamp: row.created_at || row.criado_em,
-          symbol: row.ativo,
-          interval: row.timeframe,
-          direction: row.direcao === 'SHORT' ? 'SHORT' : 'LONG',
-          score: row.score,
-          rsi: 0,
-          ema200: 0,
-          adx: 0,
-          entry_price: 0,
-          target_price: parseFloat(row.take_profit_1) || 0,
-          target_price2: parseFloat(row.take_profit_2) || 0,
-          target_price3: parseFloat(row.take_profit_3) || 0,
-          stop_loss: parseFloat(row.stop_loss) || 0,
-          status: row.resultado === 'PENDENTE' ? 'PENDENTE' : (row.resultado?.includes('TP') ? 'ACERTOU' : 'ERROU')
-        }));
+        const serverHistory = data.data.map((row: any) => {
+          // Fallback: extrair entrada do setup_entrada JSON se campo entrada/plano_a vazio
+          let entryPrice = parseFloat(row.entrada) || parseFloat(row.plano_a) || 0;
+          if (entryPrice === 0 && row.setup_entrada) {
+            try {
+              const setupJson = JSON.parse(row.setup_entrada);
+              entryPrice = parseFloat(setupJson.entrada) || 0;
+            } catch (_) {}
+          }
+
+          return {
+            id: row.id.toString(),
+            timestamp: row.created_at || row.criado_em,
+            symbol: row.ativo,
+            interval: row.timeframe,
+            direction: row.direcao === 'SHORT' ? 'SHORT' : 'LONG',
+            score: row.score,
+            rsi: 0,
+            ema200: 0,
+            adx: 0,
+            entry_price: entryPrice,
+            target_price: parseFloat(row.take_profit_1) || 0,
+            target_price2: parseFloat(row.take_profit_2) || 0,
+            target_price3: parseFloat(row.take_profit_3) || 0,
+            stop_loss: parseFloat(row.stop_loss) || 0,
+            status: row.resultado === 'PENDENTE' ? 'PENDENTE' : (row.resultado?.includes('TP') ? 'ACERTOU' : 'ERROU')
+          };
+        });
         setHistory(serverHistory);
       } else {
         setHistory([]);
@@ -198,16 +216,31 @@ const AnalysisHistoryDashboard: React.FC = () => {
     };
   }, [history]);
 
+  // Modal de preço resultado
+  const [priceModal, setPriceModal] = useState<{ show: boolean; id: string; status: 'ACERTOU' | 'ERROU' } | null>(null);
+  const [priceInput, setPriceInput] = useState('');
+
   // Atualiza status via API — sem localStorage
   const updateStatus = async (id: string, newStatus: 'ACERTOU' | 'ERROU') => {
-    const updatedHistory = history.map(item => 
-      item.id === id ? { ...item, status: newStatus } : item
+    setPriceModal({ show: true, id, status: newStatus });
+    setPriceInput('');
+  };
+
+  const confirmResultado = async () => {
+    if (!priceModal) return;
+    const precoResultado = parseFloat(priceInput.replace(',', '.'));
+    if (isNaN(precoResultado) || precoResultado <= 0) return;
+
+    const updatedHistory = history.map(h => 
+      h.id === priceModal.id ? { ...h, status: priceModal.status } : h
     );
     setHistory(updatedHistory);
+    setPriceModal(null);
 
     try {
-      await updateResultadoAnalise(parseInt(id), {
-        resultado: newStatus === 'ACERTOU' ? 'TP1_ATINGIDO' : 'STOP_ATINGIDO',
+      await updateResultadoAnalise(parseInt(priceModal.id), {
+        resultado: priceModal.status === 'ACERTOU' ? 'TP1_ATINGIDO' : 'STOP_ATINGIDO',
+        preco_resultado: precoResultado,
       });
     } catch (e) {
       console.warn('Falha ao atualizar resultado no servidor:', e);
@@ -285,7 +318,58 @@ const AnalysisHistoryDashboard: React.FC = () => {
   return (
     <div className="flex flex-col gap-6 pb-10">
 
-      {/* SEÇÃO ESTATÍSTICAS DO SISTEMA */}
+      {/* Modal de preço resultado */}
+      {priceModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
+          <div className="bg-[#0a0a0f] border border-white/10 rounded-2xl p-6 w-[320px] shadow-2xl">
+            <h3 className="text-sm font-bold text-white uppercase tracking-widest mb-1">
+              {priceModal.status === 'ACERTOU' ? 'Registrar Acerto' : 'Registrar Erro'}
+            </h3>
+            <p className="text-[10px] text-gray-500 mb-4 font-mono">Informe o preço de saída da operação</p>
+            <input
+              type="text"
+              value={priceInput}
+              onChange={(e) => {
+                // Máscara: formato decimal válido (ex: 0.8150, 65000.50)
+                let val = e.target.value.replace(/[^0-9.,]/g, '');
+                // Substituir vírgula por ponto
+                val = val.replace(',', '.');
+                // Só permitir um ponto
+                const parts = val.split('.');
+                if (parts.length > 2) val = parts[0] + '.' + parts.slice(1).join('');
+                // Limitar decimais a 8 casas
+                if (parts.length === 2 && parts[1].length > 8) val = parts[0] + '.' + parts[1].slice(0, 8);
+                // Remover zeros à esquerda (exceto "0." ou "0")
+                if (val.length > 1 && val[0] === '0' && val[1] !== '.') val = val.replace(/^0+/, '') || '0';
+                setPriceInput(val);
+              }}
+              onKeyDown={(e) => e.key === 'Enter' && confirmResultado()}
+              placeholder="0.0000"
+              autoFocus
+              className="w-full bg-black border border-white/10 rounded-lg px-4 py-3 text-white font-mono text-sm focus:border-genesis-accent focus:outline-none focus:ring-1 focus:ring-genesis-accent/50 placeholder-gray-600"
+            />
+            <div className="flex gap-2 mt-4">
+              <button
+                onClick={() => setPriceModal(null)}
+                className="flex-1 px-4 py-2 rounded-lg bg-white/5 text-gray-400 text-xs font-bold uppercase tracking-wider hover:bg-white/10 transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={confirmResultado}
+                disabled={!priceInput || isNaN(parseFloat(priceInput.replace(',', '.'))) || parseFloat(priceInput.replace(',', '.')) <= 0}
+                className={`flex-1 px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-colors ${
+                  priceModal.status === 'ACERTOU' 
+                    ? 'bg-green-500/20 text-green-400 hover:bg-green-500/30 disabled:opacity-30' 
+                    : 'bg-red-500/20 text-red-400 hover:bg-red-500/30 disabled:opacity-30'
+                }`}
+              >
+                Confirmar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {sysStats && (
         <div className="bg-[#0a0a0f] border border-white/5 p-6 rounded-2xl shadow-2xl relative overflow-hidden">
           <div className="absolute -right-10 -top-10 opacity-5">
@@ -593,7 +677,7 @@ const AnalysisHistoryDashboard: React.FC = () => {
             </table>
          </div>
 
-         {totalPages > 1 && (
+         {totalPages >= 1 && (
             <div className="mt-6 flex items-center justify-between  pt-4">
                <div className="text-[10px] text-gray-500 font-mono">
                   Mostrando {((currentPage - 1) * itemsPerPage) + 1} a {Math.min(currentPage * itemsPerPage, filteredHistory.length)} de {filteredHistory.length}

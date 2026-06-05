@@ -177,17 +177,14 @@ class RadarNewsWorker:
             else:
                 classified = []
 
-            # Dispatch Telegram — apenas a notícia mais crítica do ciclo (1 por vez)
+            # Dispatch Telegram — todas as entradas CRITICAL/HIGH do ciclo
             # Só envia se ainda não foi despachada pro Telegram (telegram_sent=0)
             if classified:
-                # Prioriza CRITICAL, depois HIGH
+                # Prioriza CRITICAL (imediato), depois HIGH (delay 3min)
                 critical = [e for e in classified if e.get('severity') == 'CRITICAL']
                 high = [e for e in classified if e.get('severity') == 'HIGH']
                 candidates_tg = critical + high
-                sent = False
                 for top_entry in candidates_tg:
-                    if sent:
-                        break
                     # Verifica no banco se já foi enviado pro Telegram
                     conn_check = self.conectar_bd()
                     if conn_check:
@@ -200,8 +197,8 @@ class RadarNewsWorker:
                                 row = cur.fetchone()
                                 if row and row.get('telegram_sent'):
                                     continue  # já enviado, pula
-                            # Envia
-                            self.telegram_dispatcher.send_news_alert(top_entry)
+                            # Envia via dispatcher (CRITICAL = imediato, HIGH = 3-min delay)
+                            self.telegram_dispatcher.dispatch(top_entry)
                             # Marca como enviado no banco
                             with conn_check.cursor() as cur:
                                 cur.execute(
@@ -209,7 +206,6 @@ class RadarNewsWorker:
                                     (top_entry.get('title_hash', ''),)
                                 )
                             conn_check.commit()
-                            sent = True
                             logger.info(f"[Telegram] Despachado: {top_entry.get('title', '')[:60]}... ({top_entry.get('severity')})")
                         finally:
                             conn_check.close()
