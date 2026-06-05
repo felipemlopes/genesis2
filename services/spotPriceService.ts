@@ -92,6 +92,21 @@ export const buscarListaAtivos = async (corretora: string): Promise<{ symbol: st
  */
 export const buscarPrecoSpot = async (symbol: string, corretora: string): Promise<number | null> => {
   let cleanSymbol = symbol.replace('/', '').toUpperCase();
+  
+  // Extrair símbolo base: se o par termina com quote conhecida (USDT, BTC, ETH, BNB, BUSD, USDC, FDUSD),
+  // extraímos só a base e reconstruímos com USDT
+  const quotes = ['USDT', 'BUSD', 'USDC', 'FDUSD', 'BTC', 'ETH', 'BNB', 'EUR', 'BRL', 'TRY'];
+  for (const quote of quotes) {
+    if (cleanSymbol.endsWith(quote) && cleanSymbol.length > quote.length) {
+      cleanSymbol = cleanSymbol.slice(0, -quote.length) + 'USDT';
+      break;
+    }
+  }
+  // Se após limpeza ainda não termina com USDT, adiciona
+  if (!cleanSymbol.endsWith('USDT')) {
+    cleanSymbol = cleanSymbol + 'USDT';
+  }
+
   const cacheKey = `${cleanSymbol}-${corretora.toLowerCase()}`;
 
   if (priceCache[cacheKey] && Date.now() - priceCache[cacheKey].timestamp < PRICE_CACHE_DURATION) {
@@ -119,16 +134,13 @@ const fetchPrecoSpot = async (symbol: string, corretora: string): Promise<number
   try {
     switch (corretora.toLowerCase()) {
       case 'binance': {
-        // Exemplo binance: se symbol não tiver 'USDT' mas for só 'BTC', colocamos USDT
-        const param = symbol.endsWith('USDT') ? symbol : `${symbol}USDT`;
-        const res = await fetch(`https://api.binance.com/api/v3/ticker/price?symbol=${param}`);
+        const res = await fetch(`https://api.binance.com/api/v3/ticker/price?symbol=${symbol}`);
         const json = await res.json();
         if (json && json.price) return parseFloat(json.price);
         return null;
       }
       case 'bybit': {
-        const param = symbol.endsWith('USDT') ? symbol : `${symbol}USDT`;
-        const res = await fetch(`https://api.bybit.com/v5/market/tickers?category=spot&symbol=${param}`);
+        const res = await fetch(`https://api.bybit.com/v5/market/tickers?category=spot&symbol=${symbol}`);
         const json = await res.json();
         if (json && json.result && json.result.list && json.result.list[0]) {
           return parseFloat(json.result.list[0].lastPrice);
@@ -136,8 +148,7 @@ const fetchPrecoSpot = async (symbol: string, corretora: string): Promise<number
         return null;
       }
       case 'bitget': {
-        const param = symbol.endsWith('USDT') ? symbol : `${symbol}USDT`;
-        const res = await fetch(`https://api.bitget.com/api/spot/v1/market/ticker?symbol=${param}`);
+        const res = await fetch(`https://api.bitget.com/api/spot/v1/market/ticker?symbol=${symbol}`);
         const json = await res.json();
         if (json && json.data && json.data.close) {
           return parseFloat(json.data.close);
@@ -146,8 +157,8 @@ const fetchPrecoSpot = async (symbol: string, corretora: string): Promise<number
       }
       case 'okx': {
         // OKX usa formato BTC-USDT
-        const param = symbol.includes('-') ? symbol : (symbol.endsWith('USDT') ? symbol.replace('USDT', '-USDT') : `${symbol}-USDT`);
-        const res = await fetch(`https://www.okx.com/api/v5/market/ticker?instId=${param}`);
+        const okxSymbol = symbol.replace('USDT', '-USDT');
+        const res = await fetch(`https://www.okx.com/api/v5/market/ticker?instId=${okxSymbol}`);
         const json = await res.json();
         if (json && json.data && json.data[0] && json.data[0].last) {
           return parseFloat(json.data[0].last);

@@ -120,25 +120,24 @@ class TelegramDispatcher:
 
     def _format_news_message(self, entry: dict) -> str:
         """Formata mensagem de notícia para Telegram (HTML)."""
-        severity = entry.get('severity', 'MEDIUM')
-        emoji = SEVERITY_EMOJI.get(severity, '🟡')
         title = self._translate_to_pt(entry.get('title', 'Sem título'))
         impact = truncate_summary(self._translate_to_pt(entry.get('impact_summary', '')))
-        assets = entry.get('affected_assets', [])
         source_url = entry.get('source_url', '')
-        bias = entry.get('market_bias', 'NEUTRAL')
-
-        assets_str = ', '.join(assets) if assets else 'N/A'
-        bias_label = BIAS_LABELS.get(bias, '➖ NEUTRAL')
 
         lines = [
-            f'{emoji} <b>{title}</b>',
+            '📡 <b>Radar News</b>',
             '',
-            f'📊 <b>Impacto:</b> {impact}',
+            f'<b>{title}</b>',
+            '',
+            f'👀 Impacto: {impact}',
+            '',
         ]
 
         if source_url:
             lines.append(f'🔗 <a href="{source_url}">Fonte</a>')
+            lines.append('')
+
+        lines.append('Cripto.ico | Genesis Labs')
 
         return '\n'.join(lines)
 

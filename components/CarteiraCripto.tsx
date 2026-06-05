@@ -13,7 +13,6 @@ import {
 } from '../services/api';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import MonitorStatusWidget from './MonitorStatusWidget';
 
 interface Ativo {
   id: number;
@@ -79,7 +78,9 @@ const CarteiraCripto = () => {
     investimento: '',
     observacoes: '',
     alvo_cima: '',
+    alvo_cima_pct: '',
     alvo_baixo: '',
+    alvo_baixo_pct: '',
     telegram_mensagem: ''
   });
 
@@ -106,8 +107,8 @@ const CarteiraCripto = () => {
     try {
       const [resMembro, resMae, resGemas] = await Promise.all([
         fetchCarteiraMembro(),
-        isAdmin ? fetchCarteiraMae() : Promise.resolve({ data: [] }),
-        isAdmin ? fetchCarteiraGemas() : Promise.resolve({ data: [] }),
+        fetchCarteiraMae().catch(() => ({ data: [] })),
+        fetchCarteiraGemas().catch(() => ({ data: [] })),
       ]);
       if (resMembro.data) setAtivosMembro(resMembro.data);
       if (resMae.data) setAtivosMae(resMae.data);
@@ -117,10 +118,10 @@ const CarteiraCripto = () => {
       const currentListMae = resMae.data || [];
       const currentListGem = resGemas.data || [];
       
-      // Update prices for the active tab immediately after fetching
-      if (activeTab === 'MEMBRO') atualizarPrecosSpot(currentListMem, 'MEMBRO');
-      else if (activeTab === 'MAE') atualizarPrecosSpot(currentListMae, 'MAE');
-      else atualizarPrecosSpot(currentListGem, 'GEMAS');
+      // Update prices for all tabs that have data
+      if (currentListMem.length > 0) atualizarPrecosSpot(currentListMem, 'MEMBRO');
+      if (currentListMae.length > 0) atualizarPrecosSpot(currentListMae, 'MAE');
+      if (currentListGem.length > 0) atualizarPrecosSpot(currentListGem, 'GEMAS');
     } catch (e) {
       console.error(e);
     } finally {
@@ -130,7 +131,7 @@ const CarteiraCripto = () => {
 
   useEffect(() => {
     fetchCarteiras();
-  }, [activeTab]);
+  }, [isAdmin]);
 
   // --- ATUALIZAÇÃO RECORRENTE DE PREÇOS (SPOT) ---
   const atualizarPrecosSpot = async (specificList?: Ativo[], tabToUpdate?: string) => {
@@ -157,9 +158,13 @@ const CarteiraCripto = () => {
   };
 
   useEffect(() => {
-    const inv = setInterval(() => atualizarPrecosSpot(), 30000);
+    const inv = setInterval(() => {
+      atualizarPrecosSpot(undefined, 'MEMBRO');
+      atualizarPrecosSpot(undefined, 'MAE');
+      atualizarPrecosSpot(undefined, 'GEMAS');
+    }, 30000);
     return () => clearInterval(inv);
-  }, [activeTab]); //eslint-disable-line
+  }, []); //eslint-disable-line
 
   useMonitoramentoCarteira(ativosMembro, ativosMae, isAdmin);
 
@@ -216,7 +221,7 @@ const CarteiraCripto = () => {
     setFormData({
       ativo: '', nome_completo: '', corretora: 'Binance', tipo: 'GEMA', 
       preco_entrada: '', data_entrada: format(new Date(), 'yyyy-MM-dd'), alvo_saida: '', alvo_porcentagem: '', investimento: '', observacoes: '',
-      alvo_cima: '', alvo_baixo: '', telegram_mensagem: ''
+      alvo_cima: '', alvo_cima_pct: '', alvo_baixo: '', alvo_baixo_pct: '', telegram_mensagem: ''
     });
     setFormBuscaAtivo('');
     setFormCurrentPrice(null);
@@ -229,6 +234,16 @@ const CarteiraCripto = () => {
     let perc = '';
     if (at.alvo_saida && at.preco_entrada) {
       perc = (((at.alvo_saida - at.preco_entrada) / at.preco_entrada) * 100).toFixed(2);
+    }
+
+    let percCima = '';
+    if (at.alvo_cima && at.preco_entrada) {
+      percCima = (((at.alvo_cima - at.preco_entrada) / at.preco_entrada) * 100).toFixed(2);
+    }
+
+    let percBaixo = '';
+    if (at.alvo_baixo && at.preco_entrada) {
+      percBaixo = (((at.alvo_baixo - at.preco_entrada) / at.preco_entrada) * 100).toFixed(2);
     }
     
     setFormData({
@@ -243,7 +258,9 @@ const CarteiraCripto = () => {
       investimento: at.investimento?.toString() || '',
       observacoes: at.observacoes || '',
       alvo_cima: at.alvo_cima?.toString() || '',
+      alvo_cima_pct: percCima,
       alvo_baixo: at.alvo_baixo?.toString() || '',
+      alvo_baixo_pct: percBaixo,
       telegram_mensagem: at.telegram_mensagem || ''
     });
     setFormBuscaAtivo(at.ativo);
@@ -287,6 +304,54 @@ const CarteiraCripto = () => {
     });
   };
 
+  const handleAlvoCimaPctChange = (val: string) => {
+    setFormData(prev => {
+      const entryPrice = parseFloat(prev.preco_entrada);
+      if (!isNaN(entryPrice) && val !== '') {
+        const pct = parseFloat(val);
+        const novoAlvo = entryPrice * (1 + (pct / 100));
+        return { ...prev, alvo_cima_pct: val, alvo_cima: novoAlvo.toFixed(4) };
+      }
+      return { ...prev, alvo_cima_pct: val };
+    });
+  };
+
+  const handleAlvoCimaChange = (val: string) => {
+    setFormData(prev => {
+      const entryPrice = parseFloat(prev.preco_entrada);
+      if (!isNaN(entryPrice) && val !== '') {
+        const newAlvo = parseFloat(val);
+        const newPct = ((newAlvo - entryPrice) / entryPrice) * 100;
+        return { ...prev, alvo_cima: val, alvo_cima_pct: newPct.toFixed(2) };
+      }
+      return { ...prev, alvo_cima: val };
+    });
+  };
+
+  const handleAlvoBaixoPctChange = (val: string) => {
+    setFormData(prev => {
+      const entryPrice = parseFloat(prev.preco_entrada);
+      if (!isNaN(entryPrice) && val !== '') {
+        const pct = parseFloat(val);
+        const novoAlvo = entryPrice * (1 + (pct / 100));
+        return { ...prev, alvo_baixo_pct: val, alvo_baixo: novoAlvo.toFixed(4) };
+      }
+      return { ...prev, alvo_baixo_pct: val };
+    });
+  };
+
+  const handleAlvoBaixoChange = (val: string) => {
+    setFormData(prev => {
+      const entryPrice = parseFloat(prev.preco_entrada);
+      if (!isNaN(entryPrice) && val !== '') {
+        const newAlvo = parseFloat(val);
+        const newPct = ((newAlvo - entryPrice) / entryPrice) * 100;
+        return { ...prev, alvo_baixo: val, alvo_baixo_pct: newPct.toFixed(2) };
+      }
+      return { ...prev, alvo_baixo: val };
+    });
+  };
+
   const handleOpenSell = (at: Ativo) => {
     setEditingAtivo(at);
     setSellData({
@@ -313,16 +378,17 @@ const CarteiraCripto = () => {
     setListaBusca([]);
     const preco = await buscarPrecoSpot(symbol, formData.corretora);
     setFormCurrentPrice(preco);
-    if (preco && !formData.preco_entrada) {
-      setFormData(prev => ({ ...prev, preco_entrada: preco.toString() }));
-    }
   };
 
   const saveAtivo = async () => {
     try {
+      const precoEntradaFinal = formData.preco_entrada
+        ? parseFloat(formData.preco_entrada)
+        : (formCurrentPrice ? formCurrentPrice : null);
+
       const payload = {
          ...formData,
-         preco_entrada: parseFloat(formData.preco_entrada),
+         preco_entrada: precoEntradaFinal,
          investimento: formData.investimento ? parseFloat(formData.investimento) : null,
          alvo_saida: formData.alvo_saida ? parseFloat(formData.alvo_saida) : null,
          alvo_cima: formData.alvo_cima ? parseFloat(formData.alvo_cima) : null,
@@ -750,12 +816,6 @@ const CarteiraCripto = () => {
            </div>
         )}
 
-        {isAdmin && (
-          <div className="space-y-6 mt-4">
-            <MonitorStatusWidget />
-          </div>
-        )}
-
         {/* POPUP ALVO ATINGIDO */}
         {alvoAlerta && (
             <div className="fixed top-24 left-1/2 -translate-x-1/2 z-[999999] pointer-events-auto bg-[#0a0a0f] border border-genesis-positive/40 rounded-xl p-5 w-[380px] shadow-[0_0_30px_rgba(16,185,129,0.2)] animate-in slide-in-from-top fade-in duration-500">
@@ -846,12 +906,18 @@ const CarteiraCripto = () => {
                           </div>
                       </div>
 
-                      <div className="grid grid-cols-3 gap-4">
+                      <div className="grid grid-cols-2 gap-4">
                           <div>
                              <label className="text-[9px] text-gray-500 uppercase font-bold tracking-widest mb-1 block">Preço de Entrada</label>
                              <input type="number" step="any" className="w-full bg-black border border-white/10 rounded p-3 text-xs text-white outline-none font-mono"
                                     placeholder="Ex: 50000"
                                     value={formData.preco_entrada} onChange={e => setFormData({...formData, preco_entrada: e.target.value})} />
+                          </div>
+                          <div>
+                             <label className="text-[9px] text-gray-500 uppercase font-bold tracking-widest mb-1 block">Investimento ($)</label>
+                             <input type="number" step="any" className="w-full bg-black border border-white/10 rounded p-3 text-xs text-white outline-none font-mono"
+                                    placeholder="Ex: 300"
+                                    value={formData.investimento} onChange={e => setFormData({...formData, investimento: e.target.value})} />
                           </div>
                           <div>
                              <label className="text-[9px] text-gray-500 uppercase font-bold tracking-widest mb-1 block">Alvo (%)</label>
@@ -860,31 +926,13 @@ const CarteiraCripto = () => {
                                     value={formData.alvo_porcentagem} onChange={e => handleAlvoPorcentagemChange(e.target.value)} />
                           </div>
                           <div>
-                             <label className="text-[9px] text-gray-500 uppercase font-bold tracking-widest mb-1 block">Investimento ($)</label>
+                             <label className="text-[9px] text-gray-500 uppercase font-bold tracking-widest mb-1 block">Alvo ($)</label>
                              <input type="number" step="any" className="w-full bg-black border border-white/10 rounded p-3 text-xs text-white outline-none font-mono"
-                                    placeholder="Ex: 300"
-                                    value={formData.investimento} onChange={e => setFormData({...formData, investimento: e.target.value})} />
+                                    placeholder="Ex: 1.50"
+                                    value={formData.alvo_saida} onChange={e => handleAlvoSaidaChange(e.target.value)} />
                           </div>
                       </div>
 
-                      {activeTab === 'MAE' && isAdmin && (
-                          <>
-                             <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                   <label className="text-[9px] text-gray-500 uppercase font-bold tracking-widest mb-1 block">Alvo p/ Cima ($)</label>
-                                   <input type="number" step="any" className="w-full bg-black border border-white/10 rounded p-3 text-xs text-white font-mono" value={formData.alvo_cima} onChange={e => setFormData({...formData, alvo_cima: e.target.value})} />
-                                </div>
-                                <div>
-                                   <label className="text-[9px] text-gray-500 uppercase font-bold tracking-widest mb-1 block">Alvo p/ Baixo ($)</label>
-                                   <input type="number" step="any" className="w-full bg-black border border-white/10 rounded p-3 text-xs text-white font-mono" value={formData.alvo_baixo} onChange={e => setFormData({...formData, alvo_baixo: e.target.value})} />
-                                </div>
-                             </div>
-                             <div>
-                                 <label className="text-[9px] text-gray-500 uppercase font-bold tracking-widest mb-1 block">Msg Telegram (Op.)</label>
-                                 <textarea className="w-full bg-black border border-white/10 rounded p-3 text-xs text-white h-16 resize-none" value={formData.telegram_mensagem} onChange={e => setFormData({...formData, telegram_mensagem: e.target.value})}></textarea>
-                             </div>
-                          </>
-                      )}
 
                       <div>
                           <label className="text-[9px] text-gray-500 uppercase font-bold tracking-widest mb-1 block">Observações</label>

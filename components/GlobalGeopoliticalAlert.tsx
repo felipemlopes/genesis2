@@ -97,7 +97,7 @@ const GlobalGeopoliticalAlert: React.FC<Props> = ({ onNavigateToRadar }) => {
               }}
               className="w-full flex items-center justify-center gap-2 py-2 bg-genesis-negative/10 hover:bg-genesis-negative/20 text-genesis-negative text-xs font-medium rounded-lg transition-colors border-genesis-negative/30"
             >
-              Abrir Radar Geopolítico
+              Abrir Radar News
               <ArrowRight className="w-3 h-3" />
             </button>
           </div>

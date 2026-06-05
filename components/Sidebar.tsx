@@ -84,7 +84,7 @@ const MENU_SECTIONS: { title: string; items: MenuItem[] }[] = [
   {
     title: 'Contexto',
     items: [
-      { id: 'geopolitical_radar', icon: Globe, label: 'Radar Geopolítico' },
+      { id: 'geopolitical_radar', icon: Globe, label: 'Radar News' },
       { id: 'risk', icon: Calculator, label: 'Gestão de Risco' },
       { id: 'new_listings', icon: Zap, label: 'Nova Listagem' },
       { id: 'learn', icon: GraduationCap, label: 'Aprenda Futuros' },

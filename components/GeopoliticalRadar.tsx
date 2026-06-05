@@ -373,7 +373,7 @@ const GeopoliticalRadar = () => {
             <Globe className={isScanning ? "text-red-500/80" : "text-gray-500/80"} size={16} />
           </div>
           <div>
-            <h1 className="text-sm font-bold tracking-tighter uppercase text-white/90">Radar Geopolítico</h1>
+            <h1 className="text-sm font-bold tracking-tighter uppercase text-white/90">Radar News</h1>
             <p className="text-[8px] text-gray-500 font-mono tracking-[0.2em]">MONITORAMENTO GLOBAL</p>
           </div>
         </div>
