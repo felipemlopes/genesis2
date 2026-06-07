@@ -238,10 +238,8 @@ def calcular_pdh_pdl(candles):
 
 def _get_week_id(ts):
     d = datetime.fromtimestamp(ts / 1000, tz=timezone.utc)
-    day_of_year = d.timetuple().tm_yday
-    weekday = d.isoweekday()
-    week_no = math.ceil((day_of_year + 4 - weekday) / 7)
-    return f"{d.year}-W{week_no}"
+    iso = d.isocalendar()
+    return f"{iso[0]}-W{iso[1]}"
 
 
 def calcular_pwh_pwl(candles):

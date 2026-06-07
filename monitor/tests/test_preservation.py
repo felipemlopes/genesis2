@@ -107,7 +107,7 @@ def test_preservation_gravar_banco_receives_all_fields(
     call_args = worker.gravar_banco.call_args[0]
     alerta_dict = call_args[0]
 
-    # Verify all 10 fields are present and correct
+    # Verify all 12 fields are present and correct
     assert alerta_dict['ativo'] == ativo
     assert alerta_dict['tipo'] == tipo
     assert alerta_dict['mensagem'] == mensagem
@@ -118,10 +118,12 @@ def test_preservation_gravar_banco_receives_all_fields(
     assert alerta_dict['preco_atual'] == preco
     assert alerta_dict['variacao_pct'] == variacao
     assert alerta_dict['score'] == score
+    assert 'motivos' in alerta_dict
+    assert 'timeframes' in alerta_dict
 
-    # Verify exactly 10 keys in the dict
-    assert len(alerta_dict) == 10, (
-        f"Expected 10 fields in alerta dict, got {len(alerta_dict)}: {list(alerta_dict.keys())}"
+    # Verify exactly 12 keys in the dict (original 10 + motivos + timeframes)
+    assert len(alerta_dict) == 12, (
+        f"Expected 12 fields in alerta dict, got {len(alerta_dict)}: {list(alerta_dict.keys())}"
     )
 
 

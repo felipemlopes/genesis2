@@ -14,6 +14,9 @@ logger = logging.getLogger('radar-news')
 
 TELEGRAM_TIMEOUT = 15  # seconds
 RETRY_DELAY = 10       # seconds
+HIGH_SEVERITY_DELAY = 30  # seconds
+
+SIGNATURE = 'Cripto.ico | Genesis Labs'
 
 SEVERITY_EMOJI = {
     'CRITICAL': '🔴',
@@ -123,9 +126,13 @@ class TelegramDispatcher:
         title = self._translate_to_pt(entry.get('title', 'Sem título'))
         impact = truncate_summary(self._translate_to_pt(entry.get('impact_summary', '')))
         source_url = entry.get('source_url', '')
+        severity = entry.get('severity', 'HIGH').upper()
+        affected_assets = entry.get('affected_assets', [])
+
+        severity_emoji = SEVERITY_EMOJI.get(severity, '🟠')
 
         lines = [
-            '📡 <b>Radar News</b>',
+            f'{severity_emoji} <b>Radar News</b>',
             '',
             f'<b>{title}</b>',
             '',
@@ -133,11 +140,16 @@ class TelegramDispatcher:
             '',
         ]
 
+        if affected_assets:
+            assets_str = ', '.join(affected_assets)
+            lines.append(f'💰 Ativos: {assets_str}')
+            lines.append('')
+
         if source_url:
             lines.append(f'🔗 <a href="{source_url}">Fonte</a>')
             lines.append('')
 
-        lines.append('Cripto.ico | Genesis Labs')
+        lines.append(SIGNATURE)
 
         return '\n'.join(lines)
 
@@ -168,6 +180,9 @@ class TelegramDispatcher:
 
         if source_url:
             lines.append(f'🔗 <a href="{source_url}">CoinGecko</a>')
+
+        lines.append('')
+        lines.append(SIGNATURE)
 
         return '\n'.join(lines)
 

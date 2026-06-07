@@ -152,6 +152,10 @@ class FakeTelegramDispatcher(TelegramDispatcher):
         # Override to prevent any real HTTP calls
         return True
 
+    def _translate_to_pt(self, text: str) -> str:
+        # Override to prevent network calls during tests
+        return text
+
 
 # Feature: radar-news, Property 6: Telegram dispatch decision by severity
 @given(entry=news_entry_strategy)

@@ -11,6 +11,7 @@ import GlobalGeopoliticalAlert from '../components/GlobalGeopoliticalAlert';
 import GeoNotificationToast from '../components/GeoNotificationToast';
 import RadarNewsPopup from '../components/RadarNewsPopup';
 import AdminPanel from '../components/AdminPanel';
+import MicroRadarPanel from '../components/MicroRadarPanel';
 
 const AppLayout = () => {
   const location = useLocation();
@@ -138,6 +139,10 @@ const AppLayout = () => {
         </header>
 
         <MarketTicker />
+
+        <div className="px-4 md:px-8 pt-4">
+          <MicroRadarPanel />
+        </div>
 
         <div className="flex-1 overflow-y-auto p-4 md:p-8 relative custom-scrollbar bg-black">
           <AnimatePresence mode="wait">
