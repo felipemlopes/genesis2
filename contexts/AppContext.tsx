@@ -146,8 +146,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           setIsAdmin(user.role === 'admin');
         }
       });
+    } else {
+      setIsAdmin(false);
     }
-  }, []);
+  }, [isAuthenticated]);
 
   useEffect(() => {
     if (equity) {
