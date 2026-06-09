@@ -618,9 +618,9 @@ const CarteiraCripto = () => {
                         value={filtroCorretora} onChange={e => setFiltroCorretora(e.target.value)}>
                     <option value="TODAS">Todas Corretoras</option>
                     <option value="Binance">Binance</option>
-                    <option value="Bybit">Bybit</option>
-                    <option value="Bitget">Bitget</option>
-                    <option value="OKX">OKX</option>
+                    {/* <option value="Bybit">Bybit</option> */}
+                    {/* <option value="Bitget">Bitget</option> */}
+                    {/* <option value="OKX">OKX</option> */}
                 </select>
             </div>
             

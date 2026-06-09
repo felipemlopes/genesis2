@@ -462,9 +462,9 @@ const GenesisPage: React.FC = () => {
                       className="w-full bg-[#050505] border border-white/5 rounded-md px-3 py-2.5 text-xs text-white appearance-none focus:border-white/20 focus:outline-none transition-all uppercase tracking-wide"
                     >
                       <option value="Binance">Binance</option>
-                      <option value="Bybit">Bybit</option>
-                      <option value="Bitget">Bitget</option>
-                      <option value="OKX">OKX</option>
+                      {/* <option value="Bybit">Bybit</option> */}
+                      {/* <option value="Bitget">Bitget</option> */}
+                      {/* <option value="OKX">OKX</option> */}
                     </select>
                     <ChevronDown className="absolute right-3 top-3.5 text-genesis-text-muted pointer-events-none" size={14} />
                   </div>
