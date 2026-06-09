@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { Terminal, Zap, Layers, BarChart2, Mail, Lock, CheckCircle2, ArrowRight } from 'lucide-react';
 import { motion } from "framer-motion";
@@ -7,8 +8,6 @@ import AboutPage from './AboutPage';
 import PrivacyPage from './PrivacyPage';
 import SupportPage from './SupportPage';
 import RoadmapPage from './RoadmapPage'; 
-import VersionSelector from './VersionSelector';
-import { login } from '../services/api';
 
 interface LandingPageProps {
   onLogin: () => void;
@@ -23,36 +22,31 @@ const LandingPage: React.FC<LandingPageProps> = ({ onLogin }) => {
   const [acceptTerms, setAcceptTerms] = useState(false);
   const [emailInput, setEmailInput] = useState("");
   const [passwordInput, setPasswordInput] = useState("");
-  
-  // Production variables
-  const [loginError, setLoginError] = useState("");
-  const [isLoggingIn, setIsLoggingIn] = useState(false);
-  const [showVersionSelector, setShowVersionSelector] = useState(false);
 
   const handleStartLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!acceptTerms || !emailInput || !passwordInput) return;
 
-    setIsLoggingIn(true);
-    setLoginError("");
-
     try {
-      await login(emailInput, passwordInput);
-      // Wait for localStorage update
-      setTimeout(() => {
-        onLogin();
-      }, 500);
-    } catch (err: any) {
+      // DEV - CONECTAR: Este fluxo depende do LastLink estar configurado no servidor para funcionar completamente.
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: emailInput, password: passwordInput, lastlinkToken: passwordInput })
+      });
+      
+      const data = await res.json();
+      
+      if (res.ok && data.success && data.token) {
+        localStorage.setItem('genesis_token', data.token);
+        setShowQuiz(true);
+      } else {
+        alert(data.message || "Assinatura não está ativa ou credenciais inválidas.");
+      }
+    } catch (err) {
       console.error(err);
-      setLoginError(err.message || "Credenciais inválidas");
-    } finally {
-      setIsLoggingIn(false);
+      alert("Erro ao comunicar com o servidor.");
     }
-  };
-
-  const handleAcessarClick = (e: React.MouseEvent) => {
-    e.preventDefault();
-    setShowVersionSelector(true);
   };
 
   const scrollToAccess = (e: React.MouseEvent) => {
@@ -80,22 +74,6 @@ const LandingPage: React.FC<LandingPageProps> = ({ onLogin }) => {
     return <RoadmapPage onBack={() => setShowRoadmap(false)} />;
   }
 
-  if (showVersionSelector) {
-    return (
-      <VersionSelector 
-        onSelectVersion={(v) => {
-          if (v === 2) {
-            setShowVersionSelector(false);
-            setTimeout(() => {
-              const element = document.getElementById('access');
-              if (element) element.scrollIntoView({ behavior: 'smooth', block: 'start' });
-            }, 100);
-          }
-        }}
-      />
-    );
-  }
-
   if (showQuiz) {
     return (
       <div className="min-h-screen bg-black flex items-center justify-center p-6">
@@ -105,7 +83,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onLogin }) => {
   }
 
   return (
-    <div className="scroll-smooth min-h-screen text-white selection:bg-genesis-positive selection:text-black overflow-x-hidden font-sans" style={{ backgroundColor: '#0A0A0B' }}>
+    <div className="scroll-smooth min-h-screen bg-[#0A0A0B] text-white selection:bg-genesis-positive selection:text-black overflow-x-hidden font-sans">
       
       {/* Animated 3D/Gradient Background (Matching VersionSelector) */}
       <div className="fixed inset-0 pointer-events-none overflow-hidden z-0">
@@ -169,7 +147,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onLogin }) => {
            
            <a 
              href="#access" 
-             onClick={handleAcessarClick}
+             onClick={scrollToAccess}
              className="group hidden md:flex items-center justify-center gap-2 relative bg-genesis-accent/10 hover:bg-genesis-accent/20 border border-genesis-accent/20 hover:border-genesis-accent/40 rounded-xl px-6 py-2 transition-all duration-500 overflow-hidden"
            >
              <div className="absolute inset-0 w-full h-full bg-gradient-to-r from-transparent via-white/5 to-transparent -translate-x-full group-hover:animate-[shimmer_1.5s_infinite]"></div>
@@ -203,7 +181,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onLogin }) => {
             <div className="flex flex-col sm:flex-row gap-6">
                 <a 
                   href="#access" 
-                  onClick={handleAcessarClick}
+                  onClick={scrollToAccess}
                   className="group relative h-14 flex items-center justify-center bg-white/[0.02] border border-white/5 hover:bg-genesis-accent/10 rounded-xl px-10 transition-all duration-500 hover:border-genesis-accent/30 overflow-hidden shadow-[0_0_20px_rgba(0,0,0,0.5)] hover:shadow-[0_0_30px_rgba(139,92,246,0.15)]"
                 >
                   <div className="absolute inset-0 w-full h-full bg-gradient-to-r from-transparent via-white/5 to-transparent -translate-x-full group-hover:animate-[shimmer_1.5s_infinite]"></div>
@@ -369,12 +347,6 @@ const LandingPage: React.FC<LandingPageProps> = ({ onLogin }) => {
                              />
                           </div>
                        </div>
-                       
-                       {loginError && (
-                         <div className="text-red-500 text-xs mt-2 text-center font-medium">
-                           {loginError}
-                         </div>
-                       )}
 
                        <div className="pt-6">
                           <label className="flex items-center gap-4 cursor-pointer group/checkbox">
@@ -396,15 +368,15 @@ const LandingPage: React.FC<LandingPageProps> = ({ onLogin }) => {
                        <div className="pt-6">
                          <button 
                            type="submit"
-                           disabled={!acceptTerms || isLoggingIn}
+                           disabled={!acceptTerms}
                            className={`relative w-full h-14 rounded-2xl font-bold text-[10px] uppercase tracking-[0.3em] transition-all duration-500 flex items-center justify-center gap-3 overflow-hidden
                              ${acceptTerms 
                                ? 'bg-white/[0.03] border border-genesis-positive/30 text-white shadow-[0_0_30px_rgba(16,185,129,0.1)] hover:shadow-[0_0_40px_rgba(16,185,129,0.3)] hover:border-genesis-positive/60' 
                                : 'bg-white/5 border border-transparent text-white/20 cursor-not-allowed'}`}
                          >
-                           {acceptTerms && !isLoggingIn && <div className="absolute inset-0 w-full h-full bg-gradient-to-r from-transparent via-white/5 to-transparent -translate-x-full animate-[shimmer_1.5s_infinite]"></div>}
-                           <span className="relative z-10">{isLoggingIn ? "Autenticando..." : "Entrar no Sistema"}</span> 
-                           <Zap size={14} className={`relative z-10 transition-all duration-300 ${acceptTerms ? 'text-genesis-positive' : 'text-white/20'} ${isLoggingIn ? 'animate-pulse' : ''}`} />
+                           {acceptTerms && <div className="absolute inset-0 w-full h-full bg-gradient-to-r from-transparent via-white/5 to-transparent -translate-x-full animate-[shimmer_1.5s_infinite]"></div>}
+                           <span className="relative z-10">Entrar no Sistema</span> 
+                           <Zap size={14} className={`relative z-10 transition-all duration-300 ${acceptTerms ? 'text-genesis-positive' : 'text-white/20'}`} />
                          </button>
                        </div>
                     </form>

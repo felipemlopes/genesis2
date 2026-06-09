@@ -1,25 +1,12 @@
 import React from "react";
-import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { Terminal, ArrowRight, Zap, Target } from "lucide-react";
 
-export interface VersionSelectorProps {
-  onSelectVersion?: (version: 1 | 2) => void;
+interface VersionSelectorProps {
+  onSelectVersion: (version: 1 | 2) => void;
 }
 
 const VersionSelector: React.FC<VersionSelectorProps> = ({ onSelectVersion }) => {
-  const navigate = useNavigate();
-  const v1Url = import.meta.env.VITE_V1_URL || "https://v1.genesislabs.com"; // Fallback if missing
-
-  const handleSelect = (version: 1 | 2) => {
-    onSelectVersion?.(version);
-    if (version === 1) {
-      window.location.href = v1Url;
-    } else {
-      navigate('/login');
-    }
-  };
-
   return (
     <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-[#0A0A0B] font-sans selection:bg-genesis-positive selection:text-black">
       {/* Refined Smooth Animated Background Background */}
@@ -58,20 +45,12 @@ const VersionSelector: React.FC<VersionSelectorProps> = ({ onSelectVersion }) =>
           transition={{ duration: 0.8, ease: "easeOut" }}
           className="flex flex-col items-center mb-20 w-full"
         >
-          {/* Logo linked to home */}
-          <button
-            onClick={() => navigate('/')}
-            className="flex items-center gap-3 mb-10 group cursor-pointer"
-          >
-            <div className="w-10 h-10 rounded-xl border border-white/5 flex items-center justify-center bg-white/[0.01] transition-all duration-500 group-hover:border-genesis-accent/30 shadow-[0_0_15px_rgba(255,255,255,0.02)] group-hover:shadow-[0_0_20px_rgba(139,92,246,0.15)] relative overflow-hidden">
-              <div className="absolute inset-0 bg-gradient-to-tr from-genesis-accent/0 to-genesis-accent/0 group-hover:to-genesis-accent/10 transition-all duration-500"></div>
-              <Terminal size={18} className="text-white/70 group-hover:text-genesis-accent transition-colors duration-500 relative z-10" />
-            </div>
-            <div className="flex flex-col items-start">
-              <span className="font-medium text-white tracking-widest text-sm uppercase">Gênesis</span>
-              <span className="font-bold text-[9px] text-white/40 group-hover:text-genesis-accent uppercase tracking-[0.2em] transition-colors duration-500">Labs</span>
-            </div>
-          </button>
+          {/* Logo Placeholder */}
+          <div className="w-40 h-16 rounded-xl border border-white/5 flex items-center justify-center mb-10 shadow-[0_4px_30px_rgba(0,0,0,0.1)] bg-black/20 backdrop-blur-md relative group overflow-hidden">
+             {/* Efeito de brilho suave dentro do logo placeholder sobre hover */}
+             <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/5 to-transparent -translate-x-[100%] group-hover:translate-x-[100%] transition-transform duration-1000"></div>
+             <span className="text-white/40 tracking-[0.3em] text-xs font-medium relative z-10">LOGO AQUI</span>
+          </div>
           
           <h1 className="text-3xl md:text-4xl font-light text-white tracking-widest uppercase text-center" style={{ letterSpacing: "0.2em" }}>
             Selecione a versão
@@ -87,7 +66,7 @@ const VersionSelector: React.FC<VersionSelectorProps> = ({ onSelectVersion }) =>
             transition={{ duration: 0.6, delay: 0.2 }}
             whileHover={{ scale: 1.02 }}
             className="group relative flex flex-col items-center cursor-pointer"
-            onClick={() => handleSelect(1)}
+            onClick={() => onSelectVersion(1)}
           >
             {/* Neon Glowing Border Setup */}
             <div className="absolute -inset-[1px] rounded-[24px] bg-gradient-to-b from-white/10 to-transparent opacity-100 transition-all duration-500 group-hover:from-genesis-accent group-hover:to-genesis-accent/20 group-hover:blur-[6px]"></div>
@@ -126,7 +105,7 @@ const VersionSelector: React.FC<VersionSelectorProps> = ({ onSelectVersion }) =>
             transition={{ duration: 0.6, delay: 0.4 }}
             whileHover={{ scale: 1.02 }}
             className="group relative flex flex-col items-center cursor-pointer"
-            onClick={() => handleSelect(2)}
+            onClick={() => onSelectVersion(2)}
           >
             {/* Neon Glowing Border Setup */}
             <div className="absolute -inset-[1px] rounded-[24px] bg-gradient-to-b from-white/10 to-transparent opacity-100 transition-all duration-500 group-hover:from-genesis-positive group-hover:to-genesis-positive/20 group-hover:blur-[6px]"></div>
@@ -149,6 +128,9 @@ const VersionSelector: React.FC<VersionSelectorProps> = ({ onSelectVersion }) =>
               </div>
 
               <div className="flex flex-col items-center w-full relative z-20">
+                <p className="text-genesis-text-secondary text-[10px] uppercase tracking-widest mb-5 opacity-40 group-hover:opacity-100 transition-opacity">
+                  Observação: Versão simplificada
+                </p>
                 <div className="w-full h-14 flex items-center justify-center bg-white/[0.02] border border-white/5 group-hover:bg-genesis-positive/10 rounded-xl px-6 transition-all duration-500 group-hover:border-genesis-positive/30 overflow-hidden relative">
                    <div className="absolute inset-0 w-full h-full bg-gradient-to-r from-transparent via-white/5 to-transparent -translate-x-full group-hover:animate-[shimmer_1.5s_infinite]"></div>
                    <span className="text-white/70 group-hover:text-white uppercase tracking-[0.2em] text-xs font-semibold mr-3 transition-colors">Acessar Beta</span>

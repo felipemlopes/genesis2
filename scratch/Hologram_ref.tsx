@@ -165,7 +165,7 @@ const Hologram: React.FC = () => {
       <div className="relative w-full h-[400px] md:h-[600px] flex items-center justify-center pointer-events-none">
         <canvas ref={canvasRef} className="absolute inset-0 z-0 pointer-events-none w-full h-full" />
         
-        {/* Overlay transparent */}
+        {/* Overlay removed per user request for transparency */}
         <div className="absolute inset-0 z-10 pointer-events-none bg-transparent"></div>
   
         {/* Brilho pulsante central para melhorar a profundidade e imersão 3D */}
