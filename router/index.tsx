@@ -3,6 +3,7 @@ import { createBrowserRouter, Navigate } from 'react-router-dom';
 import AppLayout from '../layouts/AppLayout';
 import ProtectedRoute from '../components/ProtectedRoute';
 import LoginPage from '../pages/LoginPage';
+import VersionSelector from '../components/VersionSelector';
 
 const GenesisPage = lazy(() => import('../pages/GenesisPage'));
 const CarteiraPage = lazy(() => import('../pages/CarteiraPage'));
@@ -36,6 +37,10 @@ const SuspenseWrapper: React.FC<{ children: React.ReactNode }> = ({ children }) 
 );
 
 export const router = createBrowserRouter([
+  {
+    path: '/select-version',
+    element: <VersionSelector />,
+  },
   {
     path: '/login',
     element: <LoginPage />,

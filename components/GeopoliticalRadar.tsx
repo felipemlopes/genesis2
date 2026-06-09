@@ -368,9 +368,9 @@ const GeopoliticalRadar = () => {
       
       {/* Header - Reposicionado e mais leve */}
       <div className="absolute top-6 left-6 z-[1000] flex items-center gap-[16px]">
-        <div className="bg-black/40   p-3 rounded-lg flex items-center gap-3 shadow-xl">
-          <div className={`w-8 h-8 rounded-full ${isScanning ? 'bg-red-500/10 border-red-500/20' : 'bg-gray-500/10 border-gray-500/20'} flex items-center justify-center border`}>
-            <Globe className={isScanning ? "text-red-500/80" : "text-gray-500/80"} size={16} />
+        <div className="bg-black/40 backdrop-blur-md border border-white/5 p-3 rounded-lg flex items-center gap-3 shadow-xl">
+          <div className={`w-8 h-8 rounded-full flex items-center justify-center border transition-all duration-300 ${isScanning ? 'bg-emerald-500/10 border-emerald-500/20 shadow-[0_0_10px_rgba(57,255,20,0.3)]' : 'bg-gray-500/10 border-gray-500/20'}`}>
+            <Globe className={isScanning ? "text-emerald-400" : "text-gray-500/80"} size={16} />
           </div>
           <div>
             <h1 className="text-sm font-bold tracking-tighter uppercase text-white/90">Radar News</h1>
@@ -382,15 +382,15 @@ const GeopoliticalRadar = () => {
           onClick={() => {
             toggle();
           }}
-          className={`group flex items-center gap-2 px-4 py-2 rounded-full border transition-all duration-300 ${
+          className={`group flex items-center gap-2 px-4 py-2 rounded-full border backdrop-blur-md transition-all duration-300 ${
             isScanning 
-              ? 'bg-red-500/10 border-red-500/30 text-red-400 hover:bg-red-500/20' 
+              ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20 shadow-[0_0_10px_rgba(57,255,20,0.3)]' 
               : 'bg-black/40 border-gray-500/20 text-gray-400 hover:text-white hover:bg-black/60'
           }`}
         >
           {isScanning ? (
             <>
-              <Power className="animate-pulse" size={14} />
+              <Power className="animate-pulse text-emerald-400" size={14} />
               <span className="text-[10px] font-bold uppercase tracking-widest">
                 Desativar Radar
               </span>

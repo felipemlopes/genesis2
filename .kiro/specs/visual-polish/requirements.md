@@ -63,7 +63,7 @@ Este documento especifica os requisitos visuais e cosméticos para alinhar o fro
 
 ### Requisito 5: Componente VersionSelector
 
-**User Story:** Como usuário, eu quero uma tela de seleção de versão em tela cheia com cards grandes animados e efeitos neon, para que a escolha entre versões seja visualmente impactante.
+**User Story:** Como usuário, eu quero uma tela de seleção de versão em tela cheia com cards grandes animados e efeitos neon, para que a escolha entre versões seja visualmente impactante. O seletor é a primeira tela exibida, antes de qualquer autenticação.
 
 #### Critérios de Aceite
 
@@ -72,6 +72,10 @@ Este documento especifica os requisitos visuais e cosméticos para alinhar o fro
 3. WHEN o usuário passa o mouse sobre um card de versão, THE VersionSelector SHALL exibir glow de `shadow-[0_0_60px]` e uma linha `h-px` que expande de 0 para 100% de largura
 4. THE VersionSelector SHALL exibir botão com efeito Shimmer e placeholder de logo com Shimmer horizontal
 5. THE VersionSelector SHALL aceitar uma prop `onSelectVersion` que recebe o número da versão selecionada (1 ou 2)
+6. WHEN o usuário seleciona a Versão 2, THE VersionSelector SHALL navegar para a página de login da aplicação atual (`/login`) usando `react-router-dom`
+7. WHEN o usuário seleciona a Versão 1, THE VersionSelector SHALL redirecionar o navegador via `window.location.href` para a URL definida na variável de ambiente `VITE_V1_URL`
+8. THE VersionSelector SHALL ser exibido como a rota raiz (`/`) da aplicação, antes de qualquer fluxo de autenticação
+9. THE sistema SHALL ler a URL da Versão 1 exclusivamente de `import.meta.env.VITE_V1_URL`, nunca hardcodada no código
 
 ### Requisito 6: AlertaPopup com Countdown e Glow Direcional
 

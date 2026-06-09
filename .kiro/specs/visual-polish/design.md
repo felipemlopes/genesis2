@@ -137,7 +137,7 @@ Botão principal com glassmorphism:
 ```tsx
 // components/VersionSelector.tsx
 interface VersionSelectorProps {
-  onSelectVersion: (version: 1 | 2) => void;
+  onSelectVersion?: (version: 1 | 2) => void;
 }
 ```
 
@@ -147,6 +147,30 @@ Estrutura:
 - Cada card: `min-h-[420px]`, borda dupla neon (camada blur + camada sólida)
 - Hover: `shadow-[0_0_60px_rgba(176,38,255,0.3)]` + linha `h-px` que expande `w-0 group-hover:w-full`
 - Botão com shimmer + logo placeholder com shimmer horizontal
+
+**Fluxo de navegação:**
+- Versão 1 selecionada → `window.location.href = import.meta.env.VITE_V1_URL`
+- Versão 2 selecionada → `navigate('/login')` via `useNavigate` do react-router-dom
+
+```tsx
+const navigate = useNavigate();
+const v1Url = import.meta.env.VITE_V1_URL;
+
+const handleSelect = (version: 1 | 2) => {
+  onSelectVersion?.(version);
+  if (version === 1) {
+    window.location.href = v1Url;
+  } else {
+    navigate('/login');
+  }
+};
+```
+
+**Posicionamento na rota:** O `VersionSelector` deve ser montado na rota raiz `/` do router, antes do fluxo de autenticação. A LandingPage atual (`/landing` ou equivalente) fica acessível apenas após a seleção da v2.
+
+**Variável de ambiente:**
+- `.env`: `VITE_V1_URL=https://url-da-versao-1.com`
+- `.env.example`: `VITE_V1_URL=` (sem valor, para documentar a variável)
 
 ### 6. AlertaPopup com Countdown (RadarNewsPopup — Req 6)
 
@@ -252,6 +276,9 @@ interface VersionSelectorProps {
 ```
 
 Não há alteração em stores, contextos ou APIs.
+
+**Variável de ambiente necessária:**
+- `VITE_V1_URL` — URL do frontend da Versão 1. Lida via `import.meta.env.VITE_V1_URL`. Deve estar no `.env` e documentada no `.env.example`.
 
 ## Propriedades de Corretude
 

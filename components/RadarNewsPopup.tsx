@@ -19,11 +19,18 @@ const RadarNewsCard: React.FC<{ item: RadarNewsItem; onClose: (id: number) => vo
     const sev = SEVERITY_CONFIG[item.severity];
     const bias = BIAS_LABEL[item.market_bias] || BIAS_LABEL.NEUTRAL;
     const isDiscovery = item.is_discovery;
+    // biasGlow replaces severity glow for directional feedback (Req 6.2, 6.3)
+
+    const biasGlow = item.market_bias === 'BULLISH'
+        ? 'shadow-[0_0_15px_rgba(16,185,129,0.2)]'
+        : item.market_bias === 'BEARISH'
+        ? 'shadow-[0_0_15px_rgba(239,68,68,0.2)]'
+        : '';
 
     return (
-        <div className={`relative flex flex-col pointer-events-auto bg-[#0a0a0f] border ${sev.border} rounded-xl p-4 mb-3 w-[370px] shadow-2xl ${sev.glow} animate-in slide-in-from-right fade-in duration-500 overflow-hidden`}>
-            {/* Auto-dismiss progress bar (15s) */}
-            <div className="absolute bottom-0 left-0 h-1 bg-white/10 w-full animate-[radarProgress_15s_linear_forwards] origin-left" />
+        <div className={`relative flex flex-col pointer-events-auto bg-[#0a0a0f] border ${sev.border} rounded-xl p-4 mb-3 w-[350px] shadow-2xl ${biasGlow} animate-in slide-in-from-right fade-in duration-500 overflow-hidden`}>
+            {/* Auto-dismiss progress bar (12s) */}
+            <div className="absolute bottom-0 left-0 h-1 bg-white/10 w-full animate-[radarProgress_12s_linear_forwards] origin-left" />
 
             <button onClick={() => onClose(item.id)} className="absolute top-3 right-3 text-gray-500 hover:text-white transition-colors" aria-label="Fechar notificação">
                 <X size={16} />
@@ -66,12 +73,14 @@ const RadarNewsCard: React.FC<{ item: RadarNewsItem; onClose: (id: number) => vo
 
             {/* Affected Assets Tags */}
             {item.affected_assets.length > 0 && (
-                <div className="flex flex-wrap gap-1.5 mb-3">
+                <div className="border-t border-white/5 pt-3 mb-3">
+                <div className="flex flex-wrap gap-1.5">
                     {item.affected_assets.map(asset => (
                         <span key={asset} className="text-[9px] bg-white/10 text-gray-200 font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">
                             {asset}
                         </span>
                     ))}
+                </div>
                 </div>
             )}
 

@@ -1,12 +1,14 @@
 
 import React, { useState } from 'react';
-import { Terminal, Zap, Layers, BarChart2, ShieldCheck, Mail, Lock, CheckCircle2 } from 'lucide-react';
+import { motion } from 'framer-motion';
+import { Terminal, Zap, Layers, BarChart2, ShieldCheck, Mail, Lock, CheckCircle2, ArrowRight } from 'lucide-react';
 import Hologram from './Hologram';
 import EducationalQuiz from './EducationalQuiz';
 import AboutPage from './AboutPage';
 import PrivacyPage from './PrivacyPage';
 import SupportPage from './SupportPage';
 import RoadmapPage from './RoadmapPage';
+import VersionSelector from './VersionSelector';
 import { login } from '../services/api';
 
 interface LandingPageProps {
@@ -24,6 +26,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onLogin }) => {
   const [passwordInput, setPasswordInput] = useState("");
   const [loginError, setLoginError] = useState("");
   const [isLoggingIn, setIsLoggingIn] = useState(false);
+  const [showVersionSelector, setShowVersionSelector] = useState(false);
 
   const handleStartLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -46,12 +49,9 @@ const LandingPage: React.FC<LandingPageProps> = ({ onLogin }) => {
     }
   };
 
-  const scrollToAccess = (e: React.MouseEvent) => {
+  const handleAcessarClick = (e: React.MouseEvent) => {
     e.preventDefault();
-    const element = document.getElementById('access');
-    if (element) {
-      element.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }
+    setShowVersionSelector(true);
   };
 
   // NAVEGAÇÃO CONDICIONAL
@@ -71,6 +71,22 @@ const LandingPage: React.FC<LandingPageProps> = ({ onLogin }) => {
     return <RoadmapPage onBack={() => setShowRoadmap(false)} />;
   }
 
+  if (showVersionSelector) {
+    return (
+      <VersionSelector 
+        onSelectVersion={(v) => {
+          if (v === 2) {
+            setShowVersionSelector(false);
+            setTimeout(() => {
+              const element = document.getElementById('access');
+              if (element) element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }, 100);
+          }
+        }}
+      />
+    );
+  }
+
   if (showQuiz) {
     return (
       <div className="min-h-screen bg-black flex items-center justify-center p-6">
@@ -82,56 +98,79 @@ const LandingPage: React.FC<LandingPageProps> = ({ onLogin }) => {
   return (
     <div className="scroll-smooth min-h-screen bg-black text-white selection:bg-genesis-positive selection:text-black overflow-x-hidden animate-in fade-in duration-1000">
       
-      {/* BACKGROUND DECORATION */}
+      {/* BACKGROUND DECORATION - Animated 3D Orbs */}
       <div className="fixed inset-0 pointer-events-none overflow-hidden">
-        <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-genesis-accent/5 rounded-full blur-[120px]"></div>
-        <div className="absolute bottom-[-10%] right-[-10%] w-[30%] h-[30%] bg-genesis-positive/5 rounded-full blur-[100px]"></div>
+        <motion.div
+          className="absolute top-[-10%] left-[-10%] w-[60%] h-[70%] rounded-full blur-[120px]"
+          style={{ background: 'radial-gradient(circle, rgba(176,38,255,0.06) 0%, transparent 70%)' }}
+          animate={{ x: [0, 30, -20, 0], y: [0, -40, 20, 0], scale: [1, 1.1, 0.95, 1] }}
+          transition={{ duration: 22, repeat: Infinity, ease: 'easeInOut' }}
+        />
+        <motion.div
+          className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[70%] rounded-full blur-[120px]"
+          style={{ background: 'radial-gradient(circle, rgba(57,255,20,0.05) 0%, transparent 70%)' }}
+          animate={{ x: [0, -25, 35, 0], y: [0, 30, -25, 0], scale: [1, 0.95, 1.08, 1] }}
+          transition={{ duration: 25, repeat: Infinity, ease: 'easeInOut' }}
+        />
       </div>
 
-      {/* HEADER / NAVIGATION */}
-      <nav className="h-24 px-8 md:px-16 flex items-center justify-between  relative z-[999999] shadow-xl transition-all duration-500">
-        <div className="flex items-center gap-3 cursor-pointer group" onClick={() => { setShowAbout(false); setShowPrivacy(false); setShowSupport(false); setShowRoadmap(false); }}>
-          <div className="w-8 h-8 rounded-lg border-genesis-accent/30 flex items-center justify-center shadow-[0_0_15px_rgba(139,92,246,0.2)] bg-genesis-accent/5 transition-all duration-500 group-hover:border-genesis-accent/60 group-hover:shadow-[0_0_20px_rgba(139,92,246,0.4)]">
-            <Terminal size={18} className="text-genesis-accent transition-transform duration-500 group-hover:scale-110" />
+      {/* HEADER / NAVIGATION - Pill with Glassmorphism */}
+      <nav className="fixed top-6 left-1/2 -translate-x-1/2 z-[999999] w-[90%] max-w-4xl">
+        <div className="bg-[#0c0c0e]/80 backdrop-blur-xl border border-white/5 rounded-2xl shadow-[0_10px_30px_rgba(0,0,0,0.5)] px-8 h-16 flex items-center justify-between">
+          {/* Logo */}
+          <div className="flex items-center gap-3 cursor-pointer group" onClick={() => { setShowAbout(false); setShowPrivacy(false); setShowSupport(false); setShowRoadmap(false); }}>
+            <div className="w-10 h-10 rounded-xl border border-white/5 flex items-center justify-center shadow-[0_0_15px_rgba(139,92,246,0.2)] bg-genesis-accent/5 transition-all duration-500 group-hover:bg-gradient-to-tr group-hover:from-genesis-accent/10 group-hover:to-transparent group-hover:shadow-[0_0_20px_rgba(139,92,246,0.4)]">
+              <Terminal size={18} className="text-genesis-accent transition-transform duration-500 group-hover:scale-110" />
+            </div>
+            <div className="flex items-baseline gap-1.5">
+              <span className="font-bold text-lg text-white" style={{ letterSpacing: '-0.01em' }}>Gênesis</span>
+              <span className="font-medium text-[10px] uppercase" style={{ letterSpacing: '0.12em' }}>Labs</span>
+            </div>
           </div>
-          <div className="flex items-baseline gap-1.5">
-            <span className="font-bold text-lg text-white" style={{ letterSpacing: '-0.01em' }}>Gênesis</span>
-            <span className="font-medium text-[10px] uppercase " style={{ letterSpacing: '0.12em' }}>Labs</span>
+          {/* Nav Links with animated underline */}
+          <div className="flex items-center gap-6 md:gap-8">
+             <button 
+               onClick={() => setShowAbout(true)} 
+               className="relative group"
+             >
+               <span className="text-[10px] font-bold text-gray-500 group-hover:text-white uppercase tracking-widest transition-colors duration-300">Sobre</span>
+               <span className="absolute -bottom-1 left-0 h-px w-0 group-hover:w-full transition-all duration-300 bg-gradient-to-r from-genesis-accent to-genesis-positive" />
+             </button>
+             <button 
+               onClick={() => setShowRoadmap(true)} 
+               className="relative group"
+             >
+               <span className="text-[10px] font-bold text-gray-500 group-hover:text-white uppercase tracking-widest transition-colors duration-300">Roadmap</span>
+               <span className="absolute -bottom-1 left-0 h-px w-0 group-hover:w-full transition-all duration-300 bg-gradient-to-r from-genesis-accent to-genesis-positive" />
+             </button>
+             {/* Botão Acessar com shimmer + ArrowRight */}
+             <a 
+               href="#access" 
+               onClick={handleAcessarClick}
+               className="relative overflow-hidden group bg-white/[0.02] border border-white/10 px-5 py-2 rounded-xl text-[10px] font-bold uppercase tracking-widest text-white transition-all duration-300 hover:shadow-[0_0_20px_rgba(176,38,255,0.3)] flex items-center gap-2"
+             >
+               <span className="shimmer-effect" />
+               Acessar
+               <ArrowRight size={12} className="transition-transform duration-300 group-hover:translate-x-1" />
+             </a>
           </div>
-        </div>
-        <div className="flex gap-6 md:gap-8">
-           <button 
-             onClick={() => setShowAbout(true)} 
-             className="text-[10px] font-bold text-gray-500 hover:text-white uppercase tracking-widest transition-colors duration-300"
-           >
-             Sobre
-           </button>
-           <button 
-             onClick={() => setShowRoadmap(true)} 
-             className="text-[10px] font-bold text-gray-500 hover:text-white uppercase tracking-widest transition-colors duration-300"
-           >
-             Roadmap
-           </button>
-           <a 
-             href="#access" 
-             onClick={scrollToAccess}
-             className="text-[10px] font-bold text-gray-500 hover:text-white uppercase tracking-widest transition-colors duration-300"
-           >
-             Acessar
-           </a>
         </div>
       </nav>
 
       {/* HERO SECTION */}
-      <section className="relative px-6 md:px-16 pt-20 md:pt-32 pb-20">
+      <section className="relative px-6 md:px-16 pt-32 md:pt-44 pb-20">
         <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-16 items-center">
-          <div className="animate-in fade-in slide-in- duration-1000">
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.8, ease: 'easeOut' }}
+          >
             <div className="flex items-center gap-2 text-genesis-accent mb-6">
                 <span className="w-8 h-[1px] bg-genesis-accent shadow-[0_0_10px_rgba(139,92,246,0.8)]"></span>
                 <span className="text-[10px] font-bold uppercase tracking-[0.4em]">Plataforma Educacional</span>
             </div>
             <h1 className="text-5xl md:text-7xl font-thin tracking-tighter mb-8 leading-[1.1]">
-              A Próxima <span className="font-bold text-white drop-shadow-[0_0_15px_rgba(255,255,255,0.1)]">Fronteira</span> da Análise Cripto.
+              A Próxima <span className="font-bold bg-clip-text text-transparent bg-gradient-to-r from-white via-genesis-accent to-genesis-positive">Fronteira</span> da Análise Cripto.
             </h1>
             <p className="text-gray-400 text-lg md:text-xl font-light leading-relaxed max-w-xl mb-12">
               Tecnologia avançada, Inteligência Artificial e indicadores profissionais integrados em um ecossistema educacional projetado para o investidor moderno.
@@ -139,9 +178,10 @@ const LandingPage: React.FC<LandingPageProps> = ({ onLogin }) => {
             <div className="flex flex-wrap gap-6">
                 <a 
                   href="#access" 
-                  onClick={scrollToAccess}
-                  className="bg-white text-black  px-8 py-4 rounded-xl font-bold text-xs uppercase tracking-[0.2em] transition-all duration-300 shadow-xl hover:shadow-[0_0_30px_rgba(57,255,20,0.3)] hover:-translate-y-0.5"
+                  onClick={handleAcessarClick}
+                  className="relative overflow-hidden bg-white/[0.02] border border-white/10 px-8 py-4 rounded-xl font-bold text-xs uppercase tracking-[0.2em] text-white transition-all duration-300 shadow-xl hover:shadow-[0_0_30px_rgba(176,38,255,0.3)] hover:-translate-y-0.5"
                 >
+                  <span className="shimmer-effect" />
                   Acessar o Gênesis
                 </a>
                 <button 
@@ -151,7 +191,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onLogin }) => {
                   Conheça o Gênesis
                 </button>
             </div>
-          </div>
+          </motion.div>
           
           <div className="relative animate-in fade-in duration-1000 delay-200">
              <Hologram />
@@ -200,23 +240,32 @@ const LandingPage: React.FC<LandingPageProps> = ({ onLogin }) => {
                    extra: "O foco é o desenvolvimento de competência analítica individual, eliminando a dependência de terceiros."
                  }
                ].map((card, i) => (
-                 <div 
-                    key={i} 
-                    className="
-                      bg-genesis-card  p-10 rounded-2xl 
-                      transition-all duration-500 group 
-                      hover:border-genesis-accent/50 hover:-translate-y-1
-                    "
+                 <motion.div
+                    key={i}
+                    initial={{ opacity: 0, y: 20 }}
+                    whileInView={{ opacity: 1, y: 0 }}
+                    viewport={{ once: true }}
+                    transition={{ duration: 0.5, delay: i * 0.15, ease: 'easeOut' }}
+                    className="relative group p-10 rounded-2xl bg-genesis-card overflow-hidden transition-all duration-500 hover:border-genesis-accent/50 hover:-translate-y-1"
                  >
-                    <div className="w-12 h-12 bg-white/5 rounded-xl flex items-center justify-center mb-8  transition-all duration-500">
-                       <card.icon size={24} className="text-gray-500 group-hover:text-genesis-positive transition-colors duration-500" />
+                    {/* Borda neon com blur */}
+                    <div className="absolute inset-0 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none">
+                      <div className="absolute inset-0 rounded-2xl bg-gradient-to-r from-genesis-accent/0 via-genesis-accent/20 to-genesis-accent/0 blur-[6px]" />
                     </div>
-                    <h3 className="text-lg font-bold text-white mb-4 uppercase tracking-widest">{card.title}</h3>
-                    <div className="space-y-4">
-                      <p className="text-gray-500 text-sm leading-relaxed font-light">{card.desc}</p>
-                      <p className="text-gray-500 text-sm leading-relaxed font-light">{card.extra}</p>
+                    {/* Shimmer interno no hover */}
+                    <div className="shimmer-hover" />
+
+                    <div className="relative z-10">
+                      <div className="w-12 h-12 bg-white/5 rounded-xl flex items-center justify-center mb-8 transition-all duration-500">
+                         <card.icon size={24} className="text-gray-500 group-hover:text-genesis-positive transition-colors duration-500" />
+                      </div>
+                      <h3 className="text-lg font-bold text-white mb-4 uppercase tracking-widest">{card.title}</h3>
+                      <div className="space-y-4">
+                        <p className="text-gray-500 text-sm leading-relaxed font-light">{card.desc}</p>
+                        <p className="text-gray-500 text-sm leading-relaxed font-light">{card.extra}</p>
+                      </div>
                     </div>
-                 </div>
+                 </motion.div>
                ))}
             </div>
          </div>

@@ -1,9 +1,9 @@
-﻿import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import { LogOut, Trophy, X, Menu } from 'lucide-react';
 import { useAppContext } from '../contexts/AppContext';
-import { fetchCredits } from '../services/api';
+import { fetchCredits, logout } from '../services/api';
 import Sidebar from '../components/Sidebar';
 import MarketTicker from '../components/MarketTicker';
 import MarketWidget from '../components/MarketWidget';
@@ -50,7 +50,8 @@ const AppLayout = () => {
     });
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    await logout();
     setIsAuthenticated(false);
   };
 

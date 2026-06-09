@@ -1,4 +1,5 @@
 ﻿import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { motion } from 'framer-motion';
 import { Download, Search, Plus, Wallet, Trash2, Edit2, TrendingUp, TrendingDown, CheckCircle, X, PieChart as PieChartIcon } from 'lucide-react';
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line } from 'recharts';
 import { buscarPrecoSpot, buscarListaAtivos } from '../services/spotPriceService';
@@ -519,21 +520,41 @@ const CarteiraCripto = () => {
         
         {/* RESUMO FINANCEIRO */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div className="bg-[#0b0b0f] p-5 rounded-2xl border border-white/5 shadow-inner">
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4, delay: 0 * 0.08, ease: 'easeOut' }}
+              className="bg-[#0b0b0f] p-5 rounded-2xl border border-white/5 shadow-inner"
+            >
                 <p className="text-[10px] text-genesis-text-secondary uppercase font-bold tracking-widest mb-1">Total Investido</p>
                 <div className="text-xl font-mono text-white">${calculosResumo.investido.toFixed(2)}</div>
-            </div>
-            <div className="bg-[#0b0b0f] p-5 rounded-2xl border border-white/5 shadow-inner">
+            </motion.div>
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4, delay: 1 * 0.08, ease: 'easeOut' }}
+              className="bg-[#0b0b0f] p-5 rounded-2xl border border-white/5 shadow-inner"
+            >
                 <p className="text-[10px] text-genesis-text-secondary uppercase font-bold tracking-widest mb-1">Valor Atual</p>
                 <div className="text-xl font-mono text-white">${calculosResumo.valorAtual.toFixed(2)}</div>
-            </div>
-            <div className="bg-[#0b0b0f] p-5 rounded-2xl border border-white/5 shadow-inner">
+            </motion.div>
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4, delay: 2 * 0.08, ease: 'easeOut' }}
+              className="bg-[#0b0b0f] p-5 rounded-2xl border border-white/5 shadow-inner"
+            >
                 <p className="text-[10px] text-genesis-text-secondary uppercase font-bold tracking-widest mb-1">Lucro/Prejuízo</p>
                 <div className={`text-xl font-mono ${calculosResumo.lucroPreju >= 0 ? 'text-genesis-positive' : 'text-genesis-negative'}`}>
                     ${calculosResumo.lucroPreju.toFixed(2)} ({calculosResumo.lucroPrejuPct.toFixed(2)}%)
                 </div>
-            </div>
-            <div className="bg-[#0b0b0f] p-5 rounded-2xl border border-white/5 shadow-inner grid grid-cols-2 gap-2">
+            </motion.div>
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4, delay: 3 * 0.08, ease: 'easeOut' }}
+              className="bg-[#0b0b0f] p-5 rounded-2xl border border-white/5 shadow-inner grid grid-cols-2 gap-2"
+            >
                 <div>
                    <p className="text-[9px] text-genesis-text-secondary uppercase font-bold tracking-widest mb-1">Melhor Ativo</p>
                    {calculosResumo.melhorAtivo.pct === -9999 ? (
@@ -564,7 +585,7 @@ const CarteiraCripto = () => {
                        </div>
                    )}
                 </div>
-            </div>
+            </motion.div>
         </div>
 
         {/* ABAS */}

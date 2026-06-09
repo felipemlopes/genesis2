@@ -112,7 +112,7 @@ const SidebarContent: React.FC<{ onLogoClick: () => void; onLogout: () => void; 
           <div className="w-7 h-7 rounded-md white/.0.05. flex items-center justify-center bg-white/[0.03]">
             <Terminal size={18} className="text-genesis-accent" />
           </div>
-          <div className="flex items-baseline gap-1.5">
+          <div className="flex items-baseline gap-1.5 hidden lg:flex">
             <span className="font-bold text-lg text-white" style={{ letterSpacing: '-0.01em' }}>Gênesis</span>
             <span className="bg-genesis-accent-dim text-genesis-accent genesis-accent-text-[9px] uppercase px-[6px] py-[2px] rounded-[4px] font-bold">LABS</span>
           </div>
@@ -124,7 +124,7 @@ const SidebarContent: React.FC<{ onLogoClick: () => void; onLogout: () => void; 
           <React.Fragment key={section.title}>
             {sectionIndex > 0 && <div className="border-white/[0.03] mx-1" />}
             <div>
-              <div className="text-[9px] font-bold text-gray-700 uppercase tracking-[0.14em] px-2 mb-1">
+              <div className="text-[9px] font-bold text-gray-700 uppercase tracking-[0.14em] px-2 mb-1 hidden lg:block">
                 {section.title}
               </div>
               {section.items.map((item) => (
@@ -151,7 +151,7 @@ const SidebarContent: React.FC<{ onLogoClick: () => void; onLogout: () => void; 
                             : 'text-genesis-text-muted group-hover:text-genesis-accent group-hover:drop-shadow-[0_0_5px_rgba(176,38,255,0.4)]'
                         }`}
                       />
-                      <span className="text-[12px] font-medium tracking-wide">{item.label}</span>
+                      <span className="text-[12px] font-medium tracking-wide hidden lg:block">{item.label}</span>
                       {isActive && <span className="ml-auto w-1 h-1 rounded-full bg-genesis-accent flex-shrink-0" />}
                     </>
                   )}
@@ -168,7 +168,7 @@ const SidebarContent: React.FC<{ onLogoClick: () => void; onLogout: () => void; 
           className="w-full flex items-center gap-3 px-2 py-[7px] rounded-md text-genesis-text-muted hover:text-genesis-negative hover:bg-genesis-negative/10 transition-all duration-150 group"
         >
           <LogOut size={18} className="group-hover:text-genesis-negative transition-colors" />
-          <span className="font-light text-xs tracking-widest uppercase">Sair</span>
+          <span className="font-light text-xs tracking-widest uppercase hidden lg:block">Sair</span>
         </button>
       </div>
     </>

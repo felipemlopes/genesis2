@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
+import { motion } from 'framer-motion';
 import { Radar, Zap, Activity, ChevronDown, Sparkles, BarChart2, Layers, ShieldCheck, Search } from 'lucide-react';
 import { RSI, MACD, EMA, BollingerBands } from 'technicalindicators';
 
@@ -640,8 +641,14 @@ const OpportunityScanner: React.FC<OpportunityScannerProps> = ({ onAnalyze, save
       {renderTooltip()}
       <div className="flex-1 overflow-y-auto custom-scrollbar pr-2">
         <div className="flex flex-col gap-3">
-           {opportunities.map((opp) => (
-              <div key={opp.id} className="group flex items-center justify-between p-5 rounded-xl  bg-transparent hover:bg-white/[0.02] transition-all duration-300">
+           {opportunities.map((opp, index) => (
+              <motion.div
+                key={opp.id}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.4, delay: index * 0.08, ease: 'easeOut' }}
+                className="group flex items-center justify-between p-5 rounded-xl  bg-transparent hover:bg-white/[0.02] transition-all duration-300"
+              >
                  
                  {/* 1. Asset & Liquidity */}
                  <div className="flex flex-col w-[15%]">
@@ -718,7 +725,7 @@ const OpportunityScanner: React.FC<OpportunityScannerProps> = ({ onAnalyze, save
                     </button>
                  </div>
 
-              </div>
+              </motion.div>
            ))}
            
            {activeSearch && (

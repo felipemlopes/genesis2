@@ -82,6 +82,31 @@
       ::-webkit-scrollbar-thumb:hover { 
         background: var(--color-border-subtle); 
       }
+
+      @keyframes shimmer {
+        0% { transform: translateX(-100%); }
+        100% { transform: translateX(100%); }
+      }
+
+      .shimmer-effect {
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(90deg, transparent, rgba(255,255,255,0.05), transparent);
+        animation: shimmer 2s infinite;
+        pointer-events: none;
+      }
+
+      .shimmer-hover {
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(90deg, transparent, rgba(255,255,255,0.05), transparent);
+        transform: translateX(-100%);
+        pointer-events: none;
+      }
+      .group:hover .shimmer-hover,
+      *:hover > .shimmer-hover {
+        animation: shimmer 1.5s infinite;
+      }
     </style>
   </head>
   <body>

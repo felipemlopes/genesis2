@@ -1,4 +1,5 @@
 ﻿import React, { useState, useEffect, useRef } from 'react';
+import { motion } from 'framer-motion';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Zap,
@@ -579,10 +580,34 @@ const GenesisPage: React.FC = () => {
             </div>
 
             <div className="flex flex-col mt-4 gap-4">
-              <OrderBookImbalance symbol={selectedPair} exchange={exchange} />
-              <TrendQuality symbol={selectedPair} exchange={exchange} />
-              <LiquidationHeatmap />
-              <SectorSentiment />
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.4, delay: 0 * 0.08, ease: 'easeOut' }}
+              >
+                <OrderBookImbalance symbol={selectedPair} exchange={exchange} />
+              </motion.div>
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.4, delay: 1 * 0.08, ease: 'easeOut' }}
+              >
+                <TrendQuality symbol={selectedPair} exchange={exchange} />
+              </motion.div>
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.4, delay: 2 * 0.08, ease: 'easeOut' }}
+              >
+                <LiquidationHeatmap />
+              </motion.div>
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.4, delay: 3 * 0.08, ease: 'easeOut' }}
+              >
+                <SectorSentiment />
+              </motion.div>
             </div>
 
             <button
