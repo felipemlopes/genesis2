@@ -680,6 +680,12 @@ const GenesisPage: React.FC = () => {
               />
             ) : (
               <div className="h-full flex flex-col items-center justify-center text-center">
+                <img
+                  src="/genesis-logo.png"
+                  alt="Genesis"
+                  className="w-16 h-16 object-contain mb-6 opacity-80"
+                  onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                />
                 <div className="w-20 h-20 bg-white/5 roundedshadow-[0_0_30px_rgba(139,92,246,0.05)] flex items-center justify-center mb-6 white/.0.05. group-hover:border-genesis-accent/30 transition-all shadow-[0_0_30px_rgba(139,92,246,0.05)]">
                   <BarChart2 size={32} className="text-gray-700" />
                 </div>

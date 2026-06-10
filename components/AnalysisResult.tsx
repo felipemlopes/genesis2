@@ -178,21 +178,12 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, currentPrice, cha
               Reset
             </button>
           )}
-          {onSaveTrade && (
-            <button 
-              onClick={onSaveTrade}
-              className="flex items-center gap-2 bg-genesis-accent/10 hover:bg-genesis-accent/20 text-genesis-accent px-3 py-2 rounded-lg transition-colors border-genesis-accent/20 font-mono text-xs uppercase tracking-wider"
-            >
-              <Shield size={14} />
-              Salvar Operação
-            </button>
-          )}
           <button 
             onClick={handleShare}
             className="flex items-center gap-2 bg-white/5 hover:bg-white/10 text-white px-4 py-2 rounded-lg transition-colors  font-mono text-xs uppercase tracking-wider"
           >
             <Download size={16} />
-            Salvar Report
+            Salvar Análise
           </button>
         </div>
       </div>
@@ -363,62 +354,83 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, currentPrice, cha
           
           <div className="flex flex-col lg:flex-row items-center gap-[16px] lg:gap-2">
             {/* Bloco 1: ENTRADA */}
-            <div className="w-full lg:w-1/3 bg-white/[0.02]  rounded-lg p-5 border-l-genesis-accent hover:bg-white/[0.04] transition-colors relative h-full min-h-[140px]">
-              <span className="text-[10px] font-bold text-genesis-accent uppercase tracking-widest block mb-3">Zona de Entrada</span>
-              {/* Zone save feedback */}
-              {zoneSaveStatus === 'saving' && (
-                <div className="flex items-center gap-1 mb-2 text-[9px] text-genesis-accent font-mono">
-                  <div className="w-2 h-2 border border-genesis-accent border-t-transparent rounded-full animate-spin" />
-                  Salvando...
-                </div>
-              )}
-              {zoneSaveStatus === 'success' && (
-                <div className="flex items-center gap-1 mb-2 text-[9px] text-genesis-positive font-mono">
-                  <CheckCircle2 size={10} />
-                  Zona salva com sucesso
-                </div>
-              )}
-              {zoneSaveStatus === 'error' && (
-                <div className="flex items-center gap-1 mb-2 text-[9px] text-genesis-negative font-mono">
-                  <XCircle size={10} />
-                  {zoneSaveError || 'Erro ao salvar zona'}
-                </div>
-              )}
-              <div className="space-y-4">
-                <div
-                  onClick={() => handleZoneSelect('A')}
-                  className={`cursor-pointer rounded-lg p-3 -m-3 transition-all duration-200 ${
-                    selectedZone === 'A'
-                      ? 'border border-genesis-accent bg-genesis-accent/10 ring-1 ring-genesis-accent/40'
-                      : 'border border-transparent hover:border-white/10 hover:bg-white/[0.03]'
-                  }`}
-                >
-                  <div className="flex justify-between items-baseline mb-1">
-                    <span className="text-xs font-bold text-white">Plano A</span>
-                    <span className="font-mono font-bold text-lg text-white">${data.entradaSugerida?.planoA || setup.entrada}</span>
+            <div className="w-full lg:w-1/3 bg-white/[0.02] rounded-lg p-5 border-l-genesis-accent relative h-full min-h-[140px] flex flex-col justify-between">
+              <div>
+                <span className="text-[10px] font-bold text-genesis-accent uppercase tracking-widest block mb-3">Zona de Entrada</span>
+                {/* Zone save feedback */}
+                {zoneSaveStatus === 'saving' && (
+                  <div className="flex items-center gap-1 mb-2 text-[9px] text-genesis-accent font-mono">
+                    <div className="w-2 h-2 border border-genesis-accent border-t-transparent rounded-full animate-spin" />
+                    Salvando...
                   </div>
-                  <p className="text-[10px] text-gray-400 font-mono tracking-wide leading-tight mt-1">
-                    {data.entradaSugerida?.descricaoPlanoA || "Ponto de entrada primário conforme estrutura."}
-                  </p>
-                </div>
-                {data.entradaSugerida?.planoB && (
-                <div
-                  onClick={() => handleZoneSelect('B')}
-                  className={`cursor-pointer rounded-lg p-3 -m-3 mt-1 transition-all duration-200 ${
-                    selectedZone === 'B'
-                      ? 'border border-genesis-accent bg-genesis-accent/10 ring-1 ring-genesis-accent/40'
-                      : 'border border-transparent hover:border-white/10 hover:bg-white/[0.03]'
-                  }`}
-                >
-                  <div className="flex justify-between items-baseline mb-1">
-                    <span className="text-xs font-bold text-gray-400">Plano B</span>
-                    <span className="font-mono font-bold text-sm text-gray-300">${data.entradaSugerida.planoB}</span>
-                  </div>
-                  <p className="text-[10px] text-gray-500 font-mono tracking-wide leading-tight mt-1">
-                    {data.entradaSugerida.descricaoPlanoB}
-                  </p>
-                </div>
                 )}
+                {zoneSaveStatus === 'success' && (
+                  <div className="flex items-center gap-1 mb-2 text-[9px] text-genesis-positive font-mono">
+                    <CheckCircle2 size={10} />
+                    Zona salva com sucesso
+                  </div>
+                )}
+                {zoneSaveStatus === 'error' && (
+                  <div className="flex items-center gap-1 mb-2 text-[9px] text-genesis-negative font-mono">
+                    <XCircle size={10} />
+                    {zoneSaveError || 'Erro ao salvar zona'}
+                  </div>
+                )}
+                <div className="space-y-3">
+                  {/* Plano A */}
+                  <button
+                    onClick={() => handleZoneSelect('A')}
+                    className={`w-full text-left p-2.5 rounded-lg border transition-all duration-200 ${
+                      selectedZone === 'A'
+                        ? 'bg-genesis-accent/10 border-genesis-accent ring-1 ring-genesis-accent'
+                        : 'bg-black/20 border-white/5 hover:border-white/10 hover:bg-black/30'
+                    }`}
+                  >
+                    <div className="flex justify-between items-baseline mb-1">
+                      <span className={`text-[10px] font-bold ${selectedZone === 'A' ? 'text-genesis-accent' : 'text-gray-400'}`}>Plano A (Primário)</span>
+                      <span className="font-mono font-bold text-sm text-white">${data.entradaSugerida?.planoA || setup.entrada}</span>
+                    </div>
+                    <p className="text-[9px] text-gray-400 font-mono tracking-wide leading-tight mt-1">
+                      {data.entradaSugerida?.descricaoPlanoA || "Ponto de entrada primário conforme estrutura."}
+                    </p>
+                  </button>
+
+                  {/* Plano B */}
+                  {data.entradaSugerida?.planoB && (
+                    <button
+                      onClick={() => handleZoneSelect('B')}
+                      className={`w-full text-left p-2.5 rounded-lg border transition-all duration-200 ${
+                        selectedZone === 'B'
+                          ? 'bg-genesis-accent/10 border-genesis-accent ring-1 ring-genesis-accent'
+                          : 'bg-black/20 border-white/5 hover:border-white/10 hover:bg-black/30'
+                      }`}
+                    >
+                      <div className="flex justify-between items-baseline mb-1">
+                        <span className={`text-[10px] font-bold ${selectedZone === 'B' ? 'text-genesis-accent' : 'text-gray-400'}`}>Plano B (Alternativo)</span>
+                        <span className="font-mono font-bold text-xs text-white">${data.entradaSugerida.planoB}</span>
+                      </div>
+                      <p className="text-[9px] text-gray-400 font-mono tracking-wide leading-tight mt-1">
+                        {data.entradaSugerida.descricaoPlanoB}
+                      </p>
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Botão de Confirmação */}
+              <div className="mt-4 pt-3 border-t border-white/5">
+                <button
+                  disabled={!selectedZone}
+                  onClick={() => { if (onSaveTrade) onSaveTrade(); }}
+                  className={`w-full flex items-center justify-center gap-2 py-2 px-3 rounded-md text-xs font-mono uppercase tracking-wider transition-all duration-300 font-bold ${
+                    !selectedZone
+                      ? 'bg-white/5 text-gray-600 cursor-not-allowed'
+                      : 'bg-genesis-accent text-black hover:opacity-90 active:scale-[0.98]'
+                  }`}
+                >
+                  <Shield size={14} />
+                  {selectedZone ? 'Confirmar Posição' : 'Selecione um Plano'}
+                </button>
               </div>
             </div>
             
