@@ -115,7 +115,7 @@ export interface ChartMetadata {
   price?: number; // New: Detected Current Price via OCR
   detectedIndicators?: string[]; // New: General indicators detected
   visualMarkings?: string[]; // New: Visual lines, boxes, or markings detected
-  detectedEMAs?: string[]; // New: Dynamic periods detected in the chart
+  detectedEMAs?: Array<{ period: number; value: number }> | string[]; // Dynamic EMAs: { period, value } from OCR or legacy string[] format
   adx?: number | null; // New: Visually extracted ADX
   pdi?: number | null; // New: Visually extracted +DI
   mdi?: number | null; // New: Visually extracted -DI
