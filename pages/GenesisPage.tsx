@@ -281,18 +281,11 @@ const GenesisPage: React.FC = () => {
 
       setIsScanning(true);
       try {
-        const unifiedResult = await unifiedChartAnalysis(file);
+        const unifiedResult = await unifiedChartAnalysis(file, exchange);
         setChartMetadata(unifiedResult);
 
+        // Não sobrescreve a exchange selecionada pelo usuário
         let newExchange = exchange;
-        if (unifiedResult.exchange && unifiedResult.exchange !== 'UNK') {
-          const cleanEx = unifiedResult.exchange.toLowerCase();
-          if (cleanEx.includes('binance')) newExchange = 'Binance';
-          else if (cleanEx.includes('bybit')) newExchange = 'Bybit';
-          else if (cleanEx.includes('bitget')) newExchange = 'Bitget';
-          else if (cleanEx.includes('okx')) newExchange = 'OKX';
-          setExchange(newExchange);
-        }
 
         let newPair = '';
         if (unifiedResult.pair && unifiedResult.pair !== 'UNK') {

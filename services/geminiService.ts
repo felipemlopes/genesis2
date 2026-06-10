@@ -112,30 +112,32 @@ export function isModelOverloadOrTimeout(error: unknown, status?: number): boole
   return false;
 }
 
-export const unifiedChartAnalysis = async (file: File): Promise<UnifiedChartResult> => {
-  const formData = new FormData();
-  formData.append('image', file);
+export const unifiedChartAnalysis = async (file: File, selectedExchange?: string): Promise<UnifiedChartResult> => {
+  const buildFormData = (withFlashModel = false): FormData => {
+    const fd = new FormData();
+    fd.append('image', file);
+    if (selectedExchange) fd.append('exchange', selectedExchange);
+    if (withFlashModel) fd.append('model', 'flash');
+    return fd;
+  };
 
   const token = localStorage.getItem('genesis_token');
+  const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
 
   let res: Response;
   try {
     res = await fetch(`${API_BASE}/v1/unified-scan`, {
       method: 'POST',
-      headers: token ? { 'Authorization': `Bearer ${token}` } : {},
-      body: formData,
+      headers,
+      body: buildFormData(false),
     });
   } catch (networkError) {
-    // Network error (timeout, connection refused) — try fallback with flash model
     if (isModelOverloadOrTimeout(networkError)) {
       console.warn('[Genesis] Leitura visual: modelo pro indisponível (network error), ativando fallback para gemini-2.0-flash');
-      const fallbackFormData = new FormData();
-      fallbackFormData.append('image', file);
-      fallbackFormData.append('model', 'flash');
       res = await fetch(`${API_BASE}/v1/unified-scan`, {
         method: 'POST',
-        headers: token ? { 'Authorization': `Bearer ${token}` } : {},
-        body: fallbackFormData,
+        headers,
+        body: buildFormData(true),
       });
       if (!res.ok) throw new Error('Falha na leitura visual unificada (fallback flash)');
     } else {
@@ -143,16 +145,12 @@ export const unifiedChartAnalysis = async (file: File): Promise<UnifiedChartResu
     }
   }
 
-  // If response is 503, retry with flash model
   if (res!.status === 503) {
     console.warn('[Genesis] Leitura visual: modelo pro retornou 503, ativando fallback para gemini-2.0-flash');
-    const fallbackFormData = new FormData();
-    fallbackFormData.append('image', file);
-    fallbackFormData.append('model', 'flash');
     res = await fetch(`${API_BASE}/v1/unified-scan`, {
       method: 'POST',
-      headers: token ? { 'Authorization': `Bearer ${token}` } : {},
-      body: fallbackFormData,
+      headers,
+      body: buildFormData(true),
     });
     if (!res.ok) throw new Error('Falha na leitura visual unificada (fallback flash)');
   }
@@ -171,7 +169,6 @@ export const unifiedChartAnalysis = async (file: File): Promise<UnifiedChartResu
   const content = data.content || '';
   let parsed: any;
   try {
-    // Strip markdown code fences (```json ... ```) that Gemini sometimes wraps around JSON
     let cleanContent = typeof content === 'string' ? content.trim() : '';
     if (cleanContent.startsWith('```')) {
       cleanContent = cleanContent.replace(/^```(?:json)?\s*\n?/, '').replace(/\n?```\s*$/, '');
@@ -186,15 +183,13 @@ export const unifiedChartAnalysis = async (file: File): Promise<UnifiedChartResu
   const symbolClean = symbolRaw ? normalizarPar(parsed.symbol || '') : '';
 
   return {
-    // Metadata fields
     pair: symbolClean,
-    exchange: parsed.exchange || 'Binance',
+    exchange: selectedExchange || parsed.exchange || 'Binance',
     timeframe: parsed.timeframe || '4h',
     symbol: symbolClean,
     price: parsed.price,
     detectedIndicators: parsed.detectedIndicators || [],
     detectedEMAs: parsed.detectedEMAs || [],
-    // Visual data fields
     supports: parsed.supports || [],
     resistances: parsed.resistances || [],
     trendlines: parsed.trendlines || [],
@@ -229,6 +224,7 @@ export const analyzeChart = async (
     fd.append('symbol', userPair);
     fd.append('timeframe', userTimeframe);
     fd.append('leverage', String(userLeverage));
+    fd.append('exchange', activeExchange);
     if (entryValue !== '' && entryValue !== 0) {
       fd.append('entry_value', String(entryValue));
     }
