@@ -15,7 +15,7 @@ import requests
 logger = logging.getLogger('radar-news')
 
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', '')
-GEMINI_MODEL = 'gemini-2.5-flash'
+GEMINI_MODEL = os.getenv('GEMINI_ANALYSIS_MODEL', 'gemini-2.5-flash')
 GEMINI_URL = (
     f'https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent'
 )

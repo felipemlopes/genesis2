@@ -115,7 +115,6 @@ const OpportunityScanner: React.FC<OpportunityScannerProps> = ({ onAnalyze, save
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify({
-          model: "gemini-2.5-flash",
           contents: `What is currently happening with ${symbol} crypto project that might impact its price? Provide a concise summary.`,
           config: { tools: [{ googleSearch: {} }] }
         })
