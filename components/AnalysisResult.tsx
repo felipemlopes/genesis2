@@ -651,7 +651,7 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, currentPrice, cha
                     {(data.indicadores?.fontes?.ema21 === 'GRAFICO' || data.indicadores?.fontes?.ema21 === 'OCR') && <span className="text-[8px] bg-yellow-500/20 text-yellow-500 border border-yellow-500/30 px-1 py-0.5 rounded">OCR</span>}
                     {data.indicadores?.fontes?.ema21 === 'INDISPONIVEL' && <span className="text-[8px] bg-gray-500/20 text-gray-400 border border-gray-500/30 px-1 py-0.5 rounded">N/D</span>}
                   </div>
-                  <span className="text-[9px] text-white font-mono">{data.indicadores?.ema21 ? `${Number(data.indicadores.ema21).toFixed(0)} | ${Number(data.indicadores.ema50).toFixed(0)} | ${Number(data.indicadores.ema200).toFixed(0)}` : 'N/A'}</span>
+                  <span className="text-[9px] text-white font-mono">{data.indicadores?.ema21 ? (() => { const fmt = (v: number) => v >= 1 ? v.toFixed(2) : v < 0.01 ? v.toFixed(6) : v.toFixed(4); return `${fmt(Number(data.indicadores.ema21))} | ${fmt(Number(data.indicadores.ema50))} | ${fmt(Number(data.indicadores.ema200))}`; })() : 'N/A'}</span>
                 </div>
                 
                 {/* BLOCO 3 - WYCKOFF E SESSÃO */}
