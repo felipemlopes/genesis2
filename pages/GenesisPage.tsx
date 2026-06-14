@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
@@ -410,7 +410,7 @@ const GenesisPage: React.FC = () => {
     };
 
     setActiveTrades((prev) => [newTrade, ...prev]);
-    navigate('/dashboard/trades');
+    navigate('/dashboard/performance');
   };
 
   return (

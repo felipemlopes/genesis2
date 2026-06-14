@@ -140,6 +140,12 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, currentPrice, cha
   const score = data.scoreProbabilidade;
   const strengthScore = data.confianca;
   const isCautela = strengthScore < 65;
+
+  const activeTp1 = selectedZone === 'B' && data.entradaSugerida?.planoB_tp1 ? data.entradaSugerida.planoB_tp1 : setup.tp1;
+  const activeTp2 = selectedZone === 'B' && data.entradaSugerida?.planoB_tp2 ? data.entradaSugerida.planoB_tp2 : setup.tp2;
+  const activeTp3 = selectedZone === 'B' && data.entradaSugerida?.planoB_tp3 ? data.entradaSugerida.planoB_tp3 : setup.tp3;
+  const activeStop = selectedZone === 'B' && data.entradaSugerida?.planoB_stop ? data.entradaSugerida.planoB_stop : setup.stop;
+  const activeRr1 = selectedZone === 'B' && data.entradaSugerida?.planoB_rr1 ? data.entradaSugerida.planoB_rr1 : setup.rr1;
   
   const isLong = data.direcaoProvavel?.toUpperCase() === 'LONG';
   const badgeColor = isLong ? 'text-genesis-positive' : 'text-genesis-negative';
@@ -316,7 +322,7 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, currentPrice, cha
         <div className="grid grid-cols-2 md:grid-cols-4 gap-[16px] mb-6">
           <div className="bg-[#050505]  rounded-[10px] p-[16px] flex flex-col justify-center items-center text-center">
             <span className="text-[10px] text-gray-500 font-bold uppercase tracking-widest mb-2">Risco/Retorno</span>
-            <span className="text-2xl font-mono text-white font-bold">1:{setup.rr1}</span>
+            <span className="text-2xl font-mono text-white font-bold">1:{activeRr1}</span>
           </div>
           
           <div className="bg-[#050505]  rounded-[10px] p-[16px] flex flex-col justify-center items-center text-center relative overflow-hidden">
@@ -448,14 +454,14 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, currentPrice, cha
                 <div className="flex justify-between items-center group">
                     <span className="text-gray-500 text-[10px] font-bold">TP1</span>
                     <div className="flex items-center gap-2">
-                      <span className="text-genesis-positive font-mono font-bold text-sm bg-genesis-positive/10 px-2 py-0.5 rounded">${setup.tp1}</span>
+                      <span className="text-genesis-positive font-mono font-bold text-sm bg-genesis-positive/10 px-2 py-0.5 rounded">${activeTp1}</span>
                       {setup.tp1Usd && <span className="text-[10px] text-gray-500 font-mono">{setup.tp1Usd}</span>}
                     </div>
                 </div>
                 <div className="flex justify-between items-center group">
                     <span className="text-gray-500 text-[10px] font-bold">TP2</span>
                     <div className="flex items-center gap-2">
-                      <span className="text-genesis-positive font-mono font-bold text-sm bg-genesis-positive/10 px-2 py-0.5 rounded">${setup.tp2}</span>
+                      <span className="text-genesis-positive font-mono font-bold text-sm bg-genesis-positive/10 px-2 py-0.5 rounded">${activeTp2}</span>
                       {setup.tp2Usd && <span className="text-[10px] text-gray-500 font-mono">{setup.tp2Usd}</span>}
                     </div>
                 </div>
@@ -463,7 +469,7 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, currentPrice, cha
                 <div className="flex justify-between items-center group">
                     <span className="text-gray-500 text-[10px] font-bold">TP3</span>
                     <div className="flex items-center gap-2">
-                      <span className="text-genesis-positive font-mono font-bold text-sm bg-genesis-positive/10 px-2 py-0.5 rounded">${setup.tp3}</span>
+                      <span className="text-genesis-positive font-mono font-bold text-sm bg-genesis-positive/10 px-2 py-0.5 rounded">${activeTp3}</span>
                       {setup.tp3Usd && <span className="text-[10px] text-gray-500 font-mono">{setup.tp3Usd}</span>}
                     </div>
                 </div>
@@ -482,7 +488,7 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, currentPrice, cha
             <div className="w-full lg:w-1/3 bg-white/[0.02]  rounded-lg p-5 border-l-genesis-negative hover:bg-red-950/20 transition-colors relative h-full min-h-[140px]">
               <span className="text-[10px] font-bold text-genesis-negative uppercase tracking-widest block mb-3">Defesa (Stop Loss)</span>
               <div className="mb-4 mt-2">
-                <span className="text-2xl font-mono text-genesis-negative font-bold drop--[0_0_8px_rgba(239,68,68,0.4)]">${setup.stop}</span>
+                <span className="text-2xl font-mono text-genesis-negative font-bold drop--[0_0_8px_rgba(239,68,68,0.4)]">${activeStop}</span>
               </div>
               
               {/* BLOCO 2 - INVALIDAÇÃO DA TESE */}
