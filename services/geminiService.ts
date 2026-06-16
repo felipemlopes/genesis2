@@ -187,16 +187,7 @@ export const unifiedChartAnalysis = async (file: File, selectedExchange?: string
     exchange: selectedExchange || parsed.exchange || 'Binance',
     timeframe: parsed.timeframe || '4h',
     symbol: symbolClean,
-    price: parsed.price,
     detectedIndicators: parsed.detectedIndicators || [],
-    detectedEMAs: (() => {
-      const raw = parsed.detectedEMAs;
-      if (!Array.isArray(raw) || raw.length === 0) return [];
-      // Novo formato: [{ period, value }] — retorna diretamente
-      if (typeof raw[0] === 'object' && raw[0] !== null && 'period' in raw[0]) return raw;
-      // Formato legado: ["21", "200"] — mantém compatibilidade
-      return raw;
-    })(),
     supports: parsed.supports || [],
     resistances: parsed.resistances || [],
     trendlines: parsed.trendlines || [],
