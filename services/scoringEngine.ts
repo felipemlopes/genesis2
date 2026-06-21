@@ -286,14 +286,15 @@ export const calcularScore = (dados: DadosScore): ResultadoScore => {
         flags.push('CONFIANCA_REDUZIDA_SEM_TECNICO');
     }
     
-    let vies = 'NEUTRO';
+    let vies = 'LONG_LEVE';
     if (scoreFinal > 84) vies = 'LONG_FORTE';
     else if (scoreFinal >= 70 && scoreFinal <= 84) vies = 'LONG_MODERADO';
     else if (scoreFinal >= 55 && scoreFinal <= 69) vies = 'LONG_LEVE';
-    else if (scoreFinal >= 45 && scoreFinal <= 54) vies = 'NEUTRO';
+    else if (scoreFinal >= 50 && scoreFinal <= 54) vies = 'LONG_LEVE';
+    else if (scoreFinal >= 45 && scoreFinal <= 49) vies = 'SHORT_LEVE';
     else if (scoreFinal >= 31 && scoreFinal <= 44) vies = 'SHORT_LEVE';
     else if (scoreFinal >= 16 && scoreFinal <= 30) vies = 'SHORT_MODERADO';
-    else if (scoreFinal < 16) vies = 'SHORT_FORTE';
+    else vies = 'SHORT_FORTE';
     
     let confiabilidade = 'BAIXA';
     const techDir = tcBullish > tcBearish ? 'BULL' : 'BEAR';

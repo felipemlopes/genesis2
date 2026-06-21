@@ -177,7 +177,7 @@ describe('Bug 1.6: gerarContextoParaGemini — EMAs nulas devem exibir INDISPONI
 
     const mockScore = {
       scoreFinal: 50,
-      vies: 'NEUTRO',
+      vies: 'LONG_LEVE',
       confiabilidade: 'MEDIA' as const,
       flags: [],
       blocoTecnico: { pontos: 0, percentual: 0, maxPontos: 55 },
@@ -208,7 +208,7 @@ describe('Bug 1.6: gerarContextoParaGemini — EMAs nulas devem exibir INDISPONI
 
     const mockScore = {
       scoreFinal: 50,
-      vies: 'NEUTRO',
+      vies: 'LONG_LEVE',
       confiabilidade: 'MEDIA' as const,
       flags: [],
       blocoTecnico: { pontos: 0, percentual: 0, maxPontos: 55 },
@@ -424,7 +424,7 @@ describe('Integration: símbolo sujo → candles vazios → EMAs devem aparecer 
 
     // Step 4: build context with null EMAs
     const mockScore = {
-      scoreFinal: 50, vies: 'NEUTRO', confiabilidade: 'MEDIA' as const,
+      scoreFinal: 50, vies: 'LONG_LEVE', confiabilidade: 'MEDIA' as const,
       flags: [],
       blocoTecnico: { pontos: 0, percentual: 0, maxPontos: 55 },
       blocoDerivativos: { pontos: 0, percentual: 0, maxPontos: 45 },

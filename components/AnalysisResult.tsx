@@ -40,6 +40,8 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, currentPrice, cha
   const [selectedZone, setSelectedZone] = useState<'A' | 'B' | null>(null);
   const [zoneSaveStatus, setZoneSaveStatus] = useState<'idle' | 'saving' | 'success' | 'error'>('idle');
   const [zoneSaveError, setZoneSaveError] = useState<string | null>(null);
+
+  const sentimento = (data as any).sentimentoAtivo || data.sentimentoNarrativa || {};
   
   // Variáveis para simular/receber as conexões, permitindo os 3 estados
   const [erroBloco, setErroBloco] = useState<Record<string, string | null>>({
@@ -561,7 +563,7 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, currentPrice, cha
               <li className="flex items-start gap-2">
                 <div className="w-1.5 h-1.5 rounded-full bg-genesis-accent mt-1.5 shrink-0" />
                 <p className="text-xs text-gray-400 leading-relaxed">
-                  <strong className="text-gray-300">Estrutura Técnica:</strong> {(data.analiseTecnica || "Estrutura validada.").split('.')[0] || "Estrutura validada."}
+                  <strong className="text-gray-300">Estrutura Técnica:</strong> {(data.narrativa || data.analiseTecnica || "Estrutura validada.").split('.')[0] || "Estrutura validada."}
                 </p>
               </li>
             </ul>
@@ -647,7 +649,7 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, currentPrice, cha
                     {(data.indicadores?.fontes?.atr === 'GRAFICO' || data.indicadores?.fontes?.atr === 'OCR') && <span className="text-[8px] bg-yellow-500/20 text-yellow-500 border border-yellow-500/30 px-1 py-0.5 rounded">OCR</span>}
                     {data.indicadores?.fontes?.atr === 'INDISPONIVEL' && <span className="text-[8px] bg-gray-500/20 text-gray-400 border border-gray-500/30 px-1 py-0.5 rounded">N/D</span>}
                   </div>
-                  <span className="text-[10px] text-white font-mono">{data.indicadores?.atr ? Number(data.indicadores.atr).toFixed(4) : "N/A"}</span>
+                  <span className="text-[10px] text-white font-mono">{data.indicadores?.atr != null ? Number(data.indicadores.atr).toFixed(4) : "N/D"}</span>
                 </div>
                 
                 <div className="flex justify-between items-center group">
@@ -657,7 +659,7 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, currentPrice, cha
                     {(data.indicadores?.fontes?.ema21 === 'GRAFICO' || data.indicadores?.fontes?.ema21 === 'OCR') && <span className="text-[8px] bg-yellow-500/20 text-yellow-500 border border-yellow-500/30 px-1 py-0.5 rounded">OCR</span>}
                     {data.indicadores?.fontes?.ema21 === 'INDISPONIVEL' && <span className="text-[8px] bg-gray-500/20 text-gray-400 border border-gray-500/30 px-1 py-0.5 rounded">N/D</span>}
                   </div>
-                  <span className="text-[9px] text-white font-mono">{data.indicadores?.ema21 ? (() => { const fmt = (v: number) => v >= 1 ? v.toFixed(2) : v < 0.01 ? v.toFixed(6) : v.toFixed(4); return `${fmt(Number(data.indicadores.ema21))} | ${fmt(Number(data.indicadores.ema50))} | ${fmt(Number(data.indicadores.ema200))}`; })() : 'N/A'}</span>
+                  <span className="text-[9px] text-white font-mono">{(data.indicadores?.ema21 != null || data.indicadores?.ema50 != null || data.indicadores?.ema200 != null) ? (() => { const fmt = (v: any) => { if (v == null) return 'N/D'; const n = Number(v); return n >= 1 ? n.toFixed(2) : n < 0.01 ? n.toFixed(6) : n.toFixed(4); }; return `${fmt(data.indicadores?.ema21)} | ${fmt(data.indicadores?.ema50)} | ${fmt(data.indicadores?.ema200)}`; })() : 'N/D'}</span>
                 </div>
                 
                 {/* BLOCO 3 - WYCKOFF E SESSÃO */}
@@ -730,24 +732,24 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, currentPrice, cha
             <div className="bg-[#050505]  p-[16px] rounded-lg">
               <div className="flex justify-between items-center  pb-2 mb-3">
                 <span className="text-[10px] text-purple-400 font-bold uppercase tracking-widest block">Sentimento</span>
-                <span className={`text-[10px] font-bold font-mono px-2 rounded bg-white/5 ${(data.sentimentoNarrativa?.score || 0) > 60 ? 'text-genesis-positive' : 'text-genesis-negative'}`}>{data.sentimentoNarrativa?.score || 0}/100</span>
+                <span className={`text-[10px] font-bold font-mono px-2 rounded bg-white/5 ${(sentimento?.score || 0) > 60 ? 'text-genesis-positive' : 'text-genesis-negative'}`}>{sentimento?.score || 0}/100</span>
               </div>
               <p className="text-[10px] text-gray-400 leading-relaxed mb-4  pb-3 mt-3">
-                  {data.sentimentoNarrativa?.narrativa || "Narrativa aprofundada não detectada."}
+                  {sentimento?.narrativa || "Narrativa aprofundada não detectada."}
               </p>
               <div className="grid grid-cols-2 gap-3">
                   <div>
                     <span className="text-[8px] text-gray-600 uppercase tracking-widest block mb-2 font-bold">Gatilhos (+)</span>
                     <ul className="text-[9.5px] text-genesis-positive/80 space-y-2">
-                      {data.sentimentoNarrativa?.gatilhosPositivos?.slice(0,2)?.map((p, i) => <li key={i} className="leading-tight line-clamp-2">- {p}</li>)}
-                      {(!data.sentimentoNarrativa?.gatilhosPositivos || data.sentimentoNarrativa.gatilhosPositivos.length === 0) && <li className="italic text-gray-600">Nenhum</li>}
+                      {sentimento?.gatilhosPositivos?.slice(0,2)?.map((p, i) => <li key={i} className="leading-tight line-clamp-2">- {p}</li>)}
+                      {(!sentimento?.gatilhosPositivos || sentimento.gatilhosPositivos.length === 0) && <li className="italic text-gray-600">Nenhum</li>}
                     </ul>
                   </div>
                   <div>
                     <span className="text-[8px] text-gray-600 uppercase tracking-widest block mb-2 font-bold">Gatilhos (-)</span>
                     <ul className="text-[9.5px] text-genesis-negative/80 space-y-2">
-                      {data.sentimentoNarrativa?.gatilhosNegativos?.slice(0,2)?.map((n, i) => <li key={i} className="leading-tight line-clamp-2">- {n}</li>)}
-                      {(!data.sentimentoNarrativa?.gatilhosNegativos || data.sentimentoNarrativa.gatilhosNegativos.length === 0) && <li className="italic text-gray-600">Nenhum</li>}
+                      {sentimento?.gatilhosNegativos?.slice(0,2)?.map((n, i) => <li key={i} className="leading-tight line-clamp-2">- {n}</li>)}
+                      {(!sentimento?.gatilhosNegativos || sentimento.gatilhosNegativos.length === 0) && <li className="italic text-gray-600">Nenhum</li>}
                     </ul>
                   </div>
               </div>

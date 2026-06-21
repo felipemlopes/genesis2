@@ -63,10 +63,18 @@ class MotorExecucao {
     }
 
     const targetsAbove = hvnLevels.filter(h => h > preco);
-    const tp1 = targetsAbove.length ? Math.min(...targetsAbove) : preco * 1.06;
+    let tp1 = targetsAbove.length ? Math.min(...targetsAbove) : preco * 1.06;
     const liqAbove = (liqClusters.above || []).filter(l => l > preco);
-    const tp2 = liqAbove.length ? Math.min(...liqAbove) : preco * 1.10;
-    const tp3 = tp2 * 1.08;
+    let tp2 = liqAbove.length ? Math.min(...liqAbove) : preco * 1.10;
+    let tp3 = tp2 * 1.08;
+
+    // GUARDA PÓS-LOOP: nunca do lado errado após qualquer reajuste
+    if (tp1 <= preco || tp2 <= preco) {
+      console.warn('MOTOR-SANITY-POS-LOOP: TP LONG abaixo da entrada', { tp1, tp2, entrada: preco });
+      tp1 = preco * 1.06;
+      tp2 = preco * 1.10;
+      tp3 = preco * 1.18;
+    }
 
     const risco = (preco - stop) / preco;
     let alav = Math.min(MotorExecucao.RISCO_MAX_CONTA / risco, alavMax);
@@ -110,10 +118,18 @@ class MotorExecucao {
     }
 
     const targetsBelow = (lvnLevels || []).filter(l => l < preco);
-    const tp1 = targetsBelow.length ? Math.max(...targetsBelow) : preco * 0.94;
+    let tp1 = targetsBelow.length ? Math.max(...targetsBelow) : preco * 0.94;
     const liqBelow = (liqClusters.below || []).filter(l => l < preco);
-    const tp2 = liqBelow.length ? Math.max(...liqBelow) : preco * 0.90;
-    const tp3 = tp2 * 0.92;
+    let tp2 = liqBelow.length ? Math.max(...liqBelow) : preco * 0.90;
+    let tp3 = tp2 * 0.92;
+
+    // GUARDA PÓS-LOOP: nunca do lado errado após qualquer reajuste
+    if (tp1 >= preco || tp2 >= preco) {
+      console.warn('MOTOR-SANITY-POS-LOOP: TP SHORT acima da entrada', { tp1, tp2, entrada: preco });
+      tp1 = preco * 0.94;
+      tp2 = preco * 0.88;
+      tp3 = preco * 0.82;
+    }
 
     const risco = (stop - preco) / preco;
     let alav = Math.min(MotorExecucao.RISCO_MAX_CONTA / risco, alavMax);

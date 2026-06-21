@@ -16,6 +16,7 @@ export interface TradeSetup {
   confianca: number;
   regime: string;
   alerta: string | null;
+  narrativa?: string;
   entradaSugerida: {
     planoA: number | string;
     planoB: number | string;

@@ -94,7 +94,6 @@ describe('Scoring Engine - Property Tests', () => {
         // vies deve ser um dos valores válidos
         expect([
           'LONG_FORTE', 'LONG_MODERADO', 'LONG_LEVE',
-          'NEUTRO',
           'SHORT_LEVE', 'SHORT_MODERADO', 'SHORT_FORTE'
         ]).toContain(resultado.vies);
 

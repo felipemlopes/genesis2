@@ -249,7 +249,7 @@ export const generateAdvancedContext = async (pair: string, exchange: string, ti
             if (techData.emas && Object.keys(techData.emas).length > 0) {
                 emaStr = Object.entries(techData.emas).map(([p, val]) => `EMA${p}=${(val as number).toFixed(2)}`).join(" | ");
             }
-            techText = `RSI=${techData.rsi.toFixed(2)} | MACD=${techData.macd.macd.toFixed(4)} | ADX=${techData.adx.toFixed(2)} | ATR=${techData.atr.toFixed(4)} | ${emaStr}`;
+            techText = `RSI=${techData.rsi != null ? techData.rsi.toFixed(2) : 'N/D'} | MACD=${techData.macd?.macd != null ? techData.macd.macd.toFixed(4) : 'N/D'} | ADX=${techData.adx != null ? techData.adx.toFixed(2) : 'N/D'} | ATR=${techData.atr != null ? techData.atr.toFixed(4) : 'N/D'} | ${emaStr}`;
             mtfText = `4H: ${analyzeTrendState(tf4h)} | 1D: ${analyzeTrendState(tf1d)} | 1W: ${analyzeTrendState(tf1w)}`;
         }
 
