@@ -26,6 +26,33 @@ const genesisFeatureFlags = {
   tamanhoPosicao: true,
 };
 
+const MENSAGENS_PILAR: Record<string, string[]> = {
+  tecnico: [
+    "Estrutura tecnica fraca ou contra a direcao do sinal. Preco desalinhado das medias e sem confirmacao de figura.",
+    "Estrutura tecnica indefinida. Sinais mistos entre medias, momentum e figura, sem leitura dominante.",
+    "Estrutura tecnica favoravel. Medias e momentum comecam a alinhar com a direcao, com confirmacao parcial.",
+    "Estrutura tecnica forte e alinhada. Medias empilhadas, figura confirmada e momentum a favor da direcao."
+  ],
+  derivativos: [
+    "Derivativos contra a operacao. Funding e posicionamento sugerem pressao na direcao oposta.",
+    "Derivativos neutros. Funding e OI sem vies claro, posicionamento equilibrado.",
+    "Derivativos a favor. OI e funding acompanham a direcao, com posicionamento construtivo.",
+    "Derivativos fortemente a favor. OI subindo na direcao, funding e posicionamento confirmam o fluxo."
+  ],
+  macro: [
+    "Macro adverso. Cenario de risk-off pesando contra ativos de risco. Informativo, nao afeta a direcao.",
+    "Macro neutro a cauteloso. Sem gatilho macro claro. Informativo.",
+    "Macro construtivo. Ambiente de risco favoravel. Informativo.",
+    "Macro fortemente favoravel. Risk-on amplo. Informativo."
+  ],
+  sentimento: [
+    "Sentimento muito negativo no ativo. Medo e pressao vendedora. Informativo, nao afeta a direcao.",
+    "Sentimento negativo a neutro. Comunidade dividida. Informativo.",
+    "Sentimento positivo. Narrativa do ativo ganhando tracao. Informativo.",
+    "Sentimento muito positivo. Euforia e forte interesse. Atencao a exageros. Informativo."
+  ],
+};
+
 const reportarErroBlocoGenesis = (nome: string, erro: string) => {
   return `Nome da Funcionalidade: ${nome} — Erro: ${erro}`;
 };
@@ -155,7 +182,7 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, currentPrice, cha
   const progressColor = isLong ? 'bg-genesis-positive' : 'bg-genesis-negative';
 
   // Extract rationale short text 
-  const mainRationale = data.execucao?.motivo || "Sinal acionado pelos modelos.";
+  const mainRationale = data.rationalScore || data.execucao?.motivo || "Sinal acionado pelos modelos.";
 
   return (
     <div className="space-y-4">
@@ -269,13 +296,14 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, currentPrice, cha
                 { nome: 'Sentimento', bloco: (data as any).scoreDetalhado.blocoSentimento }
               ].map((item, idx) => {
                 const pct = item.bloco?.percentual || 0;
+                const faixa = (p: number) => p < 25 ? 0 : p < 50 ? 1 : p < 75 ? 2 : 3;
                 let colorClass = 'bg-genesis-negative';
                 let Icon = XCircle;
                 if (pct >= 65) { colorClass = 'bg-genesis-positive'; Icon = CheckCircle2; }
                 else if (pct >= 45) { colorClass = 'bg-yellow-500'; Icon = AlertTriangle; }
                 
                 return (
-                  <div key={idx} className="bg-black/40 rounded p-3 border border-white/[0.05]">
+                  <div key={idx} className="bg-black/40 rounded p-3 border border-white/[0.05] cursor-help" title={MENSAGENS_PILAR[item.nome.toLowerCase()]?.[faixa(pct)]}>
                     <div className="flex justify-between items-center mb-2">
                        <span className="text-[9px] font-bold text-gray-500 uppercase tracking-wider">{item.nome}</span>
                        <Icon size={12} className={pct >= 65 ? 'text-genesis-positive' : pct >= 45 ? 'text-yellow-500' : 'text-genesis-negative'} />
@@ -289,28 +317,7 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, currentPrice, cha
             </div>
           )}
 
-          {/* FLAGS */}
-          {(data as any).scoreDetalhado?.flagsVisuais && Array.isArray((data as any).scoreDetalhado.flagsVisuais) && (
-            <div className="mb-5 relative z-10 flex flex-wrap gap-2 mt-4">
-              {(data as any).scoreDetalhado.flagsVisuais.slice(0, 3).map((flag: any, i: number) => {
-                 const isOp = flag.tipo === 'OPORTUNIDADE';
-                 const isAl = flag.tipo === 'ALERTA';
-                 return (
-                   <span key={i} className={`text-[8.5px] font-bold uppercase tracking-wider px-2 py-1 rounded border 
-                     ${isOp ? 'bg-genesis-positive/10 text-genesis-positive border-genesis-positive/20' : 
-                       isAl ? 'bg-genesis-negative/10 text-genesis-negative border-genesis-negative/20' : 
-                       'bg-gray-800 text-gray-300 border-gray-700'}`}>
-                     {flag.texto}
-                   </span>
-                 );
-              })}
-              {(data as any).scoreDetalhado.flagsVisuais.length > 3 && (
-                 <span className="text-[8.5px] font-bold uppercase tracking-wider px-2 py-1 rounded border bg-gray-900 text-gray-500 border-gray-800">
-                   +{(data as any).scoreDetalhado.flagsVisuais.length - 3} Ocultas
-                 </span>
-              )}
-            </div>
-          )}
+
 
           <div className="bg-white/5  rounded-lg p-[16px] relative z-10 flex items-start gap-3">
             <Target className={`${badgeColor} shrink-0 mt-0.5`} size={16} />
@@ -322,8 +329,8 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, currentPrice, cha
 
         {/* CAMADA 2: RISCO-RETORNO */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-[16px] mb-6">
-          <div className="bg-[#050505]  rounded-[10px] p-[16px] flex flex-col justify-center items-center text-center">
-            <span className="text-[10px] text-gray-500 font-bold uppercase tracking-widest mb-2">Risco/Retorno</span>
+          <div className="bg-[#050505] rounded-[10px] p-[16px] flex flex-col justify-center items-center text-center cursor-help" title="Risco/retorno calculado com base no primeiro alvo (TP1).">
+            <span className="text-[10px] text-gray-500 font-bold uppercase tracking-widest mb-2">RISCO/RETORNO — TP1</span>
             <span className="text-2xl font-mono text-white font-bold">1:{activeRr1}</span>
           </div>
           
@@ -344,7 +351,7 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, currentPrice, cha
             <span className="text-[9px] text-gray-500 font-bold uppercase tracking-widest mb-2 text-center md:text-left">Perfil da Operação</span>
             <div className="w-full bg-gray-900 rounded-full h-1.5 mb-2 overflow-hidden">
               <div 
-                className="h-full     opacity-80" 
+                className="h-full bg-orange-400 opacity-80" 
                 style={{ width: `${Math.min(setup.riscoPct * 5, 100)}%` }}
               />
             </div>
@@ -352,6 +359,14 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, currentPrice, cha
               {setup.riscoPct > 15 ? 'Alta Exposição' : setup.riscoPct > 5 ? 'Exposição Moderada' : 'Baixa Exposição'}
             </span>
           </div>
+        </div>
+
+        {/* Análise Técnica — prosa inteira (9 ideias) */}
+        <div className="bg-[#050505] rounded-[10px] p-[16px] mb-6">
+          <h3 className="text-xs font-bold text-gray-400 uppercase tracking-[0.2em] mb-4">Análise Técnica</h3>
+          <p className="text-sm text-gray-300 leading-relaxed whitespace-pre-line">
+            {data.narrativa || "Análise técnica indisponível."}
+          </p>
         </div>
 
         {/* CAMADA 3: O PLANO DE AÇÃO */}
@@ -455,25 +470,16 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, currentPrice, cha
               <div className="space-y-3">
                 <div className="flex justify-between items-center group">
                     <span className="text-gray-500 text-[10px] font-bold">TP1</span>
-                    <div className="flex items-center gap-2">
-                      <span className="text-genesis-positive font-mono font-bold text-sm bg-genesis-positive/10 px-2 py-0.5 rounded">${activeTp1}</span>
-                      {setup.tp1Usd && <span className="text-[10px] text-gray-500 font-mono">{setup.tp1Usd}</span>}
-                    </div>
+                    <span className="text-genesis-positive font-mono font-bold text-sm bg-genesis-positive/10 px-2 py-0.5 rounded">${activeTp1}</span>
                 </div>
                 <div className="flex justify-between items-center group">
                     <span className="text-gray-500 text-[10px] font-bold">TP2</span>
-                    <div className="flex items-center gap-2">
-                      <span className="text-genesis-positive font-mono font-bold text-sm bg-genesis-positive/10 px-2 py-0.5 rounded">${activeTp2}</span>
-                      {setup.tp2Usd && <span className="text-[10px] text-gray-500 font-mono">{setup.tp2Usd}</span>}
-                    </div>
+                    <span className="text-genesis-positive font-mono font-bold text-sm bg-genesis-positive/10 px-2 py-0.5 rounded">${activeTp2}</span>
                 </div>
                 {setup.tp3 && (
                 <div className="flex justify-between items-center group">
                     <span className="text-gray-500 text-[10px] font-bold">TP3</span>
-                    <div className="flex items-center gap-2">
-                      <span className="text-genesis-positive font-mono font-bold text-sm bg-genesis-positive/10 px-2 py-0.5 rounded">${activeTp3}</span>
-                      {setup.tp3Usd && <span className="text-[10px] text-gray-500 font-mono">{setup.tp3Usd}</span>}
-                    </div>
+                    <span className="text-genesis-positive font-mono font-bold text-sm bg-genesis-positive/10 px-2 py-0.5 rounded">${activeTp3}</span>
                 </div>
                 )}
               </div>
@@ -557,16 +563,6 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, currentPrice, cha
             </button>
           </div>
 
-          <div className="mb-2  pl-4 py-1">
-            <h4 className="text-white text-xs font-bold mb-3">Rational do Score {score}</h4>
-            <ul className="space-y-3">
-              <li className="flex items-start gap-2">
-                <div className="w-1.5 h-1.5 rounded-full bg-genesis-accent mt-1.5 shrink-0" />
-                <p className="text-xs text-gray-400 leading-relaxed">
-                  <strong className="text-gray-300">Estrutura Técnica:</strong> {(data.narrativa || data.analiseTecnica || "Estrutura validada.").split('.')[0] || "Estrutura validada."}
-                </p>
-              </li>
-            </ul>
 
             {data.ensemble && (
               <div className="relative z-10 grid grid-cols-2 lg:grid-cols-4 gap-4 mt-6">
@@ -599,7 +595,6 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, currentPrice, cha
                   })}
               </div>
             )}
-          </div>
 
           {showIndicators && (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-[16px] pt-6 mt-6  animate-in fade-in slide-in- duration-300">
@@ -649,7 +644,7 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, currentPrice, cha
                     {(data.indicadores?.fontes?.atr === 'GRAFICO' || data.indicadores?.fontes?.atr === 'OCR') && <span className="text-[8px] bg-yellow-500/20 text-yellow-500 border border-yellow-500/30 px-1 py-0.5 rounded">OCR</span>}
                     {data.indicadores?.fontes?.atr === 'INDISPONIVEL' && <span className="text-[8px] bg-gray-500/20 text-gray-400 border border-gray-500/30 px-1 py-0.5 rounded">N/D</span>}
                   </div>
-                  <span className="text-[10px] text-white font-mono">{data.indicadores?.atr != null ? Number(data.indicadores.atr).toFixed(4) : "N/D"}</span>
+                  <span className="text-[10px] text-white font-mono">{data.indicadores?.atr != null ? `$${Number(data.indicadores.atr).toFixed(4)}` : "N/D"}</span>
                 </div>
                 
                 <div className="flex justify-between items-center group">
@@ -659,7 +654,7 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, currentPrice, cha
                     {(data.indicadores?.fontes?.ema21 === 'GRAFICO' || data.indicadores?.fontes?.ema21 === 'OCR') && <span className="text-[8px] bg-yellow-500/20 text-yellow-500 border border-yellow-500/30 px-1 py-0.5 rounded">OCR</span>}
                     {data.indicadores?.fontes?.ema21 === 'INDISPONIVEL' && <span className="text-[8px] bg-gray-500/20 text-gray-400 border border-gray-500/30 px-1 py-0.5 rounded">N/D</span>}
                   </div>
-                  <span className="text-[9px] text-white font-mono">{(data.indicadores?.ema21 != null || data.indicadores?.ema50 != null || data.indicadores?.ema200 != null) ? (() => { const fmt = (v: any) => { if (v == null) return 'N/D'; const n = Number(v); return n >= 1 ? n.toFixed(2) : n < 0.01 ? n.toFixed(6) : n.toFixed(4); }; return `${fmt(data.indicadores?.ema21)} | ${fmt(data.indicadores?.ema50)} | ${fmt(data.indicadores?.ema200)}`; })() : 'N/D'}</span>
+                  <span className="text-[9px] text-white font-mono">{(data.indicadores?.ema21 != null || data.indicadores?.ema50 != null || data.indicadores?.ema200 != null) ? (() => { const fmt = (v: any) => { if (v == null) return 'N/D'; const n = Number(v); return `$${n >= 1 ? n.toFixed(2) : n < 0.01 ? n.toFixed(6) : n.toFixed(4)}`; }; return `${fmt(data.indicadores?.ema21)} | ${fmt(data.indicadores?.ema50)} | ${fmt(data.indicadores?.ema200)}`; })() : 'N/D'}</span>
                 </div>
                 
                 {/* BLOCO 3 - WYCKOFF E SESSÃO */}

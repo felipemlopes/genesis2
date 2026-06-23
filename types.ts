@@ -17,6 +17,7 @@ export interface TradeSetup {
   regime: string;
   alerta: string | null;
   narrativa?: string;
+  rationalScore?: string;
   entradaSugerida: {
     planoA: number | string;
     planoB: number | string;
