@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { TradeSetup } from '../types';
 import { selecionarZona, getMe } from '../services/api';
+import { formatPrice } from '../services/cryptoApi';
 
 interface AnalysisResultProps {
   data: TradeSetup;
@@ -54,7 +55,7 @@ const MENSAGENS_PILAR: Record<string, string[]> = {
 };
 
 const reportarErroBlocoGenesis = (nome: string, erro: string) => {
-  return `Nome da Funcionalidade: ${nome} — Erro: ${erro}`;
+  return `Nome da Funcionalidade: ${nome}. Erro: ${erro}`;
 };
 
 const getLogoUrl = (pair: string) => {
@@ -79,11 +80,11 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, currentPrice, cha
     invalidacaoPipeline: { texto: "Tese inválida se fechar vela acima de $82.100 para setup short" },
     wyckoff: "Acumulação",
     wyckoffColorClass: "text-green-500",
-    sessaoMetrica: "Sessão Londres — Liq. Crescente",
+    sessaoMetrica: "Sessão Londres. Liq. Crescente",
     sessaoMetricaColorClass: "text-blue-500",
     dominanciaMacro: "BTC.D em queda de 0.5% nas últimas 4 horas indica fluxo de capital fluindo para altcoins.",
-    multiTimeframe: { diario: "BULLISH", h4: "NEUTRO", h1: "BULLISH" },
-    tamanhoPosicao: "$1.500 em contratos — baseado em 2% de $5.000 de capital configurado."
+    multiTimeframe: [{ timeframe: "1D", bias: "BULLISH" }, { timeframe: "4H", bias: "NEUTRO" }, { timeframe: "1H", bias: "BULLISH" }],
+    tamanhoPosicao: "$1.500 em contratos. baseado em 2% de $5.000 de capital configurado."
   });
 
   const handleZoneSelect = async (zone: 'A' | 'B') => {
@@ -330,7 +331,7 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, currentPrice, cha
         {/* CAMADA 2: RISCO-RETORNO */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-[16px] mb-6">
           <div className="bg-[#050505] rounded-[10px] p-[16px] flex flex-col justify-center items-center text-center cursor-help" title="Risco/retorno calculado com base no primeiro alvo (TP1).">
-            <span className="text-[10px] text-gray-500 font-bold uppercase tracking-widest mb-2">RISCO/RETORNO — TP1</span>
+            <span className="text-[10px] text-gray-500 font-bold uppercase tracking-widest mb-2">RISCO/RETORNO (TP1)</span>
             <span className="text-2xl font-mono text-white font-bold">1:{activeRr1}</span>
           </div>
           
@@ -411,7 +412,7 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, currentPrice, cha
                   >
                     <div className="flex justify-between items-baseline mb-1">
                       <span className={`text-[10px] font-bold ${selectedZone === 'A' ? 'text-genesis-accent' : 'text-gray-400'}`}>Plano A (Primário)</span>
-                      <span className="font-mono font-bold text-sm text-white">${data.entradaSugerida?.planoA || setup.entrada}</span>
+                      <span className="font-mono font-bold text-sm text-white">{formatPrice(Number(data.entradaSugerida?.planoA || setup.entrada))}</span>
                     </div>
                     <p className="text-[9px] text-gray-400 font-mono tracking-wide leading-tight mt-1">
                       {data.entradaSugerida?.descricaoPlanoA || "Ponto de entrada primário conforme estrutura."}
@@ -430,7 +431,7 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, currentPrice, cha
                     >
                       <div className="flex justify-between items-baseline mb-1">
                         <span className={`text-[10px] font-bold ${selectedZone === 'B' ? 'text-genesis-accent' : 'text-gray-400'}`}>Plano B (Alternativo)</span>
-                        <span className="font-mono font-bold text-xs text-white">${data.entradaSugerida.planoB}</span>
+                        <span className="font-mono font-bold text-xs text-white">{formatPrice(Number(data.entradaSugerida.planoB))}</span>
                       </div>
                       <p className="text-[9px] text-gray-400 font-mono tracking-wide leading-tight mt-1">
                         {data.entradaSugerida.descricaoPlanoB}
@@ -470,16 +471,16 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, currentPrice, cha
               <div className="space-y-3">
                 <div className="flex justify-between items-center group">
                     <span className="text-gray-500 text-[10px] font-bold">TP1</span>
-                    <span className="text-genesis-positive font-mono font-bold text-sm bg-genesis-positive/10 px-2 py-0.5 rounded">${activeTp1}</span>
+                    <span className="text-genesis-positive font-mono font-bold text-sm bg-genesis-positive/10 px-2 py-0.5 rounded">{formatPrice(Number(activeTp1))}</span>
                 </div>
                 <div className="flex justify-between items-center group">
                     <span className="text-gray-500 text-[10px] font-bold">TP2</span>
-                    <span className="text-genesis-positive font-mono font-bold text-sm bg-genesis-positive/10 px-2 py-0.5 rounded">${activeTp2}</span>
+                    <span className="text-genesis-positive font-mono font-bold text-sm bg-genesis-positive/10 px-2 py-0.5 rounded">{formatPrice(Number(activeTp2))}</span>
                 </div>
-                {setup.tp3 && (
+                {Number(activeTp3) > 0 && (
                 <div className="flex justify-between items-center group">
                     <span className="text-gray-500 text-[10px] font-bold">TP3</span>
-                    <span className="text-genesis-positive font-mono font-bold text-sm bg-genesis-positive/10 px-2 py-0.5 rounded">${activeTp3}</span>
+                    <span className="text-genesis-positive font-mono font-bold text-sm bg-genesis-positive/10 px-2 py-0.5 rounded">{formatPrice(Number(activeTp3))}</span>
                 </div>
                 )}
               </div>
@@ -605,7 +606,7 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, currentPrice, cha
                 <div className="mb-3 w-full bg-blue-500/10 border border-blue-500/30 rounded px-3 py-2 flex items-center justify-between shadow-[0_0_15px_rgba(59,130,246,0.15)] pulse-slow">
                   <div className="flex flex-col">
                     <span className="text-[9px] font-bold text-blue-500 uppercase tracking-widest">
-                      COMPRESSÃO DETECTADA — ROMPIMENTO IMINENTE
+                      COMPRESSÃO DETECTADA. ROMPIMENTO IMINENTE
                     </span>
                     <span className="text-[8px] text-blue-400/80 uppercase">
                       (Nível: {data.indicadores.nivelCompressao})
@@ -654,7 +655,7 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, currentPrice, cha
                     {(data.indicadores?.fontes?.ema21 === 'GRAFICO' || data.indicadores?.fontes?.ema21 === 'OCR') && <span className="text-[8px] bg-yellow-500/20 text-yellow-500 border border-yellow-500/30 px-1 py-0.5 rounded">OCR</span>}
                     {data.indicadores?.fontes?.ema21 === 'INDISPONIVEL' && <span className="text-[8px] bg-gray-500/20 text-gray-400 border border-gray-500/30 px-1 py-0.5 rounded">N/D</span>}
                   </div>
-                  <span className="text-[9px] text-white font-mono">{(data.indicadores?.ema21 != null || data.indicadores?.ema50 != null || data.indicadores?.ema200 != null) ? (() => { const fmt = (v: any) => { if (v == null) return 'N/D'; const n = Number(v); return `$${n >= 1 ? n.toFixed(2) : n < 0.01 ? n.toFixed(6) : n.toFixed(4)}`; }; return `${fmt(data.indicadores?.ema21)} | ${fmt(data.indicadores?.ema50)} | ${fmt(data.indicadores?.ema200)}`; })() : 'N/D'}</span>
+                  <span className="text-[9px] text-white font-mono">{(data.indicadores?.ema21 != null || data.indicadores?.ema50 != null || data.indicadores?.ema200 != null) ? `${formatPrice(Number(data.indicadores?.ema21))} | ${formatPrice(Number(data.indicadores?.ema50))} | ${formatPrice(Number(data.indicadores?.ema200))}` : 'N/D'}</span>
                 </div>
                 
                 {/* BLOCO 3 - WYCKOFF E SESSÃO */}
@@ -727,7 +728,7 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, currentPrice, cha
             <div className="bg-[#050505]  p-[16px] rounded-lg">
               <div className="flex justify-between items-center  pb-2 mb-3">
                 <span className="text-[10px] text-purple-400 font-bold uppercase tracking-widest block">Sentimento</span>
-                <span className={`text-[10px] font-bold font-mono px-2 rounded bg-white/5 ${(sentimento?.score || 0) > 60 ? 'text-genesis-positive' : 'text-genesis-negative'}`}>{sentimento?.score || 0}/100</span>
+                <span className={`text-[10px] font-bold font-mono px-2 rounded bg-white/5 ${(sentimento as any)?.semDados ? 'text-gray-500' : (sentimento?.score || 0) > 60 ? 'text-genesis-positive' : 'text-genesis-negative'}`}>{(sentimento as any)?.semDados ? 'Sem dado' : `${sentimento?.score || 0}/100`}</span>
               </div>
               <p className="text-[10px] text-gray-400 leading-relaxed mb-4  pb-3 mt-3">
                   {sentimento?.narrativa || "Narrativa aprofundada não detectada."}
