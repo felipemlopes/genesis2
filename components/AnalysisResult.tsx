@@ -54,6 +54,17 @@ const MENSAGENS_PILAR: Record<string, string[]> = {
   ],
 };
 
+const WYCKOFF_LABEL: Record<string, string> = {
+  DISTRIBUICAO_RANGE: 'Distribuição em range',
+  DISTRIBUICAO_UAT: 'Distribuição (UAT)',
+  DISTRIBUICAO_SPRING: 'Distribuição com spring',
+  ACUMULACAO_RANGE: 'Acumulação em range',
+  ACUMULACAO_SPRING: 'Acumulação com spring',
+  MARKUP: 'Markup',
+  MARKDOWN: 'Markdown',
+  INDETERMINADO: 'Indeterminado',
+};
+
 const reportarErroBlocoGenesis = (nome: string, erro: string) => {
   return `Nome da Funcionalidade: ${nome}. Erro: ${erro}`;
 };
@@ -666,7 +677,7 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, currentPrice, cha
                     <span className="text-[9px] text-gray-500 uppercase font-bold tracking-wider">Wyckoff</span>
                   </div>
                   <span className={`text-[10px] font-mono ${(data as any).wyckoff?.cor || 'text-white'}`}>
-                    {(data as any).wyckoff?.fase || 'N/A'}
+                    {WYCKOFF_LABEL[(data as any).wyckoff?.fase] || (data as any).wyckoff?.fase || 'N/A'}
                   </span>
                 </div>
 
