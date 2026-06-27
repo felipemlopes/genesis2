@@ -69,6 +69,9 @@ const reportarErroBlocoGenesis = (nome: string, erro: string) => {
   return `Nome da Funcionalidade: ${nome}. Erro: ${erro}`;
 };
 
+const limparTexto = (t: string) =>
+  t.replace(/[ \t]{2,}/g, ' ').replace(/[ \t]+\n/g, '\n').trim();
+
 const getLogoUrl = (pair: string) => {
   const symbol = (pair || '').split('USDT')[0].toLowerCase();
   return `https://cryptologos.cc/logos/${symbol}-${symbol}-logo.png`;
@@ -315,7 +318,12 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, currentPrice, cha
                 else if (pct >= 45) { colorClass = 'bg-yellow-500'; Icon = AlertTriangle; }
                 
                 return (
-                  <div key={idx} className="bg-black/40 rounded p-3 border border-white/[0.05] cursor-help" title={MENSAGENS_PILAR[item.nome.toLowerCase()]?.[faixa(pct)]}>
+                  <div key={idx} className="bg-black/40 rounded p-3 border border-white/[0.05] cursor-help relative group" title={MENSAGENS_PILAR[item.nome.toLowerCase()]?.[faixa(pct)]}>
+                    {item.bloco?.micro && (
+                      <div className="absolute bottom-full left-0 mb-2 z-[9999] max-w-[260px] px-3 py-2.5 bg-[#0a0a0f] border border-white/[0.08] rounded-[10px] text-[12.5px] leading-relaxed text-gray-300 shadow-[0_8px_24px_rgba(0,0,0,0.18)] opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-opacity duration-150 pointer-events-none" role="tooltip">
+                        {item.bloco.micro}
+                      </div>
+                    )}
                     <div className="flex justify-between items-center mb-2">
                        <span className="text-[9px] font-bold text-gray-500 uppercase tracking-wider">{item.nome}</span>
                        <Icon size={12} className={pct >= 65 ? 'text-genesis-positive' : pct >= 45 ? 'text-yellow-500' : 'text-genesis-negative'} />
@@ -376,8 +384,8 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, currentPrice, cha
         {/* Análise Técnica — prosa inteira (9 ideias) */}
         <div className="bg-[#050505] rounded-[10px] p-[16px] mb-6">
           <h3 className="text-xs font-bold text-gray-400 uppercase tracking-[0.2em] mb-4">Análise Técnica</h3>
-          <p className="text-sm text-gray-300 leading-relaxed whitespace-pre-line">
-            {data.narrativa || "Análise técnica indisponível."}
+          <p className="text-sm text-gray-300 leading-relaxed text-left whitespace-normal break-normal" style={{ wordSpacing: 'normal', letterSpacing: 'normal', hyphens: 'none', lineHeight: 1.6 }}>
+            {limparTexto(data.narrativa || "Análise técnica indisponível.")}
           </p>
         </div>
 
@@ -453,19 +461,25 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, currentPrice, cha
               </div>
 
               {/* Botão de Confirmação */}
-              <div className="mt-4 pt-3 border-t border-white/5">
+              <div className="mt-4 pt-3 border-t border-white/5 relative group">
                 <button
                   disabled={!selectedZone}
                   onClick={() => { if (onSaveTrade) onSaveTrade(); }}
-                  className={`w-full flex items-center justify-center gap-2 py-2 px-3 rounded-md text-xs font-mono uppercase tracking-wider transition-all duration-300 font-bold ${
+                  className={`w-full flex items-center justify-center gap-2 py-2 px-3 rounded-md text-xs font-mono uppercase tracking-wider font-bold transition-all duration-[180ms] ${
                     !selectedZone
                       ? 'bg-white/5 text-gray-600 cursor-not-allowed'
-                      : 'bg-genesis-accent text-black hover:opacity-90 active:scale-[0.98]'
+                      : 'bg-genesis-accent text-black hover:bg-[#39ff14] hover:text-black hover:shadow-[0_4px_16px_rgba(57,255,20,0.25)] active:scale-[0.98]'
                   }`}
                 >
                   <Shield size={14} />
                   {selectedZone ? 'Confirmar Posição' : 'Selecione um Plano'}
                 </button>
+                {selectedZone && (
+                  <div className="confirmar-alerta absolute bottom-full left-0 z-[9999] flex gap-2 items-start mb-2 max-w-[300px] p-2.5 bg-[#2a2103] border border-[#b45309] rounded-[10px] text-[#fde68a] text-[12.5px] leading-relaxed opacity-0 invisible transition-opacity duration-150 pointer-events-none group-hover:opacity-100 group-hover:visible">
+                    <span className="flex-shrink-0 mt-px">⚠️</span>
+                    <span>Espera um segundo. Cheque o macro, o geopolítico e o sentimento da moeda no rodapé antes de entrar. O contexto pode reforçar ou enfraquecer esse setup.</span>
+                  </div>
+                )}
               </div>
             </div>
             
