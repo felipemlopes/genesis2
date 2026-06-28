@@ -29,7 +29,7 @@ const genesisFeatureFlags = {
 
 const MENSAGENS_PILAR: Record<string, string[]> = {
   tecnico: [
-    "Estrutura tecnica fraca ou contra a direcao do sinal. Preco desalinhado das medias e sem confirmacao de figura.",
+    "Estrutura tecnica fraca ou contra a direcao. Preco desalinhado das medias e sem confirmacao de figura.",
     "Estrutura tecnica indefinida. Sinais mistos entre medias, momentum e figura, sem leitura dominante.",
     "Estrutura tecnica favoravel. Medias e momentum comecam a alinhar com a direcao, com confirmacao parcial.",
     "Estrutura tecnica forte e alinhada. Medias empilhadas, figura confirmada e momentum a favor da direcao."
@@ -175,7 +175,7 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, currentPrice, cha
   if (!data || !data.execucao || !data.execucao.setup) {
     return (
       <div className="p-8 text-center bg-black rounded-xl ">
-         <p className="text-gray-400 font-mono">Processando sinal... Aguarde a confirmação de liquidez.</p>
+         <p className="text-gray-400 font-mono">Processando leitura... Aguarde a confirmação de liquidez.</p>
       </div>
     );
   }
@@ -197,7 +197,7 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, currentPrice, cha
   const progressColor = isLong ? 'bg-genesis-positive' : 'bg-genesis-negative';
 
   // Extract rationale short text 
-  const mainRationale = data.rationalScore || data.execucao?.motivo || "Sinal acionado pelos modelos.";
+  const mainRationale = data.rationalScore || data.execucao?.motivo || "Leitura acionada pelos modelos.";
 
   return (
     <div className="space-y-4">
@@ -292,7 +292,7 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, currentPrice, cha
                 </div>
               </div>
               <span className={`text-xs font-bold uppercase tracking-widest mt-1 px-2 py-0.5 rounded ${isCautela ? 'bg-yellow-900/20 text-yellow-500 border-yellow-500/30' : 'bg-green-900/20 text-genesis-positive border-genesis-positive/30'}`}>
-                {isCautela ? '️ Sinal com Cautela' : ' Sinal Confirmado'}
+                {isCautela ? '️ Leitura com Cautela' : ' Leitura Confirmada'}
               </span>
             </div>
           </div>
@@ -346,6 +346,15 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, currentPrice, cha
             </p>
           </div>
         </div>
+
+        {/* F1: Avisos do reconciliador */}
+        {(data as any).avisos?.length > 0 && (
+          <div className="bg-amber-950/20 border border-amber-600/30 rounded-lg p-3 mb-6">
+            {(data as any).avisos.map((a: string, i: number) => (
+              <p key={i} className="text-[11px] text-amber-300 leading-relaxed">{a}</p>
+            ))}
+          </div>
+        )}
 
         {/* CAMADA 2: RISCO-RETORNO */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-[16px] mb-6">
@@ -496,16 +505,25 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, currentPrice, cha
               <div className="space-y-3">
                 <div className="flex justify-between items-center group">
                     <span className="text-gray-500 text-[10px] font-bold">TP1</span>
-                    <span className="text-genesis-positive font-mono font-bold text-sm bg-genesis-positive/10 px-2 py-0.5 rounded">{formatPrice(Number(activeTp1))}</span>
+                    <div className="text-right">
+                      <span className="text-genesis-positive font-mono font-bold text-sm bg-genesis-positive/10 px-2 py-0.5 rounded">{formatPrice(Number(activeTp1))}</span>
+                      {setup.tp1_fonte && <div className="text-[8px] text-gray-500 mt-0.5">{setup.tp1_fonte}</div>}
+                    </div>
                 </div>
                 <div className="flex justify-between items-center group">
                     <span className="text-gray-500 text-[10px] font-bold">TP2</span>
-                    <span className="text-genesis-positive font-mono font-bold text-sm bg-genesis-positive/10 px-2 py-0.5 rounded">{formatPrice(Number(activeTp2))}</span>
+                    <div className="text-right">
+                      <span className="text-genesis-positive font-mono font-bold text-sm bg-genesis-positive/10 px-2 py-0.5 rounded">{formatPrice(Number(activeTp2))}</span>
+                      {setup.tp2_fonte && <div className="text-[8px] text-gray-500 mt-0.5">{setup.tp2_fonte}</div>}
+                    </div>
                 </div>
                 {Number(activeTp3) > 0 && (
                 <div className="flex justify-between items-center group">
                     <span className="text-gray-500 text-[10px] font-bold">TP3</span>
-                    <span className="text-genesis-positive font-mono font-bold text-sm bg-genesis-positive/10 px-2 py-0.5 rounded">{formatPrice(Number(activeTp3))}</span>
+                    <div className="text-right">
+                      <span className="text-genesis-positive font-mono font-bold text-sm bg-genesis-positive/10 px-2 py-0.5 rounded">{formatPrice(Number(activeTp3))}</span>
+                      {setup.tp3_fonte && <div className="text-[8px] text-gray-500 mt-0.5">{setup.tp3_fonte}</div>}
+                    </div>
                 </div>
                 )}
               </div>
@@ -607,7 +625,7 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, currentPrice, cha
                       return (
                           <div key={idx} className="bg-black/40 rounded border border-white/[0.05] p-3 text-left">
                               <div className="flex justify-between items-center mb-2">
-                                  <span className="text-[9px] font-bold text-gray-500 uppercase tracking-wider">{item.nome}</span>
+                       <span className={`text-[9px] font-bold uppercase tracking-wider ${pct >= 65 ? 'text-genesis-positive' : pct >= 45 ? 'text-yellow-500' : 'text-genesis-negative'}`}>{item.nome}</span>
                                   <StatusIcon size={12} className={pct >= 65 ? 'text-genesis-positive' : pct >= 45 ? 'text-yellow-500' : 'text-red-500'} />
                               </div>
                               <div className="w-full bg-gray-900 rounded-full h-1.5 overflow-hidden mb-1">
