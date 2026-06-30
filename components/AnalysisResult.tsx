@@ -311,11 +311,11 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, currentPrice, cha
                 { nome: 'Sentimento', bloco: (data as any).scoreDetalhado.blocoSentimento }
               ].map((item, idx) => {
                 const pct = item.bloco?.percentual || 0;
+                const vies = item.bloco?.vies || 'neutro';
                 const faixa = (p: number) => p < 25 ? 0 : p < 50 ? 1 : p < 75 ? 2 : 3;
-                let colorClass = 'bg-genesis-negative';
-                let Icon = XCircle;
-                if (pct >= 65) { colorClass = 'bg-genesis-positive'; Icon = CheckCircle2; }
-                else if (pct >= 45) { colorClass = 'bg-yellow-500'; Icon = AlertTriangle; }
+                let colorClass = 'bg-yellow-500'; let Icon = AlertTriangle;       // neutro
+                if (vies === 'alta')  { colorClass = 'bg-genesis-positive'; Icon = CheckCircle2; }
+                if (vies === 'baixa') { colorClass = 'bg-genesis-negative'; Icon = XCircle; }
                 
                 return (
                   <div key={idx} className="bg-black/40 rounded p-3 border border-white/[0.05] cursor-help relative group" title={MENSAGENS_PILAR[item.nome.toLowerCase()]?.[faixa(pct)]}>
@@ -326,7 +326,7 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, currentPrice, cha
                     )}
                     <div className="flex justify-between items-center mb-2">
                        <span className="text-[9px] font-bold text-gray-500 uppercase tracking-wider">{item.nome}</span>
-                       <Icon size={12} className={pct >= 65 ? 'text-genesis-positive' : pct >= 45 ? 'text-yellow-500' : 'text-genesis-negative'} />
+                        <Icon size={12} className={vies === 'alta' ? 'text-genesis-positive' : vies === 'baixa' ? 'text-genesis-negative' : 'text-yellow-500'} />
                     </div>
                     <div className="w-full bg-gray-900 rounded-full h-1.5 overflow-hidden">
                        <div className={`h-full ${colorClass}`} style={{width: `${pct}%`}} />
@@ -549,7 +549,7 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, currentPrice, cha
                       INVALIDAÇÃO DA TESE
                     </span>
                     <p className="text-[10px] text-gray-400 font-mono leading-relaxed">
-                      {data.zonaInteresse?.invalidacao || data.execucao?.zonaInteresse?.invalidacao || "Zona de invalidação não calculada."}
+                      {data.execucao?.zonaInteresse?.invalidacao || "Zona de invalidação não calculada."}
                     </p>
               </div>
 
