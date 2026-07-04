@@ -191,6 +191,12 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, currentPrice, cha
   const activeStop = selectedZone === 'B' && data.entradaSugerida?.planoB_stop ? data.entradaSugerida.planoB_stop : setup.stop;
   const activeRr1 = selectedZone === 'B' && data.entradaSugerida?.planoB_rr1 ? data.entradaSugerida.planoB_rr1 : setup.rr1;
   
+  const emEspera = data.execucao?.acao === 'AGUARDAR';
+  const rotuloVerificacao: Record<string, string> = {
+    'SEGURO':   'Condições validadas para execução',
+    'INSEGURO': 'Setup não operável: risco-retorno abaixo do mínimo de 1:1.5',
+  };
+  
   const isLong = data.direcaoProvavel?.toUpperCase() === 'LONG';
   const badgeColor = isLong ? 'text-genesis-positive' : 'text-genesis-negative';
   const borderColor = isLong ? '' : '';
@@ -356,6 +362,15 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, currentPrice, cha
           </div>
         )}
 
+        {emEspera && (
+          <div className="rounded-xl border border-amber-500/40 bg-amber-950/30 p-6 mb-6">
+            <div className="text-amber-400 font-bold text-lg tracking-widest">AGUARDAR</div>
+            <p className="text-amber-200/80 text-sm mt-2">
+              O risco-retorno atual não atinge o mínimo de 1:1.5. O cérebro recalculará o setup quando o preço oferecer um ponto melhor.
+            </p>
+          </div>
+        )}
+
         {/* CAMADA 2: RISCO-RETORNO */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-[16px] mb-6">
           <div className="bg-[#050505] rounded-[10px] p-[16px] flex flex-col justify-center items-center text-center cursor-help" title="Risco/retorno calculado com base no primeiro alvo (TP1).">
@@ -385,7 +400,11 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, currentPrice, cha
               />
             </div>
             <span className="text-[9px] font-mono text-gray-400 text-center md:text-left">
-              {setup.riscoPct > 15 ? 'Alta Exposição' : setup.riscoPct > 5 ? 'Exposição Moderada' : 'Baixa Exposição'}
+              {(() => {
+                const riscoMargemPct = setup.riscoMargemPct ?? setup.riscoPct * (setup.alavancagem ?? 1);
+                const label = riscoMargemPct > 50 ? 'Alta Exposição' : riscoMargemPct > 25 ? 'Exposição Moderada' : 'Baixa Exposição';
+                return `${label} (${(riscoMargemPct as any) > 100 ? '>' : ''}${Math.min(riscoMargemPct, 100).toFixed(1)}% da margem)`;
+              })()}
             </span>
           </div>
         </div>
@@ -431,8 +450,9 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, currentPrice, cha
                 <div className="space-y-3">
                   {/* Plano A */}
                   <button
+                    disabled={emEspera}
                     onClick={() => handleZoneSelect('A')}
-                    className={`w-full text-left p-2.5 rounded-lg border transition-all duration-200 ${
+                    className={`w-full text-left p-2.5 rounded-lg border transition-all duration-200 ${emEspera ? 'opacity-40 cursor-not-allowed' : ''} ${
                       selectedZone === 'A'
                         ? 'bg-genesis-accent/10 border-genesis-accent ring-1 ring-genesis-accent'
                         : 'bg-black/20 border-white/5 hover:border-white/10 hover:bg-black/30'
@@ -450,8 +470,9 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, currentPrice, cha
                   {/* Plano B */}
                   {data.entradaSugerida?.planoB && (
                     <button
+                      disabled={emEspera}
                       onClick={() => handleZoneSelect('B')}
-                      className={`w-full text-left p-2.5 rounded-lg border transition-all duration-200 ${
+                      className={`w-full text-left p-2.5 rounded-lg border transition-all duration-200 ${emEspera ? 'opacity-40 cursor-not-allowed' : ''} ${
                         selectedZone === 'B'
                           ? 'bg-genesis-accent/10 border-genesis-accent ring-1 ring-genesis-accent'
                           : 'bg-black/20 border-white/5 hover:border-white/10 hover:bg-black/30'
@@ -472,7 +493,7 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, currentPrice, cha
               {/* Botão de Confirmação */}
               <div className="mt-4 pt-3 border-t border-white/5 relative group">
                 <button
-                  disabled={!selectedZone}
+                  disabled={emEspera || !selectedZone}
                   onClick={() => { if (onSaveTrade) onSaveTrade(); }}
                   className={`w-full flex items-center justify-center gap-2 py-2 px-3 rounded-md text-xs font-mono uppercase tracking-wider font-bold transition-all duration-[180ms] ${
                     !selectedZone
@@ -557,7 +578,7 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, currentPrice, cha
                 <div className="bg-red-950/30 p-3 rounded border-red-900/50 mt-1">
                   <span className="text-[9px] font-bold text-genesis-negative/80 block mb-1.5 uppercase tracking-wider">Condição de Disparo</span>
                   <p className="text-[10px] text-gray-400 font-mono leading-relaxed">
-                    {setup.verificacao || data.zonaInteresse?.invalidacao}
+                    {rotuloVerificacao[setup.verificacao] ?? setup.verificacao}
                   </p>
                 </div>
               )}
