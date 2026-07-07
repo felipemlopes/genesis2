@@ -192,12 +192,31 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, currentPrice, cha
   const activeRr1 = selectedZone === 'B' && data.entradaSugerida?.planoB_rr1 ? data.entradaSugerida.planoB_rr1 : setup.rr1;
   
   const emEspera = data.execucao?.acao === 'AGUARDAR';
-  const rotuloVerificacao: Record<string, string> = {
-    'SEGURO':   'Condições validadas para execução',
-    'INSEGURO': 'Setup não operável: risco-retorno abaixo do mínimo de 1:1.5',
+  const emEsperaPlanoB = data.execucao?.acao === 'AGUARDAR_PLANO_B';
+  const planoATravado = emEspera || emEsperaPlanoB;
+  // R21: traducao da verificacao por CAUSA, nao por palpite
+  const rotuloVerificacao = (v?: string, motivo?: string | null): string => {
+    if (v === 'SEGURO') return 'Condicoes validadas para execucao';
+    if (v === 'INSEGURO') {
+      if (motivo === 'LIQUIDACAO')  return 'Setup nao operavel: stop alem do preco de liquidacao';
+      if (motivo === 'SEM_DIRECAO') return 'Setup nao operavel: estrutura sem direcao comitada';
+      return 'Setup nao operavel: risco-retorno abaixo do minimo de 1:1.5';
+    }
+    return v ?? '';
   };
+
+  // R19: avisos concatenam execucao.avisos + execucao.setup.avisos (fontes reais)
+  const avisos: string[] = Array.from(new Set([
+    ...(((data.execucao as any)?.avisos ?? []) as string[]),
+    ...(((data.execucao?.setup as any)?.avisos ?? []) as string[]),
+  ]));
   
   const isLong = data.direcaoProvavel?.toUpperCase() === 'LONG';
+
+  // R8: invalidação acompanha o plano selecionado
+  const invalidacaoAtiva = selectedZone === 'B' && data.entradaSugerida?.planoB_stop
+    ? `A tese sera invalidada se o preco fechar ${isLong ? 'abaixo' : 'acima'} de $${formatPrice(Number(data.entradaSugerida.planoB_stop))}`
+    : data.execucao?.zonaInteresse?.invalidacao;
   const badgeColor = isLong ? 'text-genesis-positive' : 'text-genesis-negative';
   const borderColor = isLong ? '' : '';
   const progressColor = isLong ? 'bg-genesis-positive' : 'bg-genesis-negative';
@@ -354,23 +373,28 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, currentPrice, cha
         </div>
 
         {/* F1: Avisos do reconciliador */}
-        {(data as any).avisos?.length > 0 && (
+        {avisos.length > 0 && (
           <div className="bg-amber-950/20 border border-amber-600/30 rounded-lg p-3 mb-6">
-            {(data as any).avisos.map((a: string, i: number) => (
+            {avisos.map((a: string, i: number) => (
               <p key={i} className="text-[11px] text-amber-300 leading-relaxed">{a}</p>
             ))}
           </div>
         )}
 
-        {emEspera && (
+        {(emEspera || emEsperaPlanoB) && (
           <div className="rounded-xl border border-amber-500/40 bg-amber-950/30 p-6 mb-6">
             <div className="text-amber-400 font-bold text-lg tracking-widest">AGUARDAR</div>
             <p className="text-amber-200/80 text-sm mt-2">
-              O risco-retorno atual não atinge o mínimo de 1:1.5. O cérebro recalculará o setup quando o preço oferecer um ponto melhor.
+              {(data.execucao as any)?.motivo
+                || avisos[0]
+                || 'O cerebro travou a execucao ate o mercado oferecer uma condicao valida.'}
             </p>
           </div>
         )}
 
+        {/* R27: esconder pipeline quando AGUARDAR estrutural (sem numeros fantasmas) */}
+        {!(emEspera && setup.stop == null) && (
+        <>
         {/* CAMADA 2: RISCO-RETORNO */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-[16px] mb-6">
           <div className="bg-[#050505] rounded-[10px] p-[16px] flex flex-col justify-center items-center text-center cursor-help" title="Risco/retorno calculado com base no primeiro alvo (TP1).">
@@ -450,9 +474,9 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, currentPrice, cha
                 <div className="space-y-3">
                   {/* Plano A */}
                   <button
-                    disabled={emEspera}
+                    disabled={planoATravado}
                     onClick={() => handleZoneSelect('A')}
-                    className={`w-full text-left p-2.5 rounded-lg border transition-all duration-200 ${emEspera ? 'opacity-40 cursor-not-allowed' : ''} ${
+                    className={`w-full text-left p-2.5 rounded-lg border transition-all duration-200 ${planoATravado ? 'opacity-40 cursor-not-allowed' : ''} ${
                       selectedZone === 'A'
                         ? 'bg-genesis-accent/10 border-genesis-accent ring-1 ring-genesis-accent'
                         : 'bg-black/20 border-white/5 hover:border-white/10 hover:bg-black/30'
@@ -570,7 +594,7 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, currentPrice, cha
                       INVALIDAÇÃO DA TESE
                     </span>
                     <p className="text-[10px] text-gray-400 font-mono leading-relaxed">
-                      {data.execucao?.zonaInteresse?.invalidacao || "Zona de invalidação não calculada."}
+                      {invalidacaoAtiva || "Zona de invalidação não calculada."}
                     </p>
               </div>
 
@@ -578,7 +602,7 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, currentPrice, cha
                 <div className="bg-red-950/30 p-3 rounded border-red-900/50 mt-1">
                   <span className="text-[9px] font-bold text-genesis-negative/80 block mb-1.5 uppercase tracking-wider">Condição de Disparo</span>
                   <p className="text-[10px] text-gray-400 font-mono leading-relaxed">
-                    {rotuloVerificacao[setup.verificacao] ?? setup.verificacao}
+                    {rotuloVerificacao(setup.verificacao, (setup as any).verificacao_motivo)}
                   </p>
                 </div>
               )}
@@ -817,6 +841,7 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, currentPrice, cha
           </div>
           )}
         </div>
+        </>)}
       </div>
     </div>
   );
