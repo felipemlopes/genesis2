@@ -213,6 +213,11 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, currentPrice, cha
   
   const isLong = data.direcaoProvavel?.toUpperCase() === 'LONG';
 
+  const direcaoExibicao: Record<string, string> = {
+    'LONG': 'LONG', 'SHORT': 'SHORT', 'NEUTRO': 'NEUTRO',
+    'AGUARDAR': 'AGUARDAR', 'INDISPONIVEL': 'INDISPONÍVEL',
+  };
+
   // R8: invalidação acompanha o plano selecionado
   const invalidacaoAtiva = selectedZone === 'B' && data.entradaSugerida?.planoB_stop
     ? `A tese sera invalidada se o preco fechar ${isLong ? 'abaixo' : 'acima'} de $${formatPrice(Number(data.entradaSugerida.planoB_stop))}`
@@ -297,7 +302,7 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, currentPrice, cha
                 <span className="text-[10px] text-gray-500 font-bold uppercase tracking-[0.2em] mb-1">Direção Provável</span>
                 <div className="flex items-baseline gap-3">
                   <span className={`text-6xl font-bold ${badgeColor} tracking-tighter uppercase drop--[0_0_15px_rgba(0,0,0,0.5)]`}>
-                    {data.direcaoProvavel}
+                    {direcaoExibicao[data.direcaoProvavel] ?? data.direcaoProvavel}
                   </span>
                   <span className={`px-3 py-1 rounded bg-white/5 ${borderColor} text-xl font-bold font-mono ${badgeColor}`}>
                     {setup.alavancagem}x
@@ -385,7 +390,7 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, currentPrice, cha
           <div className="rounded-xl border border-amber-500/40 bg-amber-950/30 p-6 mb-6">
             <div className="text-amber-400 font-bold text-lg tracking-widest">AGUARDAR</div>
             <p className="text-amber-200/80 text-sm mt-2">
-              {(data.execucao as any)?.motivo
+              {((data.execucao as any)?.motivo as string)?.replace('INDISPONIVEL', 'INDISPONÍVEL')
                 || avisos[0]
                 || 'O cerebro travou a execucao ate o mercado oferecer uma condicao valida.'}
             </p>
