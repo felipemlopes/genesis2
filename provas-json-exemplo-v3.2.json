@@ -1,0 +1,119 @@
+{
+  "direcaoProvavel": "SHORT",
+  "direcaoFonte": "MOTOR_ESTRUTURA",
+  "scoreProbabilidade": 45,
+  "confianca": 60,
+  "regime": "BEARISH",
+  "pair": "SOLUSDT",
+  "execucao": {
+    "acao": "AGUARDAR",
+    "motivo": "Estrutura mista e fluxo sem maioria. Sem direcao comitada, o cerebro nao executa.",
+    "justificativaScore": "Vies vendedor moderado. O tecnico puxa para baixa com death cross e DMI vendedor, e o order flow confirma com CVD negativo.",
+    "setup": {
+      "entrada": 82.50,
+      "stop": null,
+      "tp1": null,
+      "tp2": null,
+      "tp3": null,
+      "tp1_fonte": null,
+      "tp2_fonte": null,
+      "tp3_fonte": null,
+      "alavancagem": 5.0,
+      "liquidacao": null,
+      "riscoPct": null,
+      "rr1": null,
+      "verificacao": "INSEGURO",
+      "verificacao_motivo": "SEM_DIRECAO",
+      "entrada_ts": "2026-07-07T13:45:22+00:00",
+      "avisos": ["Estrutura e fluxo divergem. Aguardar o preco confirmar."],
+      "planoB": {
+        "entrada": 79.35,
+        "stop": 78.02,
+        "tp1": 84.20,
+        "rr1": 1.96
+      }
+    },
+    "zonaInteresse": {
+      "invalidacao": "A tese sera invalidada se o preco fechar acima de $85.40"
+    }
+  },
+  "fontes_saude": {
+    "candles": true,
+    "funding": true,
+    "oi": true,
+    "long_short": true,
+    "cvd": true,
+    "liquidacoes": false,
+    "book": true,
+    "sentimento": true
+  },
+  "entradaSugerida": null,
+  "scoreDetalhado": {
+    "blocoTecnico": {
+      "percentual": 65,
+      "vies": "baixa",
+      "micro": "Laranja. Sinais mistos entre medias e momentum."
+    },
+    "blocoDerivativos": {
+      "percentual": 55,
+      "vies": "neutro"
+    },
+    "blocoMacro": {
+      "percentual": 48,
+      "vies": "neutro"
+    },
+    "blocoSentimento": {
+      "percentual": 75,
+      "vies": "alta",
+      "fonte": "SENTIMENTO_ATIVO"
+    }
+  },
+  "score": {
+    "vies": "SHORT_MODERADO",
+    "scoreFinal": 45,
+    "confiabilidade": "MEDIA",
+    "flags": [
+      "EMPILHAMENTO_BAIXA",
+      "DEATH_CROSS",
+      "CVD_ACELERANDO_VENDA",
+      "FONTE_LIQUIDACOES_INDISPONIVEL"
+    ],
+    "flagsVisuais": [
+      "ADX indica tendencia forte",
+      "Empilhamento de baixa",
+      "Death Cross EMA50/200",
+      "CVD acelerando venda",
+      "Fonte de liquidacoes indisponivel"
+    ]
+  },
+  "indicadores": {
+    "rsi": 42.5,
+    "adx": 27.3,
+    "macd": 0.0021,
+    "atr": 0.059,
+    "ema21": 83.10,
+    "ema50": 84.35,
+    "ema200": 88.20
+  },
+  "wyckoff": {
+    "fase": "INDETERMINADO",
+    "evento": "RANGE_INVALIDO_LARGURA",
+    "range": { "teto": 0, "suporte": 0 }
+  },
+  "figura": null,
+  "multiTimeframe": [
+    { "timeframe": "4h", "bias": "BEARISH" },
+    { "timeframe": "1d", "bias": "BULLISH" },
+    { "timeframe": "1w", "bias": "NEUTRO" }
+  ],
+  "narrativa": "SOLUSDT opera em tendencia de baixa no grafico 4h, com preco abaixo da EMA de 21 e da EMA de 50. O RSI em 42.5 perdendo o ponto medio e o ADX em 27.3 com o -DI acima do +DI confirmam momentum vendedor. O MACD abaixo do zero com histograma expandindo para baixo reforca a pressao. O CVD acelera para venda com fluxo agressor dominante. Confluencia temporal: 4H=BEARISH, 1D=BULLISH, 1W=NEUTRO. O timeframe diario diverge da direcao SHORT, sugerindo que o movimento de baixa pode enfrentar suporte em timeframes maiores. O range Wyckoff foi descartado por largura excessiva. A tese sera invalidada se o preco fechar acima de $85.40.",
+  "rationalScore": "Vies vendedor moderado. O tecnico puxa para baixa com death cross e DMI vendedor, e o order flow confirma com CVD negativo. O score nao foi mais baixo porque o sentimento do ativo esta positivo e o timeframe diario diverge da direcao.",
+  "sentimentoNarrativa": {
+    "score": 75,
+    "expectativa": "ALTA",
+    "narrativa": "Polygon anunciou integracao com grande parceiro institucional. Comunidade otimista com o lancamento da zkEVM.",
+    "gatilhosPositivos": ["Parceria institucional", "Lancamento zkEVM"],
+    "gatilhosNegativos": [],
+    "fonte": "GOOGLE_SEARCH"
+  }
+}

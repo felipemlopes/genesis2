@@ -1,0 +1,137 @@
+﻿======================================================================
+PROVAS JSON V3.2 - CAMPOS DO CONTRATO
+======================================================================
+
+--- execucao.acao (LONG|SHORT|AGUARDAR|AGUARDAR_PLANO_B) ---
+E:\Programas\wamp64\www\genesis-api\app\Services\GeminiAnalysisService.php:420:                'execucao' => ['acao' 
+=> 'AGUARDAR', 'setup' => []],
+E:\Programas\wamp64\www\genesis-api\app\Services\GeminiAnalysisService.php:720:            $result['execucao']['acao'] 
+  = 'AGUARDAR';
+E:\Programas\wamp64\www\genesis-api\app\Services\GeminiAnalysisService.php:753:            $result['execucao']['acao'] 
+= 'AGUARDAR';
+E:\Programas\wamp64\www\genesis-api\app\Services\GeminiAnalysisService.php:817:            $result['execucao']['acao'] 
+  = 'AGUARDAR';
+E:\Programas\wamp64\www\genesis-api\app\Services\GeminiAnalysisService.php:849:            $result['execucao']['acao'] 
+= 'AGUARDAR';
+E:\Programas\wamp64\www\genesis-api\app\Services\GeminiAnalysisService.php:855:        if 
+(($result['execucao']['acao'] ?? '') === 'AGUARDAR'
+E:\Programas\wamp64\www\genesis-api\app\Services\GeminiAnalysisService.php:968:        if 
+(empty($result['execucao']['motivo']) && ($result['execucao']['acao'] ?? '') !== 'AGUARDAR') {
+
+
+
+--- execucao.motivo ---
+E:\Programas\wamp64\www\genesis-api\app\Services\GeminiAnalysisService.php:721:            
+$result['execucao']['motivo'] = 'Estrutura mista e fluxo sem maioria. Sem direcao comitada, o cerebro nao executa.';
+E:\Programas\wamp64\www\genesis-api\app\Services\GeminiAnalysisService.php:818:            
+$result['execucao']['motivo'] = 'Sem barreira real de alvo na direcao do trade. Projecoes nao validam setup.';
+
+
+
+--- execucao.justificativaScore ---
+E:\Programas\wamp64\www\genesis-api\app\Services\GeminiAnalysisService.php:967:        
+$result['execucao']['justificativaScore'] = $result['rationalScore'] ?? '';
+
+
+
+--- execucao.setup.verificacao (SEGURO|INSEGURO sem simbolos) ---
+E:\Programas\wamp64\www\genesis-api\app\Services\MotorExecucaoService.php:589:            'verificacao'        => 
+($stopSeguro = $stop < ($liq > 0 ? $liq * (1 + self::MARGEM_SEG_LIQ) : INF)) ? 'SEGURO' : 'INSEGURO',
+E:\Programas\wamp64\www\genesis-api\app\Services\MotorExecucaoService.php:669:            'verificacao'        => 
+($stopSeguro = $stop > ($liq < INF ? $liq * (1 - self::MARGEM_SEG_LIQ) : 0)) ? 'SEGURO' : 'INSEGURO',
+E:\Programas\wamp64\www\genesis-api\app\Services\MotorExecucaoService.php:754:                'verificacao'        => 
+($stopSeguro = $stopB < ($liq > 0 ? $liq * (1 + self::MARGEM_SEG_LIQ) : INF)) ? 'SEGURO' : 'INSEGURO',
+
+
+
+--- execucao.setup.verificacao_motivo (LIQUIDACAO|RR_MINIMO|SEM_DIRECAO|SEM_BARREIRA_REAL) ---
+E:\Programas\wamp64\www\genesis-api\app\Services\MotorExecucaoService.php:120:                'setup' => 
+array_merge($planoA, ['verificacao' => 'INSEGURO', 'verificacao_motivo' => 'LIQUIDACAO', 'tamanhoSugerido' => '']),
+E:\Programas\wamp64\www\genesis-api\app\Services\MotorExecucaoService.php:546:                'verificacao' => 
+'INSEGURO', 'verificacao_motivo' => 'LIQUIDACAO',
+E:\Programas\wamp64\www\genesis-api\app\Services\MotorExecucaoService.php:590:            'verificacao_motivo' => 
+($stop < ($liq > 0 ? $liq * (1 + self::MARGEM_SEG_LIQ) : INF)) ? null : 'LIQUIDACAO',
+E:\Programas\wamp64\www\genesis-api\app\Services\MotorExecucaoService.php:626:                'verificacao' => 
+'INSEGURO', 'verificacao_motivo' => 'LIQUIDACAO',
+E:\Programas\wamp64\www\genesis-api\app\Services\MotorExecucaoService.php:670:            'verificacao_motivo' => 
+($stop > ($liq < INF ? $liq * (1 - self::MARGEM_SEG_LIQ) : 0)) ? null : 'LIQUIDACAO',
+E:\Programas\wamp64\www\genesis-api\app\Services\MotorExecucaoService.php:755:                'verificacao_motivo' => 
+($stopB < ($liq > 0 ? $liq * (1 + self::MARGEM_SEG_LIQ) : INF)) ? null : 'LIQUIDACAO',
+E:\Programas\wamp64\www\genesis-api\app\Services\MotorExecucaoService.php:817:            'verificacao_motivo' => 
+($stopB > ($liq < INF ? $liq * (1 - self::MARGEM_SEG_LIQ) : 0)) ? null : 'LIQUIDACAO',
+E:\Programas\wamp64\www\genesis-api\app\Services\MotorExecucaoService.php:947:        $setup['verificacao_motivo'] = 
+$verificacao === 'INSEGURO' ? 'LIQUIDACAO' : null;
+E:\Programas\wamp64\www\genesis-api\app\Services\SetupReconciler.php:144:                
+$setup['setup']['verificacao_motivo'] = 'RR_MINIMO';
+E:\Programas\wamp64\www\genesis-api\app\Services\SetupReconciler.php:148:                
+$setup['setup']['verificacao_motivo'] = 'RR_MINIMO';
+E:\Programas\wamp64\www\genesis-api\app\Services\SetupReconciler.php:151:        } elseif 
+(($setup['setup']['verificacao_motivo'] ?? null) !== 'LIQUIDACAO'
+E:\Programas\wamp64\www\genesis-api\app\Services\SetupReconciler.php:152:                && 
+($setup['setup']['verificacao_motivo'] ?? null) !== 'SEM_DIRECAO') {
+E:\Programas\wamp64\www\genesis-api\app\Services\GeminiAnalysisService.php:723:            
+$result['execucao']['setup']['verificacao_motivo'] = 'SEM_DIRECAO';
+E:\Programas\wamp64\www\genesis-api\app\Services\GeminiAnalysisService.php:820:            
+$result['execucao']['setup']['verificacao_motivo'] = 'SEM_BARREIRA_REAL';
+
+
+
+--- execucao.setup.stop (null quando invalido) ---
+E:\Programas\wamp64\www\genesis-api\app\Services\MotorExecucaoService.php:297:                return ['stop' => null, 
+'fonte' => 'BLOQUEADO_TETO',
+E:\Programas\wamp64\www\genesis-api\app\Services\MotorExecucaoService.php:359:                return ['stop' => null, 
+'fonte' => 'BLOQUEADO_TETO',
+E:\Programas\wamp64\www\genesis-api\app\Services\MotorExecucaoService.php:543:                'stop' => null, 'tp1' => 
+null, 'tp2' => null, 'tp3' => null,
+E:\Programas\wamp64\www\genesis-api\app\Services\MotorExecucaoService.php:623:                'stop' => null, 'tp1' => 
+null, 'tp2' => null, 'tp3' => null,
+
+
+
+--- execucao.setup.riscoPct (0-100 unificado) ---
+E:\Programas\wamp64\www\genesis-api\app\Services\MotorExecucaoService.php:305:            'riscoPct' => round($risco * 
+100, 2),   // ESCALA UNIFICADA: sempre percentual (0 a 100)
+E:\Programas\wamp64\www\genesis-api\app\Services\MotorExecucaoService.php:367:            'riscoPct' => round($risco * 
+100, 2),   // ESCALA UNIFICADA: sempre percentual (0 a 100)
+
+
+
+--- execucao.setup.tp1_fonte (nunca projecao) ---
+E:\Programas\wamp64\www\genesis-api\app\Services\MotorExecucaoService.php:473:            return ['tp1' => null, 
+'tp1_fonte' => null, 'tp2' => null, 'tp2_fonte' => null, 'tp3' => null, 'tp3_fonte' => null];
+E:\Programas\wamp64\www\genesis-api\app\Services\MotorExecucaoService.php:496:            return ['tp1' => null, 
+'tp1_fonte' => null, 'tp2' => null, 'tp2_fonte' => null, 'tp3' => null, 'tp3_fonte' => null];
+E:\Programas\wamp64\www\genesis-api\app\Services\MotorExecucaoService.php:509:            'tp1' => $tp1, 'tp1_fonte' 
+=> $tps[0]['fonte'] ?? null,
+
+
+
+--- execucao.setup.rr1 ---
+E:\Programas\wamp64\www\genesis-api\app\Services\GeminiAnalysisService.php:830:            
+$result['execucao']['setup']['rr1'] = $riscoR > 0 ? round($retornoR / $riscoR, 2) : 0;
+
+
+
+--- execucao.setup.planoB.rr1 ---
+E:\Programas\wamp64\www\genesis-api\app\Services\SetupReconciler.php:137:            $rrB    = (float) ($planoB['rr1'] 
+?? 0);
+
+
+
+--- execucao.setup.entrada_ts ---
+E:\Programas\wamp64\www\genesis-api\app\Services\GeminiAnalysisService.php:839:        
+$result['execucao']['setup']['entrada_ts'] = now()->toIso8601String();
+
+
+
+--- fontes_saude ---
+E:\Programas\wamp64\www\genesis-api\app\Services\GeminiAnalysisService.php:986:        $result['fontes_saude'] = [
+
+
+
+--- score.flags: FONTE_LIQUIDACOES_INDISPONIVEL ---
+E:\Programas\wamp64\www\genesis-api\app\Services\ScoringService.php:408:            $flags[] = 
+'FONTE_LIQUIDACOES_INDISPONIVEL';
+
+
+

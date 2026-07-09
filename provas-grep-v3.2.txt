@@ -1,0 +1,46 @@
+﻿======================================================================
+PROVAS DE CODIGO V3.2 - SAIDA BRUTA DOS GREPS
+======================================================================
+
+--- 1. grep -rn "pisoTP1" AlvoService.php ---
+--- 2. grep -rn "allForceOrders" BinanceService.php ---
+E:\Programas\wamp64\www\genesis-api\app\Services\BinanceService.php:239:        return 
+$this->get('/fapi/v1/allForceOrders', [
+
+
+
+--- 3. grep -rn "0.35" ScoringService.php ---
+--- 4. grep -rn "CVD_DIV_BULL\|CVD_DIV_BEAR" ScoringService.php ---
+--- 5. grep simbolos check/X MotorExecucaoService.php ---
+--- 6. grep -rn "EMPILHAMENTO_ALTA" ScoringService.php ---
+E:\Programas\wamp64\www\genesis-api\app\Services\ScoringService.php:144:                $flags[] = 'EMPILHAMENTO_ALTA';
+
+
+
+--- 7. grep -rn "fontes_saude" GeminiAnalysisService.php ---
+E:\Programas\wamp64\www\genesis-api\app\Services\GeminiAnalysisService.php:986:        $result['fontes_saude'] = [
+
+
+
+--- 8. grep -rn "data.avisos" AnalysisResult.tsx ---
+--- 9. grep -rn "motorExecucao\|genesisPipeline" (frontend) ---
+--- 10. grep -rn "openInterestHist" BinanceService.php ---
+E:\Programas\wamp64\www\genesis-api\app\Services\BinanceService.php:355:    public function getOpenInterestHist(string 
+$symbol, string $period = '1h', int $limit = 25): array
+E:\Programas\wamp64\www\genesis-api\app\Services\BinanceService.php:357:        return 
+$this->get('/futures/data/openInterestHist', [
+
+
+
+--- 11. grep -rn "'tp1_fonte' => 'projecao'" MotorExecucaoService.php ---
+--- 12. grep -rn "motivo.*rationalScore\|rationalScore.*motivo" GeminiAnalysisService.php ---
+--- 13. grep -rn "AGUARDAR_PLANO_B" (backend + frontend) ---
+E:\Programas\wamp64\www\genesis-api\app\Services\SetupReconciler.php:139:                $setup['acao']   = 
+'AGUARDAR_PLANO_B';
+
+
+
+components\AnalysisResult.tsx:195:  const emEsperaPlanoB = data.execucao?.acao === 'AGUARDAR_PLANO_B';
+
+
+

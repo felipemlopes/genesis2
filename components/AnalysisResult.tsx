@@ -196,11 +196,11 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, currentPrice, cha
   const planoATravado = emEspera || emEsperaPlanoB;
   // R21: traducao da verificacao por CAUSA, nao por palpite
   const rotuloVerificacao = (v?: string, motivo?: string | null): string => {
-    if (v === 'SEGURO') return 'Condicoes validadas para execucao';
+    if (v === 'SEGURO') return 'Condições validadas para execução';
     if (v === 'INSEGURO') {
-      if (motivo === 'LIQUIDACAO')  return 'Setup nao operavel: stop alem do preco de liquidacao';
-      if (motivo === 'SEM_DIRECAO') return 'Setup nao operavel: estrutura sem direcao comitada';
-      return 'Setup nao operavel: risco-retorno abaixo do minimo de 1:1.5';
+      if (motivo === 'LIQUIDACAO')  return 'Setup não operável: stop além do preço de liquidação';
+      if (motivo === 'SEM_DIRECAO') return 'Setup não operável: estrutura sem direção comitada';
+      return 'Setup não operável: risco-retorno abaixo do mínimo de 1:1.5';
     }
     return v ?? '';
   };
@@ -551,7 +551,7 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, currentPrice, cha
                 <div className="flex justify-between items-center group">
                     <span className="text-gray-500 text-[10px] font-bold">TP1</span>
                     <div className="text-right">
-                      <span className="text-genesis-positive font-mono font-bold text-sm bg-genesis-positive/10 px-2 py-0.5 rounded">{formatPrice(Number(activeTp1))}</span>
+                      <span className="text-genesis-positive font-mono font-bold text-sm bg-genesis-positive/10 px-2 py-0.5 rounded">{activeTp1 != null ? formatPrice(Number(activeTp1)) : '—'}</span>
                       {setup.tp1_fonte && <div className="text-[8px] text-gray-500 mt-0.5">{setup.tp1_fonte}</div>}
                     </div>
                 </div>
@@ -585,7 +585,7 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, currentPrice, cha
             <div className="w-full lg:w-1/3 bg-white/[0.02]  rounded-lg p-5 border-l-genesis-negative hover:bg-red-950/20 transition-colors relative h-full min-h-[140px]">
               <span className="text-[10px] font-bold text-genesis-negative uppercase tracking-widest block mb-3">Defesa (Stop Loss)</span>
               <div className="mb-4 mt-2">
-                <span className="text-2xl font-mono text-genesis-negative font-bold drop--[0_0_8px_rgba(239,68,68,0.4)]">${activeStop}</span>
+                <span className="text-2xl font-mono text-genesis-negative font-bold drop--[0_0_8px_rgba(239,68,68,0.4)]">{activeStop != null ? `$${activeStop}` : '—'}</span>
               </div>
               
               {/* BLOCO 2 - INVALIDAÇÃO DA TESE */}
