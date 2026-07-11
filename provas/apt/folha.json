@@ -1,0 +1,90 @@
+{
+        "ativo": {
+            "preco": 0.6296,
+            "timeframe": "4h"
+        },
+        "estrutura_4h": {
+            "ema21": 0.6268520421414938,
+            "ema50": 0.622875402427311,
+            "ema200": 0.6622079023917286,
+            "preco_vs_emas": "acima da 21, acima da 50, abaixo da 200",
+            "wyckoff_fase": "RANGE_SEM_EVENTO",
+            "figura": {
+                "nome": "BANDEIRA_BAIXA",
+                "estado": "CONFIRMADA"
+            },
+            "poc": 0.99,
+            "hvn": [
+                {
+                    "de": 0.915,
+                    "ate": 1.02
+                },
+                {
+                    "de": 0.84,
+                    "ate": 0.88
+                }
+            ],
+            "lvn": [
+                {
+                    "de": 0.88,
+                    "ate": 0.915
+                },
+                {
+                    "de": 0.812,
+                    "ate": 0.84
+                }
+            ],
+            "suportes": [
+                0.915,
+                0.812,
+                0.666
+            ],
+            "resistencias": [
+                0.99
+            ]
+        },
+        "order_flow_4h": {
+            "cvd_inclinacao": "CAINDO",
+            "cvd_saldo": -2117268.9,
+            "divergencia_cvd": "NENHUMA",
+            "volume_leitura": "Volume subindo com o preco. Movimento confirmado."
+        },
+        "derivativos": {
+            "funding_rate": "0.00007685",
+            "oi_quadrante": "LIQUIDACAO_COMPRADO",
+            "oi_variacao_pct": -0.02,
+            "liquidacoes": {
+                "acima": [],
+                "abaixo": [],
+                "dominante": "EQUILIBRADO"
+            },
+            "squeeze": null
+        },
+        "momentum_4h": {
+            "rsi": 52.15,
+            "adx": 10.84,
+            "plus_di": 13.84,
+            "minus_di": 16.34,
+            "macd_acima_signal": true,
+            "estocastico_k": 79.31,
+            "estocastico_zona": "NEUTRA"
+        },
+        "imagem_qualidade": {
+            "confiavel": true,
+            "aviso": null,
+            "ocr": {
+                "vrvp_visivel": true,
+                "timeframe_legivel": true
+            }
+        },
+        "multi_timeframe": [
+            {
+                "timeframe": "1D",
+                "bias": "BEARISH"
+            },
+            {
+                "timeframe": "1W",
+                "bias": "BEARISH"
+            }
+        ]
+    }

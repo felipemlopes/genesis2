@@ -7,6 +7,7 @@ import {
 import { TradeSetup } from '../types';
 import { selecionarZona, getMe } from '../services/api';
 import { formatPrice } from '../services/cryptoApi';
+import FamiliasTrader from './FamiliasTrader';
 
 interface AnalysisResultProps {
   data: TradeSetup;
@@ -211,7 +212,10 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, currentPrice, cha
     ...(((data.execucao?.setup as any)?.avisos ?? []) as string[]),
   ]));
   
-  const isLong = data.direcaoProvavel?.toUpperCase() === 'LONG';
+  const dir = (data.direcaoProvavel || '').toUpperCase();
+  const isLong  = dir === 'LONG';
+  const isShort = dir === 'SHORT';
+  const isOperavel = isLong || isShort;
 
   const direcaoExibicao: Record<string, string> = {
     'LONG': 'LONG', 'SHORT': 'SHORT', 'NEUTRO': 'NEUTRO',
@@ -222,9 +226,9 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, currentPrice, cha
   const invalidacaoAtiva = selectedZone === 'B' && data.entradaSugerida?.planoB_stop
     ? `A tese sera invalidada se o preco fechar ${isLong ? 'abaixo' : 'acima'} de $${formatPrice(Number(data.entradaSugerida.planoB_stop))}`
     : data.execucao?.zonaInteresse?.invalidacao;
-  const badgeColor = isLong ? 'text-genesis-positive' : 'text-genesis-negative';
+  const badgeColor    = isLong ? 'text-genesis-positive' : isShort ? 'text-genesis-negative' : 'text-yellow-500';
   const borderColor = isLong ? '' : '';
-  const progressColor = isLong ? 'bg-genesis-positive' : 'bg-genesis-negative';
+  const progressColor = isLong ? 'bg-genesis-positive'  : isShort ? 'bg-genesis-negative'  : 'bg-yellow-500/60';
 
   // Extract rationale short text 
   const mainRationale = data.rationalScore || data.execucao?.motivo || "Leitura acionada pelos modelos.";
@@ -304,9 +308,11 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, currentPrice, cha
                   <span className={`text-6xl font-bold ${badgeColor} tracking-tighter uppercase drop--[0_0_15px_rgba(0,0,0,0.5)]`}>
                     {direcaoExibicao[data.direcaoProvavel] ?? data.direcaoProvavel}
                   </span>
-                  <span className={`px-3 py-1 rounded bg-white/5 ${borderColor} text-xl font-bold font-mono ${badgeColor}`}>
-                    {setup.alavancagem}x
-                  </span>
+                  {isOperavel && setup.alavancagem != null && (
+                    <span className={`px-3 py-1 rounded bg-white/5 ${borderColor} text-xl font-bold font-mono ${badgeColor}`}>
+                      {setup.alavancagem}x
+                    </span>
+                  )}
                 </div>
               </div>
             </div>
@@ -331,43 +337,7 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, currentPrice, cha
             <div className={`h-full ${progressColor} transition-all duration-1000`} style={{width: `${score}%`}} />
           </div>
 
-          {/* NOVO BLOCO DE DETALHAMENTO DO SCORE */}
-          {(data as any).scoreDetalhado && (
-            <div className="mb-5 relative z-10 grid grid-cols-2 lg:grid-cols-4 gap-4 mt-6">
-              {[
-                { nome: 'Técnico', bloco: (data as any).scoreDetalhado.blocoTecnico },
-                { nome: 'Derivativos', bloco: (data as any).scoreDetalhado.blocoDerivativos },
-                { nome: 'Macro', bloco: (data as any).scoreDetalhado.blocoMacro },
-                { nome: 'Sentimento', bloco: (data as any).scoreDetalhado.blocoSentimento }
-              ].map((item, idx) => {
-                const pct = item.bloco?.percentual || 0;
-                const vies = item.bloco?.vies || 'neutro';
-                const faixa = (p: number) => p < 25 ? 0 : p < 50 ? 1 : p < 75 ? 2 : 3;
-                let colorClass = 'bg-yellow-500'; let Icon = AlertTriangle;       // neutro
-                if (vies === 'alta')  { colorClass = 'bg-genesis-positive'; Icon = CheckCircle2; }
-                if (vies === 'baixa') { colorClass = 'bg-genesis-negative'; Icon = XCircle; }
-                
-                return (
-                  <div key={idx} className="bg-black/40 rounded p-3 border border-white/[0.05] cursor-help relative group" title={MENSAGENS_PILAR[item.nome.toLowerCase()]?.[faixa(pct)]}>
-                    {item.bloco?.micro && (
-                      <div className="absolute bottom-full left-0 mb-2 z-[9999] max-w-[260px] px-3 py-2.5 bg-[#0a0a0f] border border-white/[0.08] rounded-[10px] text-[12.5px] leading-relaxed text-gray-300 shadow-[0_8px_24px_rgba(0,0,0,0.18)] opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-opacity duration-150 pointer-events-none" role="tooltip">
-                        {item.bloco.micro}
-                      </div>
-                    )}
-                    <div className="flex justify-between items-center mb-2">
-                       <span className="text-[9px] font-bold text-gray-500 uppercase tracking-wider">{item.nome}</span>
-                        <Icon size={12} className={vies === 'alta' ? 'text-genesis-positive' : vies === 'baixa' ? 'text-genesis-negative' : 'text-yellow-500'} />
-                    </div>
-                    <div className="w-full bg-gray-900 rounded-full h-1.5 overflow-hidden">
-                       <div className={`h-full ${colorClass}`} style={{width: `${pct}%`}} />
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-
-
+          <FamiliasTrader familias={(data as any).score?.familias ?? (data as any).score?.familias_trader ?? null} />
 
           <div className="bg-white/5  rounded-lg p-[16px] relative z-10 flex items-start gap-3">
             <Target className={`${badgeColor} shrink-0 mt-0.5`} size={16} />
@@ -397,8 +367,8 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, currentPrice, cha
           </div>
         )}
 
-        {/* R27: esconder pipeline quando AGUARDAR estrutural (sem numeros fantasmas) */}
-        {!(emEspera && setup.stop == null) && (
+        {/* R27: esconder pipeline quando nao operavel (sem numeros fantasmas) */}
+        {isOperavel && setup.stop != null && (
         <>
         {/* CAMADA 2: RISCO-RETORNO */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-[16px] mb-6">
@@ -417,7 +387,9 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, currentPrice, cha
           
           <div className="bg-[#050505]  rounded-[10px] p-[16px] flex flex-col justify-center items-center text-center col-span-2 md:col-span-1">
             <span className="text-[10px] text-gray-500 font-bold uppercase tracking-widest mb-2">Liquidação</span>
-            <span className="text-xl font-mono text-orange-400 font-bold">{typeof setup.liquidacao === 'number' ? `$${setup.liquidacao}` : setup.liquidacao}</span>
+            <span className="text-xl font-mono text-orange-400 font-bold">
+              {typeof setup.liquidacao === 'number' ? `$${formatPrice(Number(setup.liquidacao))}` : (setup.liquidacao ?? '—')}
+            </span>
           </div>
           
           <div className="bg-[#050505]  rounded-[10px] p-[16px] flex flex-col justify-center col-span-2 md:col-span-1">
@@ -497,7 +469,7 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, currentPrice, cha
                   </button>
 
                   {/* Plano B */}
-                  {data.entradaSugerida?.planoB && (
+                  {Number(data.entradaSugerida?.planoB) > 0 && (
                     <button
                       disabled={emEspera}
                       onClick={() => handleZoneSelect('B')}
@@ -611,10 +583,19 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, currentPrice, cha
                   </p>
                 </div>
               )}
+
+              {data.invalidacaoTese && (
+                <div className="mt-2 pt-2 border-t border-white/5">
+                  <span className="text-[9px] font-bold text-gray-500 uppercase tracking-widest block mb-1">
+                    Condicao de invalidacao (leitura)
+                  </span>
+                  <p className="text-[11px] text-gray-300 leading-relaxed">{data.invalidacaoTese}</p>
+                </div>
+              )}
             </div>
           </div>
           
-          {/* BLOCO 6 - TAMANHO DE POSIÇÃO SUGERIDO */}
+          {/* BLOCO 6 - TAMANHO DE POSICAO SUGERIDO */}
           <div className="mt-6 pt-5 border-t border-white/[0.05]">
             <div className="flex items-center gap-3">
               <span className="text-[9px] font-bold text-gray-500 uppercase tracking-wider flex items-center gap-2">

@@ -1,0 +1,55 @@
+﻿===== P1 - REMOCOES (grep proofs) =====
+API Repo: E:\Programas\wamp64\www\genesis-api
+Front Repo: C:\Users\felip\Downloads\G-nesis-2.0-main\G-nesis-2.0-main
+
+--- J3: MOTOR_ESTRUTURA / aguardarPorEstrutura / STOP_BLOQUEADO ---
+STATUS: VAZIO (J3 DONE)
+Run: grep -rn "MOTOR_ESTRUTURA\|aguardarPorEstrutura\|STOP_BLOQUEADO" app/
+Result: (no matches)
+
+--- J7: SetupReconciler ---
+STATUS: VAZIO (J7 DONE - file deleted, only comments remain)
+Run: grep -rn "SetupReconciler" app/
+Result (comments only):
+  AlvoService.php:15: const RR_MINIMO = 1.5; // C9: mesmo gate do SetupReconciler
+  AlvoService.php:69: // RR real ate a primeira barreira. AlvoService INFORMA, SetupReconciler decide AGUARDAR.
+
+--- J5: engine/ + *.bak (frontend) ---
+STATUS: VAZIO (J5 DONE)
+Run: ls engine/ *.bak 2>/dev/null
+  engine/: does not exist
+  *.bak: no files found
+
+--- J4: long_short_ratio (ExchangeRouter.php) ---
+STATUS: VAZIO (J4 DONE - removed from PHPDoc)
+Run: grep -rn "long_short_ratio" app/Services/ExchangeRouter.php
+Result: (no matches)
+
+--- J4: getLongShortRatio (all exchange Services) ---
+STATUS: PENDING (methods still exist in BinanceService, BybitService, BitgetService, OkxService - MicroRadar dependency)
+Run: grep -rn "getLongShortRatio" app/Services/
+Result:
+  BinanceService.php:187: public function getLongShortRatio(...)
+  BybitService.php:98: public function getLongShortRatio(...)
+  BitgetService.php:89: public function getLongShortRatio(...)
+  OkxService.php:78: public function getLongShortRatio(...)
+
+--- J1: callGemini( ---
+STATUS: PENDING J1 (still called, buildTradeSetup dependency)
+Run: grep -rn "callGemini(" app/Services/GeminiAnalysisService.php
+Result:
+  GeminiAnalysisService.php:587: $geminiResult = $this->callGemini($imageBase64, $prompt);
+
+--- J1: buildPrompt ---
+STATUS: PENDING J1 (method still exists at line ~1047)
+Run: grep -rn "buildPrompt" app/
+Result:
+  GeminiAnalysisService.php:573: $prompt = $this->buildPrompt(...)
+  GeminiAnalysisService.php:1047: private function buildPrompt(...)
+
+--- J2: scoreDetalhado ---
+STATUS: PENDING J2 (still set in buildTradeSetup ~line 1353)
+Run: grep -rn "scoreDetalhado" app/Services/GeminiAnalysisService.php
+Result:
+  GeminiAnalysisService.php:1353: $result["scoreDetalhado"] = $score;
+  GeminiAnalysisService.php:787: $result['scoreDetalhado']['blocoSentimento'] = [...];

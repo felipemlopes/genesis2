@@ -1,0 +1,28 @@
+﻿
+   PASS  Tests\Unit\ExampleTest
+  Ô£ô that true is true
+
+   PASS  Tests\Unit\ExecucaoContratoTest
+  Ô£ô stop ancora no pivo e nunca bloqueia                                                                         0.18s  
+  Ô£ô stop distante avisa e nao trava                                                                              0.04s  
+  Ô£ô neutro sai com setup todo nulo                                                                               0.04s  
+  Ô£ô rr reprovado preserva direcao e zera niveis                                                                  0.05s  
+  Ô£ô r8 plano b nunca alem do stop final                                                                          0.04s  
+
+   PASS  Tests\Unit\FolhaIntegridadeTest
+  Ô£ô folha recebe sr e figura do ocr                                                                              0.06s  
+
+   PASS  Tests\Unit\TraderAuditoriaTest
+  Ô£ô pendle long 65
+  Ô£ô aave long 55
+  Ô£ô short completo 65
+  Ô£ô rejeita long com soma negativa
+  Ô£ô rejeita familia acima do teto
+  Ô£ô soma 47 arredonda para 45 e da neutro
+  Ô£ô soma 62 arredonda para 60 long
+  Ô£ô soma menos 48 arredonda para 50 short
+  Ô£ô score 45 e sempre neutro
+
+  Tests:    16 passed (55 assertions)
+  Duration: 1.29s
+

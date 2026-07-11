@@ -1,0 +1,438 @@
+"{
+    "direcaoProvavel": "SHORT",
+    "scoreProbabilidade": 55,
+    "confianca": 45,
+    "regime": "NEUTRO",
+    "entradaSugerida": {
+        "planoA": 0.6297,
+        "descricaoPlanoA": "Entrada antecipada dentro de uma bandeira baixa ja confirmada por candle fechado. Risco de movimento contrario antes da confirmacao. Stop em $0.638911 limita o risco a 1.46%.",
+        "planoB": 0.63571645,
+        "descricaoPlanoB": "Aguardar repique para a regiÃ£o de HVN do VRVP entre $0.826 e $0.8975, com confluencia de Wyckoff (rejeicao no teto do range com volume vendedor), CVD divergente e pressÃ£o vendedora no orderbook para confirmar entrada SHORT. Entrada ajustada para permanecer aquem da invalidacao do Plano A.",
+        "planoB_stop": 0.993,
+        "planoB_tp1": 0.812,
+        "planoB_tp2": 0.666,
+        "planoB_tp3": 0.5461,
+        "planoB_rr1": 0.36
+    },
+    "execucao": {
+        "acao": "SHORT",
+        "motivo": "Setup validado. Direcao SHORT.",
+        "setup": {
+            "entrada": 0.6297,
+            "stop": 0.638911,
+            "tp1": 0.6129,
+            "tp1_fonte": "pdh_pdl",
+            "tp2": 0.5936,
+            "tp2_fonte": "range_wyckoff",
+            "tp3": 0.5713,
+            "tp3_fonte": "extensao",
+            "alavancagem": 5,
+            "liquidacao": 0.7524915,
+            "riscoPct": 1.46,
+            "rr1": 1.82,
+            "riscoMargemPct": 7.31,
+            "tamanhoSugerido": "$100 (5x) = $500.00 -> 794.028903 APTUSDT | Risco: $7.31 (7.31% da margem)",
+            "verificacao": "SEGURO",
+            "verificacao_motivo": null,
+            "entrada_ts": "2026-07-10T23:39:53+00:00"
+        },
+        "planoB": {
+            "entrada": 0.63571645,
+            "stop": 0.993,
+            "tp1": 0.812,
+            "tp2": 0.666,
+            "tp3": 0.5461,
+            "alavancagem": 5,
+            "liquidacao": 1.0277,
+            "riscoPct": 15.46,
+            "rr1": 0.36,
+            "verificacao": "SEGURO",
+            "verificacao_motivo": null,
+            "tipo": "PULLBACK",
+            "descricao": "Aguardar repique para a regiÃ£o de HVN do VRVP entre $0.826 e $0.8975, com confluencia de Wyckoff (rejeicao no teto do range com volume vendedor), CVD divergente e pressÃ£o vendedora no orderbook para confirmar entrada SHORT. Entrada ajustada para permanecer aquem da invalidacao do Plano A."
+        },
+        "zonaInteresse": {
+            "tipo": "REPICO",
+            "zona": "N\\/A",
+            "invalidacao": "A tese sera invalidada se o preco fechar acima de $0.638911"
+        },
+        "avisos": [],
+        "justificativaScore": "A estrutura Ã© fortemente negativa devido Ã  confirmaÃ§Ã£o da bandeira baixa e Ã  posiÃ§Ã£o do preÃ§o em relaÃ§Ã£o Ã s EMAs. O order flow Ã© negativo com CVD caindo e saldo negativo, confirmando pressÃ£o vendedora. Derivativos mostram um leve viÃ©s negativo com liquidaÃ§Ã£o de comprados e OI em leve queda. Momentum Ã© levemente negativo com ADX baixo e DMI indicando pressÃ£o vendedora."
+    },
+    "macroGeopolitica": {
+        "resumo": "Nos EUA, o Federal Reserve alertou sobre pressÃµes inflacionÃ¡rias persistentes devido a gargalos logÃ­sticos e commodities, mantendo viÃ©s hawkish na ata do FOMC. A Circle obteve aprovaÃ§Ã£o do OCC para licenÃ§a de Banco fiduciÃ¡rio nacional. Na China, Pequim expandiu leis retaliatÃ³rias contra sanÃ§Ãµes internacionais, elevando riscos operacionais. Na RÃºssia, divisÃµes internas na UniÃ£o Europeia enfraqueceram o 21Âº pacote de sanÃ§Ãµes, aliviando restriÃ§Ãµes energÃ©ticas. O JapÃ£o e a Zona do Euro monitoram a escalada de tensÃµes geopolÃ­ticas no Estreito de Ormuz que impactam diretamente as cadeias de suprimento globais de energia.",
+        "eventos": [
+            "DivulgaÃ§Ã£o do RelatÃ³rio de PolÃ­tica MonetÃ¡ria do Federal Reserve (EUA)",
+            "AprovaÃ§Ã£o definitiva do OCC para o Circle National Trust (EUA)",
+            "ExpansÃ£o de leis retaliatÃ³rias contra sanÃ§Ãµes internacionais por Pequim (China)",
+            "DesidrataÃ§Ã£o do 21Âº pacote de sanÃ§Ãµes da UE contra a RÃºssia (RÃºssia\\/Zona do Euro)"
+        ]
+    },
+    "dadosAtivo": {
+        "narrativa": "O ecossistema Aptos (APT) apresenta consolidaÃ§Ã£o lateral de preÃ§os com diminuiÃ§Ã£o na variaÃ§Ã£o de Open Interest (-0.02%), indicando fechamento de posiÃ§Ãµes e realizaÃ§Ã£o de lucros de curto prazo. A comunidade monitora o desenvolvimento de novas integraÃ§Ãµes de infraestrutura e parcerias institucionais para atraÃ§Ã£o de liquidez para a rede L1, enquanto a atividade de baleias permanece estÃ¡vel dentro do range de acumulaÃ§Ã£o estabelecido.",
+        "gatilhosPositivos": [
+            "DivergÃªncia de volume bullish com volume crescente em candles de alta",
+            "PreÃ§o sustentado acima das mÃ©dias mÃ³veis exponenciais rÃ¡pidas EMA21 e EMA50"
+        ],
+        "gatilhosNegativos": [
+            "PreÃ§o trabalhando abaixo da EMA200 e do POC de volume em 0.99",
+            "Queda no Open Interest sinalizando falta de agressividade dos compradores no curto prazo"
+        ]
+    },
+    "zonaInteresse": {
+        "tipo": "PULLBACK",
+        "zona": "0.6129 a 0.6255",
+        "invalidacao": "0.5915"
+    },
+    "pair": "APTUSDT",
+    "indicadores": {
+        "rsi": 52.15,
+        "adx": 10.84,
+        "plusDI": 13.84,
+        "minusDI": 16.34,
+        "macdHist": 0.00014003,
+        "ema21": 0.6268520421414938,
+        "ema50": 0.622875402427311,
+        "ema200": 0.6622079023917286,
+        "atr": 0.01423621,
+        "fontes": {
+            "ema21": "API",
+            "ema50": "API",
+            "ema200": "API",
+            "rsi": "API",
+            "adx": "API",
+            "macd": "API",
+            "atr": "API"
+        },
+        "compressaoDetectada": false,
+        "nivelCompressao": "NENHUMA",
+        "divergenciaRSI": "NENHUMA",
+        "bollinger": {
+            "banda_media": 0.625515,
+            "banda_superior": 0.64322661,
+            "banda_inferior": 0.60780339
+        }
+    },
+    "scoreDetalhado": {
+        "scoreFinal": 30,
+        "vies": "LONG_LEVE",
+        "confiabilidade": "BAIXA",
+        "blocoTecnico": {
+            "pontos": 20,
+            "maximo": 45,
+            "percentual": 45,
+            "vies": "baixa",
+            "micro": "Laranja. Sinais mistos entre mÃ©dias e momentum."
+        },
+        "blocoDerivativos": {
+            "pontos": 9,
+            "maximo": 56,
+            "percentual": 16,
+            "vies": "neutro",
+            "micro": "Vermelho. Derivativos contra. Funding e posicionamento sugerem pressÃ£o oposta."
+        },
+        "flags": [
+            "RANGING_SEM_TENDENCIA",
+            "DEATH_CROSS",
+            "DIVERGENCIA_VOLUME_BULLISH",
+            "CORRECAO_FRACA",
+            "FONTE_LIQUIDACOES_INDISPONIVEL",
+            "SQUEEZE_INDISPONIVEL"
+        ],
+        "volumeConfirma": false,
+        "familias": {
+            "estrutura": {
+                "bull": 0,
+                "bear": 16,
+                "presente": true,
+                "pesoMax": 30
+            },
+            "orderflow": {
+                "bull": 5,
+                "bear": 2,
+                "presente": true,
+                "pesoMax": 28
+            },
+            "derivativos": {
+                "bull": 4,
+                "bear": 7,
+                "presente": true,
+                "pesoMax": 28
+            },
+            "momentum": {
+                "bull": 5,
+                "bear": 4,
+                "presente": true,
+                "pesoMax": 14
+            }
+        },
+        "squeeze": null,
+        "flagsVisuais": [
+            "Mercado Sem tendÃªncia definida",
+            "Death Cross EMA50\\/200",
+            "DIVERGENCIA_VOLUME_BULLISH",
+            "CorreÃ§Ã£o sem liquidaÃ§Ã£o de OI",
+            "FONTE_LIQUIDACOES_INDISPONIVEL",
+            "SQUEEZE_INDISPONIVEL"
+        ],
+        "sintese": "Score 30\\/100 | Vies: LONG_LEVE | Confiabilidade: BAIXA | 6 flags ativas",
+        "blocoMacro": {
+            "percentual": 50,
+            "micro": "Laranja. Macro neutro a cauteloso. Sem gatilho claro.",
+            "vies": "neutro"
+        },
+        "blocoSentimento": {
+            "percentual": 55,
+            "vies": "alta",
+            "fonte": "SENTIMENTO_ATIVO"
+        }
+    },
+    "multiTimeframe": [
+        {
+            "timeframe": "1D",
+            "bias": "BEARISH"
+        },
+        {
+            "timeframe": "1W",
+            "bias": "BEARISH"
+        }
+    ],
+    "zonasEstruturais": {
+        "pdh": 0.6374,
+        "pdl": 0.6129,
+        "pwh": 0.6463,
+        "pwl": 0.5537,
+        "poc": 0.99,
+        "hvn": [
+            0.9675,
+            0.86
+        ],
+        "lvn": [
+            0.8975,
+            0.826
+        ]
+    },
+    "macroData": {
+        "vix": 15.03,
+        "dxy_variacao": 0.02,
+        "sp500_variacao": 1.24
+    },
+    "dados_mercado": {
+        "funding_rate": "0.00007685",
+        "cvd": {
+            "delta_ultimo": -171978.2,
+            "saldo": -2117268.9,
+            "inclinacao": "CAINDO"
+        },
+        "estocastico": {
+            "k": 79.31,
+            "d": 77.35,
+            "zona": "NEUTRA",
+            "cruzamento": "CRUZOU_CIMA"
+        },
+        "open_interest": 24071104.4,
+        "oi_enriquecido": {
+            "variacao_pct": -0.02,
+            "quadrante": "LIQUIDACAO_COMPRADO"
+        },
+        "atr": {
+            "value": 0.01423621,
+            "percent": 2.2612,
+            "fonte": "API"
+        }
+    },
+    "sessao": {
+        "nome": "Overnight",
+        "cor": "text-gray-500"
+    },
+    "wyckoff": {
+        "fase": "RANGE_SEM_EVENTO",
+        "evento": null,
+        "narrativa": "Consolidacao lateral sem evento Wyckoff confirmado. Operar pelos niveis do range. Range: 0.5936 (suporte) a 0.6514 (teto).",
+        "gatilho": "Monitorar",
+        "range": {
+            "teto": 0.6514,
+            "suporte": 0.5936
+        }
+    },
+    "figura": {
+        "nome": "BANDEIRA_BAIXA",
+        "estado": "CONFIRMADA",
+        "vies": "baixa",
+        "fonte": "OCR_VALIDADO_PHP"
+    },
+    "folha_decisao": {
+        "ativo": {
+            "preco": 0.6296,
+            "timeframe": "4h"
+        },
+        "estrutura_4h": {
+            "ema21": 0.6268520421414938,
+            "ema50": 0.622875402427311,
+            "ema200": 0.6622079023917286,
+            "preco_vs_emas": "acima da 21, acima da 50, abaixo da 200",
+            "wyckoff_fase": "RANGE_SEM_EVENTO",
+            "figura": {
+                "nome": "BANDEIRA_BAIXA",
+                "estado": "CONFIRMADA"
+            },
+            "poc": 0.99,
+            "hvn": [
+                {
+                    "de": 0.915,
+                    "ate": 1.02
+                },
+                {
+                    "de": 0.84,
+                    "ate": 0.88
+                }
+            ],
+            "lvn": [
+                {
+                    "de": 0.88,
+                    "ate": 0.915
+                },
+                {
+                    "de": 0.812,
+                    "ate": 0.84
+                }
+            ],
+            "suportes": [
+                0.915,
+                0.812,
+                0.666
+            ],
+            "resistencias": [
+                0.99
+            ]
+        },
+        "order_flow_4h": {
+            "cvd_inclinacao": "CAINDO",
+            "cvd_saldo": -2117268.9,
+            "divergencia_cvd": "NENHUMA",
+            "volume_leitura": "Volume subindo com o preco. Movimento confirmado."
+        },
+        "derivativos": {
+            "funding_rate": "0.00007685",
+            "oi_quadrante": "LIQUIDACAO_COMPRADO",
+            "oi_variacao_pct": -0.02,
+            "liquidacoes": {
+                "acima": [],
+                "abaixo": [],
+                "dominante": "EQUILIBRADO"
+            },
+            "squeeze": null
+        },
+        "momentum_4h": {
+            "rsi": 52.15,
+            "adx": 10.84,
+            "plus_di": 13.84,
+            "minus_di": 16.34,
+            "macd_acima_signal": true,
+            "estocastico_k": 79.31,
+            "estocastico_zona": "NEUTRA"
+        },
+        "imagem_qualidade": {
+            "confiavel": true,
+            "aviso": null,
+            "ocr": {
+                "vrvp_visivel": true,
+                "timeframe_legivel": true
+            }
+        },
+        "multi_timeframe": [
+            {
+                "timeframe": "1D",
+                "bias": "BEARISH"
+            },
+            {
+                "timeframe": "1W",
+                "bias": "BEARISH"
+            }
+        ]
+    },
+    "trader_resposta": {
+        "direcao": "SHORT",
+        "score_familias": {
+            "estrutura": -25,
+            "order_flow": -20,
+            "derivativos": -5,
+            "momentum": -5
+        },
+        "figura": {
+            "nome": "BANDEIRA_BAIXA",
+            "estado": "CONFIRMADA"
+        },
+        "base_estrutural": "O preÃ§o estÃ¡ acima das EMAs de 21 e 50, mas abaixo da EMA 200, indicando uma tendÃªncia de baixa no mÃ©dio prazo. A figura de bandeira baixa estÃ¡ confirmada, sugerindo continuaÃ§Ã£o da tendÃªncia de baixa. O preÃ§o estÃ¡ em um range sem evento significativo de Wyckoff, com resistÃªncias prÃ³ximas e suportes mais distantes.",
+        "justificativa_score": "A estrutura Ã© fortemente negativa devido Ã  confirmaÃ§Ã£o da bandeira baixa e Ã  posiÃ§Ã£o do preÃ§o em relaÃ§Ã£o Ã s EMAs. O order flow Ã© negativo com CVD caindo e saldo negativo, confirmando pressÃ£o vendedora. Derivativos mostram um leve viÃ©s negativo com liquidaÃ§Ã£o de comprados e OI em leve queda. Momentum Ã© levemente negativo com ADX baixo e DMI indicando pressÃ£o vendedora.",
+        "narrativa": "O ativo estÃ¡ em uma configuraÃ§Ã£o de continuaÃ§Ã£o de baixa, com a bandeira baixa confirmada e o preÃ§o abaixo da EMA 200. O order flow confirma a pressÃ£o vendedora com CVD negativo e volume crescente acompanhando a queda de preÃ§o. Derivativos indicam liquidaÃ§Ã£o de comprados, mas sem sinais de squeeze iminente. O momentum Ã© fraco, mas inclina-se para o lado vendedor.",
+        "invalidacao_tese": "A tese de baixa perde validade se o preÃ§o romper e fechar acima da resistÃªncia em 0.99, invalidando a bandeira baixa confirmada."
+    },
+    "direcaoFonte": "GPT_TRADER",
+    "score": {
+        "scoreFinal": 55,
+        "familias": {
+            "estrutura": -25,
+            "order_flow": -20,
+            "derivativos": -5,
+            "momentum": -5
+        }
+    },
+    "narrativa": "O ativo estÃ¡ em uma configuraÃ§Ã£o de continuaÃ§Ã£o de baixa, com a bandeira baixa confirmada e o preÃ§o abaixo da EMA 200. O order flow confirma a pressÃ£o vendedora com CVD negativo e volume crescente acompanhando a queda de preÃ§o. Derivativos indicam liquidaÃ§Ã£o de comprados, mas sem sinais de squeeze iminente. O momentum Ã© fraco, mas inclina-se para o lado vendedor.",
+    "rationalScore": "A estrutura Ã© fortemente negativa devido Ã  confirmaÃ§Ã£o da bandeira baixa e Ã  posiÃ§Ã£o do preÃ§o em relaÃ§Ã£o Ã s EMAs. O order flow Ã© negativo com CVD caindo e saldo negativo, confirmando pressÃ£o vendedora. Derivativos mostram um leve viÃ©s negativo com liquidaÃ§Ã£o de comprados e OI em leve queda. Momentum Ã© levemente negativo com ADX baixo e DMI indicando pressÃ£o vendedora.",
+    "invalidacaoTese": "A tese de baixa perde validade se o preÃ§o romper e fechar acima da resistÃªncia em 0.99, invalidando a bandeira baixa confirmada.",
+    "sentimentoNarrativa": {
+        "score": 55,
+        "expectativa": "NEUTRA",
+        "narrativa": "Aptos corrigiu uma falha crÃ­tica de seguranÃ§a sem perda de fundos e registrou recorde de 16M transaÃ§Ãµes diÃ¡rias. Contudo, hÃ¡ pressÃ£o vendedora de curto prazo devido ao desbloqueio planejado de 11,3M de tokens em 12 de julho.",
+        "gatilhosPositivos": [
+            "ResoluÃ§Ã£o rÃ¡pida de um bug crÃ­tico de seguranÃ§a ('stale-cache') na Move Virtual Machine sem exploraÃ§Ã£o real de fundos",
+            "Recorde trimestral com mais de 16 milhÃµes de transaÃ§Ãµes em um Ãºnico dia e aumento na taxa de queima (token burn) de APT",
+            "EstabilizaÃ§Ã£o e recuperaÃ§Ã£o do valor total bloqueado (TVL) acima de US$ 100 milhÃµes"
+        ],
+        "gatilhosNegativos": [
+            "PrÃ³ximo grande desbloqueio (token unlock) de 11,31 milhÃµes de APT (~US$ 7,1 milhÃµes) agendado para 12 de julho de 2026",
+            "A divulgaÃ§Ã£o da vulnerabilidade de 'risco de US$ 70 bilhÃµes' pela Hexens gera receios tÃ©cnicos residuais na comunidade"
+        ],
+        "sem_noticias": false,
+        "fonte": "GOOGLE_SEARCH"
+    },
+    "fontes_saude": {
+        "candles": true,
+        "funding": true,
+        "oi": true,
+        "cvd": true,
+        "liquidacoes": false,
+        "book": true,
+        "sentimento": true
+    },
+    "barras": {
+        "tecnico": {
+            "valor": 36,
+            "status": "PRESENTE",
+            "direcao": "alta",
+            "informativo": false
+        },
+        "derivativos": {
+            "valor": 25,
+            "status": "PRESENTE",
+            "direcao": "baixa",
+            "informativo": false
+        },
+        "macro": {
+            "valor": 18,
+            "status": "PRESENTE",
+            "informativo": true
+        },
+        "sentimento": {
+            "valor": 55,
+            "status": "PRESENTE",
+            "informativo": true
+        }
+    }
+}"} 
+[2026-07-10 23:40:02] local.INFO: {"planoA":0.6297,"descricaoPlanoA":"Entrada antecipada dentro de uma bandeira baixa ja confirmada por candle fechado. Risco de movimento contrario antes da confirmacao. Stop em $0.638911 limita o risco a 1.46%.","planoB":0.63571645,"descricaoPlanoB":"Aguardar repique para a regi\u00e3o de HVN do VRVP entre $0.826 e $0.8975, com confluencia de Wyckoff (rejeicao no teto do range com volume vendedor), CVD divergente e press\u00e3o vendedora no orderbook para confirmar entrada SHORT. Entrada ajustada para permanecer aquem da invalidacao do Plano A.","planoB_stop":0.993,"planoB_tp1":0.812,"planoB_tp2":0.666,"planoB_tp3":0.5461,"planoB_rr1":0.36}  
+[2026-07-10 23:40:03] local.ERROR: Unhandled exception {"class":"Illuminate\\Validation\\ValidationException","message":"O campo risco retorno deve ser uma string.","url":"http://localhost:8000/api/v1/analises","method":"POST"} 
+[2026-07-11 00:11:03] testing.INFO: EXEC: setup final {"symbol":"APTUSDT","direcao":"SHORT","acao":"AGUARDAR","stop_ancora":{"tipo":"pivo_topo","valor":0.686},"rr1":null,"avisos_internos":["Stop a 10.3% da entrada. Ajuste o tamanho e a alavancagem."]} 
+[2026-07-11 00:11:40] testing.INFO: EXEC: setup final {"symbol":"APTUSDT","direcao":"SHORT","acao":"AGUARDAR","stop_ancora":{"tipo":"pivo_topo","valor":0.686},"rr1":null,"avisos_internos":["Stop a 10.3% da entrada. Ajuste o tamanho e a alavancagem."]} 
+[2026-07-11 00:51:52] testing.INFO: EXEC: setup final {"symbol":"APTUSDT","direcao":"SHORT","acao":"AGUARDAR","stop_ancora":{"tipo":"pivo_topo","valor":0.686},"rr1":null,"avisos_internos":["Stop a 10.3% da entrada. Ajuste o tamanho e a alavancagem."]} 
