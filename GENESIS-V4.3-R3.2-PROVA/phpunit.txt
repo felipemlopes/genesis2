@@ -1,0 +1,100 @@
+﻿
+   PASS  Tests\Unit\AnalysisEventStoreTest
+  ✓ persiste snapshot completo com analysis id unico                                                             0.21s  
+  ✓ analysis id e unico no banco                                                                                 0.05s  
+
+   PASS  Tests\Unit\ControlCompatibilityTest
+  ✓ folha sem enriquecimento e identica a r31 exceto versao                                                      0.06s  
+  ✓ folha com enriquecimento acrescenta sem remover campos r31                                                   0.05s  
+
+   PASS  Tests\Unit\ExampleTest
+  ✓ that true is true
+
+   PASS  Tests\Unit\ExecucaoContratoTest
+  ✓ stop ancora no pivo e nunca bloqueia                                                                         0.04s  
+  ✓ stop distante avisa e nao trava                                                                              0.04s  
+  ✓ r8 plano b nunca alem do stop final                                                                          0.04s  
+  ✓ invalid direction throws logic exception                                                                     0.04s  
+  ✓ falha tecnica e unico indisponivel                                                                           0.04s  
+  ✓ quarentena nao e indisponivel                                                                                0.04s  
+  ✓ rr reprovado preserva direcao e zera niveis                                                                  0.05s  
+  ✓ shadow mode rebaixa executavel                                                                               0.04s  
+
+   PASS  Tests\Unit\FiguraServiceTest
+  ✓ projetar linha linha horizontal mantem preco constante                                                       0.05s  
+  ✓ contar toques conta apenas toques bem espacados                                                              0.04s  
+  ✓ checar geometria canal com linhas paralelas e toques suficientes passa                                       0.04s  
+  ✓ checar geometria canal com linhas convergentes e rejeitado                                                   0.04s  
+  ✓ checar geometria cunha exige linhas convergentes                                                             0.04s  
+  ✓ checar geometria com poucos toques e rejeitado                                                               0.04s  
+  ✓ checar confirmacao fechamento alem da borda confirma                                                         0.04s  
+  ✓ checar confirmacao fechamento dentro do canal nao confirma                                                   0.04s  
+  ✓ ultimo candle fechado com candle ainda aberto usa o penultimo                                                0.04s  
+  ✓ validar reportada confirmada com geometria e rompimento validos permanece confirmada                         0.04s  
+  ✓ validar reportada confirmada sem rompimento real e degradada                                                 0.04s  
+  ✓ validar reportada confirmada sem nenhuma linha e degradada                                                   0.04s  
+
+   PASS  Tests\Unit\FolhaIntegridadeTest
+  ✓ folha recebe sr e figura do ocr                                                                              0.07s  
+  ✓ barreiras ignoram sr bruto e usam somente sr validado                                                        0.04s  
+  ✓ rr liquido aplica um round trip em cada cenario                                                              0.04s  
+
+   PASS  Tests\Unit\IncrementalBrainTest
+  ✓ daily ignores instant book but keeps trade flow                                                              0.05s  
+  ✓ intraday marca microestrutura como informativa                                                               0.04s  
+  ✓ stale or sequence gap is not usable                                                                          0.04s  
+  ✓ fonte sem timestamp nunca e utilizavel                                                                       0.04s  
+  ✓ regime contextualiza sem declarar long short                                                                 0.04s  
+  ✓ derivatives enrichment uses possible not certainty                                                           0.04s  
+  ✓ trade flow resume events without exposing raw stream                                                         0.04s  
+  ✓ trade flow ignora trades fora da janela                                                                      0.04s  
+  ✓ outcome same candle is ambiguous                                                                             0.04s  
+  ✓ outcome tp1 first quando stop nao e tocado                                                                   0.04s  
+  ✓ outcome timeout quando nenhum alvo atingido                                                                  0.04s  
+  ✓ outcome invalid candidate sem stop ou tp1                                                                    0.04s  
+
+   PASS  Tests\Unit\TraderAuditoriaTest
+  ✓ long 65 coerente                                                                                             0.06s  
+  ✓ short completo 65                                                                                            0.04s  
+  ✓ score 45 preserva long e exige explicacao                                                                    0.04s  
+  ✓ score baixo sem contexto dispara correcao                                                                    0.04s  
+  ✓ incoerencia nao troca direcao e dispara correcao                                                             0.04s  
+  ✓ rejeita familia acima do teto                                                                                0.05s  
+  ✓ neutro e tipo numerico em string sao rejeitados                                                              0.05s  
+  ✓ score contexto malformado e rejeitado                                                                        0.05s  
+
+   PASS  Tests\Feature\ExampleTest
+  ✓ the application returns a successful response                                                                0.08s  
+
+   FAIL  Tests\Feature\RadarNewsPollTest
+  ✓ poll returns unread news created within 5 minutes                                                            0.12s  
+  ⨯ poll excludes news older than 5 minutes                                                                      0.08s  
+  ✓ poll marks returned entries as read                                                                          0.06s  
+  ✓ read state is per user                                                                                       0.08s  
+  ✓ poll returns maximum 10 entries                                                                              0.10s  
+  ✓ poll returns entries ordered by created at ascending                                                         0.07s  
+  ✓ poll returns correct json structure                                                                          0.06s  
+  ✓ poll returns empty data when no news                                                                         0.05s  
+  ✓ poll requires authentication                                                                                 0.05s  
+  ✓ affected assets returned as array                                                                            0.06s  
+  ✓ subsequent polls return only new entries                                                                     0.07s  
+  ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Feature\RadarNewsPollTest > poll excludes news older than 5 minutes                                    
+  Failed to assert that the response count matched the expected 1
+Failed asserting that actual size 2 matches expected size 1.
+
+  at tests\Feature\RadarNewsPollTest.php:58
+     54▕         $response = $this->actingAs($this->user, 'sanctum')
+     55▕             ->getJson('/api/v1/radar-news/poll');
+     56▕ 
+     57▕         $response->assertOk()
+  ➜  58▕             ->assertJsonCount(1, 'data');
+     59▕ 
+     60▕         $this->assertEquals($recent->id, $response->json('data.0.id'));
+     61▕     }
+     62▕
+
+
+  Tests:    1 failed, 59 passed (179 assertions)
+  Duration: 3.61s
+

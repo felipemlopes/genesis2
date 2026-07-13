@@ -1,0 +1,101 @@
+=== Frontend (G-nesis-2.0-main) — estado do commit ===
+Commit atual (HEAD): e617fc64567c64713bb596e8d68c17f2b84a6862
+Branch: master
+Data do commit HEAD: Fri Jul 10 22:07:26 2026 -0300
+
+AVISO IMPORTANTE: as mudancas da implementacao R3.2 desta sessao NAO estao
+commitadas — estao no working tree. O hash acima NAO reflete o estado atual.
+
+Resumo do diff nao commitado (arquivos rastreados):
+ ... Mestre de Correc\314\247o\314\203es (DEV).pdf" |   Bin 855974 -> 0 bytes
+ ... 2.0 \342\200\224 Diretrizes Completas Dev.pdf" |   Bin 528845 -> 0 bytes
+ Genesis_Patch_Todas_Correcoes (1).zip              |   Bin 53652 -> 0 bytes
+ __pycache__/indicatorEngine.cpython-310.pyc        |   Bin 10071 -> 0 bytes
+ __pycache__/scoringEngine.cpython-310.pyc          |   Bin 6046 -> 0 bytes
+ __tests__/preservation.property.test.ts            |     2 +-
+ add_motion.cjs                                     |    30 -
+ app-layout-fix2.cjs                                |    30 -
+ clean-shadows.cjs                                  |    20 -
+ components/AnalysisResult.tsx                      |   465 +-
+ components/LandingPage.tsx                         |     5 +-
+ contexts/AppContext.tsx                            |    10 +-
+ dist_test/geminiService.js                         | 45731 -------------------
+ finalize.cjs                                       |    64 -
+ fix-engine.cjs                                     |    28 -
+ fix-shadows.cjs                                    |    33 -
+ fix-syntax.cjs                                     |     7 -
+ fixIndicatorEngine.cjs                             |    40 -
+ fix_tooltips.cjs                                   |    19 -
+ genesisPipeline.js                                 |    94 -
+ grid.cjs                                           |     9 -
+ inst-colors.cjs                                    |    21 -
+ layouts/AppLayout.tsx                              |     2 +-
+ pages/GenesisPage.tsx                              |    92 +-
+ rebrand-result.cjs                                 |    18 -
+ rebrand.cjs                                        |    42 -
+ rebrand2.cjs                                       |    19 -
+ rebrand_glass.cjs                                  |    71 -
+ rebrand_perfect.cjs                                |    87 -
+ rebrand_vertical.cjs                               |    20 -
+ replace_db.cjs                                     |   181 -
+ restore-colors.cjs                                 |    19 -
+ routes/api.js                                      |   133 +-
+ scratch/Hologram_ref.tsx                           |   180 -
+ scratch/LandingPage_ref.tsx                        |   424 -
+ scratch/VersionSelector_ref.tsx                    |   159 -
+ server.ts                                          |    22 +-
+ .../__tests__/visualReading.preservation.test.ts   |   491 -
+ services/advancedAnalytics.ts                      |   300 -
+ services/analysisGovernor.ts                       |   153 -
+ services/api.ts                                    |    47 +-
+ services/entryPlannerService.ts                    |   184 -
+ services/exhaustionRiskService.ts                  |    76 -
+ services/flowConfirmationService.ts                |   118 -
+ services/geminiService.ts                          |    71 +-
+ services/institutionalDataService.ts               |   114 -
+ services/locationQualityService.ts                 |    98 -
+ services/marketConsensusService.ts                 |    97 -
+ services/marketPhaseService.ts                     |    81 -
+ services/microstructureEngine.ts                   |    80 -
+ services/ocrValidationService.ts                   |    68 -
+ services/onChainEngine.ts                          |    37 -
+ services/predictiveEntryPlannerService.ts          |    67 -
+ services/probabilityScoreEngine.ts                 |    89 -
+ services/quantitativeEngine.ts                     |    56 -
+ services/regimeClassifierService.ts                |    37 -
+ services/sentimentEngine.ts                        |    48 -
+ services/validationEngine.ts                       |    17 -
+ services/volatilityRegimeService.ts                |    45 -
+ test.js                                            |     1 -
+ test_allorigins.js                                 |     5 -
+ test_binance.js                                    |     7 -
+ test_binance2.js                                   |     7 -
+ test_binance3.js                                   |     5 -
+ test_binance4.js                                   |     5 -
+ test_binance5.js                                   |     5 -
+ test_bybit.js                                      |     7 -
+ test_codetabs.js                                   |     5 -
+ test_corsproxy.js                                  |     5 -
+ test_direct.js                                     |     5 -
+ test_ema.ts                                        |     7 -
+ test_env.js                                        |     5 -
+ test_esm.js                                        |     1 -
+ test_forceorders.js                                |     5 -
+ test_gemini.cjs                                    |    31 -
+ test_headers.js                                    |     4 -
+ test_indicators.js                                 |    47 -
+ test_json_repair.js                                |    59 -
+ test_klines.ts                                     |     8 -
+ test_klines2.ts                                    |     6 -
+ test_match.js                                      |    11 -
+ test_proxy.js                                      |    20 -
+ test_proxy_route.js                                |     8 -
+ test_spot.js                                       |     5 -
+ test_thingproxy.js                                 |     5 -
+ types.ts                                           |   224 +-
+ update_prompt.cjs                                  |    44 -
+ 87 files changed, 442 insertions(+), 50556 deletions(-)
+
+Arquivos apagados nesta sessao (Fase 5, ja refletidos no diff acima como delecoes):
+76
+arquivos deletados no total (ver diff --stat acima para detalhes)

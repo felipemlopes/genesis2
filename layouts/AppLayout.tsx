@@ -34,7 +34,7 @@ const AppLayout = () => {
   const [credits, setCredits] = useState<number | null>(null);
 
   useEffect(() => {
-    fetchCredits().then(setCredits);
+    fetchCredits().then(setCredits).catch(() => setCredits(null));
   }, [isAuthenticated]);
 
   const showMarket = location.pathname === '/dashboard';

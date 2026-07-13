@@ -37,7 +37,10 @@ const LandingPage: React.FC<LandingPageProps> = ({ onLogin }) => {
     setLoginError("");
 
     try {
-      await login(emailInput, passwordInput);
+      const result = await login(emailInput, passwordInput);
+      if (!result.success) {
+        throw new Error(result.message);
+      }
       // Wait for localStorage update
       setTimeout(() => {
         onLogin();

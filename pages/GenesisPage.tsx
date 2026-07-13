@@ -22,7 +22,7 @@ import LiquidationHeatmap from '../components/LiquidationHeatmap';
 import SectorSentiment from '../components/SectorSentiment';
 import { analyzeChart, scanChartMetadata, unifiedChartAnalysis } from '../services/geminiService';
 import { normalizarPar } from '../services/normalizarPar';
-import { TradeSetup, ChartMetadata, SavedAnalysis, UnifiedChartResult } from '../types';
+import { GenesisAnalysisResult, ChartMetadata, SavedAnalysis, UnifiedChartResult } from '../types';
 import { fetchBinanceData, fetchBybitData, fetchBitgetData, fetchOkxData, formatPrice, ExchangeData } from '../services/cryptoApi';
 import { calculateLiquidationPrice } from '../services/futuresCalculations';
 import { saveAnalysisToHistory } from '../components/AnalysisHistoryDashboard';
@@ -79,6 +79,17 @@ const TRADING_QUOTES = [
   "Planeje o trade e opere o plano.",
   "O sucesso deixa rastros no gráfico."
 ];
+
+const toNullableNumber = (value: unknown): number | null => {
+  if (value === null || value === undefined || value === '') return null;
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+  const normalized = String(value)
+    .split('\n')[0]
+    .replace(/[^0-9,.-]+/g, '')
+    .replace(',', '.');
+  const parsed = Number.parseFloat(normalized);
+  return Number.isFinite(parsed) ? parsed : null;
+};
 
 const GenesisPage: React.FC = () => {
   const navigate = useNavigate();
@@ -223,42 +234,43 @@ const GenesisPage: React.FC = () => {
           setSelectedPair(data.pair.toUpperCase().replace('/', ''));
         }
 
-        const extractNum = (val: any) => {
-          if (!val) return 0;
-          if (typeof val === 'number') return val;
-          const s = String(val).split('\n')[0].replace(/[^0-9,.-]+/g, '').replace(',', '.');
-          return parseFloat(s) || 0;
-        };
+        const setup = data.execution?.candidate_setup ?? null;
+        const planoB = (data.execution?.planoB ?? null) as { entrada?: number } | null;
 
-        const score = data.scoreProbabilidade || 0;
         const savedAnalysis: SavedAnalysis = {
           id: Date.now().toString(),
+          analysis_id: data.analysis_id,
+          analysis_status: data.analysis.status,
+          execution_status: data.execution.status,
+          executable: data.execution.executable,
+          rr_liquido_estimado: toNullableNumber(setup?.rr_liquido_estimado),
           timestamp: new Date().toISOString(),
           symbol: data.pair || pairToUse,
           interval: analysisMetadata.timeframe || timeframe,
-          direction: data.direcaoProvavel || 'LONG',
-          score: score,
-          rsi: data.indicadores?.rsi || 0,
-          ema200: data.indicadores?.ema200 || 0,
-          adx: data.indicadores?.adx || 0,
-          entry_price: extractNum(data.execucao?.setup?.entrada || data.entradaSugerida?.planoA || 0),
-          target_price: extractNum(data.execucao?.setup?.tp1 || 0),
-          stop_loss: extractNum(data.execucao?.setup?.stop || 0),
-          status: 'PENDENTE',
+          direction: data.analysis.direction,
+          score: data.analysis.conviccao_modelo,
+          rsi: toNullableNumber(data.indicadores?.rsi),
+          ema200: toNullableNumber(data.indicadores?.ema200),
+          adx: toNullableNumber(data.indicadores?.adx),
+          entry_price: toNullableNumber(setup?.entrada),
+          target_price: toNullableNumber(setup?.tp1),
+          target_price2: toNullableNumber(setup?.tp2),
+          target_price3: toNullableNumber(setup?.tp3),
+          stop_loss: toNullableNumber(setup?.stop),
+          status: data.execution.executable ? 'PENDENTE' : 'NAO_EXECUTAVEL',
         };
-        const entradaValue = extractNum(data.execucao?.setup?.entrada || data.entradaSugerida?.planoA || data.execucao?.setup?.tp1 || 0);
         const savedId = await saveAnalysisToHistory(savedAnalysis, {
           corretora: exchange || 'BINANCE',
-          vies: data.vies || data.viés || data.confluenciaRecomendada || '',
-          alavancagem: data.gestaoRisco?.alavancagemRecomendada || '',
-          resumo_analise: (data.sinteseDaAnalise || '').substring(0, 500),
-          setup_entrada: JSON.stringify(data.execucao?.setup || {}).substring(0, 500),
-          entrada: entradaValue,
-          plano_a: extractNum(data.entradaSugerida?.planoA || 0),
-          plano_b: extractNum(data.entradaSugerida?.planoB || 0),
-          take_profit_2: extractNum(data.execucao?.setup?.tp2 || 0),
-          take_profit_3: extractNum(data.execucao?.setup?.tp3 || 0),
-          risco_retorno: data.execucao?.setup?.rr1 || '',
+          vies: data.analysis.direction ?? '',
+          alavancagem: setup?.alavancagem ?? '',
+          resumo_analise: (data.analysis.narrativa_tecnica || '').substring(0, 500),
+          setup_entrada: JSON.stringify(setup || {}).substring(0, 500),
+          entrada: toNullableNumber(setup?.entrada),
+          plano_a: toNullableNumber(setup?.entrada),
+          plano_b: toNullableNumber(planoB?.entrada),
+          take_profit_2: toNullableNumber(setup?.tp2),
+          take_profit_3: toNullableNumber(setup?.tp3),
+          risco_retorno: setup?.rr_liquido_estimado ?? setup?.rr_bruto ?? '',
         });
         setCurrentAnaliseId(savedId);
       }
@@ -370,6 +382,15 @@ const GenesisPage: React.FC = () => {
   const handleSaveTrade = () => {
     if (!result) return;
 
+    if (!result.execution.executable || !result.execution.executable_setup) {
+      alert(result.execution.motivo || 'Esta análise não possui execução validada.');
+      return;
+    }
+
+    const setup = result.execution.executable_setup;
+    const direction = result.execution.action;
+    if (!direction) return;
+
     const now = new Date();
     const formattedDate = `${now.getDate().toString().padStart(2, '0')}/${(now.getMonth() + 1).toString().padStart(2, '0')}/${now.getFullYear()}, ${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
 
@@ -380,16 +401,11 @@ const GenesisPage: React.FC = () => {
       return parseFloat(firstPart.replace(/[^0-9,.-]+/g, '').replace(',', '.'));
     };
 
-    const entryVal = result.execucao?.setup?.entrada || result.entradaSugerida?.planoA || 0;
-    const entryP = currentPrice ? parsePrice(currentPrice) : parsePrice(entryVal as string | number);
-
-    const targetValue = result.execucao?.setup?.tp1 || 0;
-    const targetP = parsePrice(targetValue as string | number);
-
-    const levVal = result.execucao?.setup?.alavancagem || leverage;
-    const direction = (result.direcaoProvavel || 'LONG') as 'LONG' | 'SHORT';
-    const liqPrice = result.execucao?.setup?.liquidacao
-      ? parsePrice(result.execucao.setup.liquidacao as string | number)
+    const entryP = currentPrice ? parsePrice(currentPrice) : (toNullableNumber(setup.entrada) ?? 0);
+    const targetP = toNullableNumber(setup.tp1) ?? 0;
+    const levVal = setup.alavancagem ?? leverage;
+    const liqPrice = setup.liquidacao != null
+      ? setup.liquidacao
       : calculateLiquidationPrice(entryP, levVal, direction, exchange);
 
     const newTrade = {

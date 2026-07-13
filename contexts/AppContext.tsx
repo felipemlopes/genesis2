@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
-import { ActiveTrade, ChartMetadata, TradeSetup } from '../types';
+import { ActiveTrade, ChartMetadata, GenesisAnalysisResult } from '../types';
 import {
   fetchBinancePairs,
   fetchBybitPairs,
@@ -73,8 +73,8 @@ interface AppContextType {
     scanOffset: number;
   }>>;
 
-  analysisResult: TradeSetup | null;
-  setAnalysisResult: React.Dispatch<React.SetStateAction<TradeSetup | null>>;
+  analysisResult: GenesisAnalysisResult | null;
+  setAnalysisResult: React.Dispatch<React.SetStateAction<GenesisAnalysisResult | null>>;
   currentAnaliseId: string | null;
   setCurrentAnaliseId: React.Dispatch<React.SetStateAction<string | null>>;
 }
@@ -124,7 +124,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     scanOffset: 0,
   });
 
-  const [analysisResult, setAnalysisResult] = useState<TradeSetup | null>(null);
+  const [analysisResult, setAnalysisResult] = useState<GenesisAnalysisResult | null>(null);
   const [currentAnaliseId, setCurrentAnaliseId] = useState<string | null>(null);
 
   const currentPrice = marketData[exchange.toLowerCase() as keyof ExchangeData]?.price;
@@ -145,6 +145,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         } else {
           setIsAdmin(user.role === 'admin');
         }
+      }).catch(() => {
+        setIsAuthenticated(false);
       });
     } else {
       setIsAdmin(false);

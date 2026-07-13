@@ -1,0 +1,16 @@
+=== Documento Mestre Secao 19.2 (adaptado) - Greps de remocao (Frontend) ===
+Data: 2026-07-13 14:51:13
+
+--- engine/ ou /analisar em routes/server.ts ---
+(fim — vazio esperado)
+
+--- fallback LONG / segredo fallback / admin fixo ---
+(fim — vazio esperado)
+
+--- TradeSetup residual (contrato antigo, fora de comentarios) ---
+(fim — vazio esperado)
+
+--- artefatos soltos na raiz ---
+(fim — vazio esperado)
+
+=== FIM DOS GREPS FRONTEND ===

@@ -10,15 +10,21 @@ if (process.env.NODE_ENV === 'production') {
   console.log = function() {};
 }
 
+function getJwtSecret(): string {
+  const secret = process.env.JWT_SECRET;
+  if (!secret) {
+    throw new Error('JWT_SECRET ausente. O servidor não pode iniciar sem um segredo JWT configurado.');
+  }
+  return secret;
+}
+
 export function gerarToken(userId: string, isAdmin: boolean) {
-  const secret = process.env.JWT_SECRET || 'fallback_secret_only_for_dev_if_missing';
-  return jwt.sign({ userId, isAdmin }, secret, { expiresIn: '24h' });
+  return jwt.sign({ userId, isAdmin }, getJwtSecret(), { expiresIn: '24h' });
 }
 
 export function verificarToken(token: string) {
-  const secret = process.env.JWT_SECRET || 'fallback_secret_only_for_dev_if_missing';
   try {
-    return jwt.verify(token, secret);
+    return jwt.verify(token, getJwtSecret());
   } catch (err) {
     return null;
   }
@@ -64,13 +70,7 @@ async function startServer() {
 
   // Login Route
   app.post("/api/auth/login", async (req, res) => {
-    const { email, password, lastlinkToken } = req.body;
-    
-    // Bypass para testes / admin local
-    if (email?.toLowerCase() === "admin" && (password === "Admin" || password === "admin")) {
-      const token = gerarToken("admin", true);
-      return res.json({ success: true, token });
-    }
+    const { lastlinkToken } = req.body;
 
     if (!lastlinkToken) {
       return res.status(401).json({ success: false, message: "Token Ausente. Assinatura não está ativa ou o token é inválido." });

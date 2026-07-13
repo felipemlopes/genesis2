@@ -1,0 +1,52 @@
+=== Backend (genesis-api) — estado do commit ===
+Commit atual (HEAD): ea199427e1b551b2dfbfe38bcbfcda072b2247f4
+Branch: genesis2
+Data do commit HEAD: Fri Jul 10 22:06:56 2026 -0300
+
+AVISO IMPORTANTE: as mudancas da implementacao R3.2 desta sessao NAO estao
+commitadas — estao no working tree, sem commit novo criado (por instrucao de
+seguranca: nunca commitar sem autorizacao explicita do usuario). O hash acima
+NAO reflete o estado atual do codigo.
+
+Nota adicional: o diff abaixo inclui tanto as mudancas desta sessao quanto
+mudancas uncommitted PRE-EXISTENTES (ex.: database/seeders/UserSeeder.php e
+app/Exceptions/Handler.php ja estavam alterados antes desta sessao comecar —
+nao foram tocados por mim). Nao e possivel separar os dois de forma limpa
+sem arriscar historico de trabalho do usuario. Resumo do diff nao commitado:
+
+ .env.example                                     |   46 +-
+ app/Exceptions/Handler.php                       |   39 +-
+ app/Http/Controllers/Api/IAGatewayController.php |    8 +-
+ app/Providers/AppServiceProvider.php             |   42 +-
+ app/Services/BinanceService.php                  |   73 +-
+ app/Services/ExecucaoService.php                 |  391 +++++--
+ app/Services/FiguraService.php                   |  265 ++++-
+ app/Services/GeminiAnalysisService.php           | 1226 +++++++++-------------
+ app/Services/TraderAuditor.php                   |  120 ++-
+ app/Support/GenesisVisualCatalog.php             |   28 +
+ config/services.php                              |   16 +-
+ database/seeders/UserSeeder.php                  |    2 +
+ tests/Unit/ExecucaoContratoTest.php              |  137 ++-
+ tests/Unit/FolhaIntegridadeTest.php              |   51 +
+ tests/Unit/TraderAuditoriaTest.php               |  171 ++-
+ 15 files changed, 1624 insertions(+), 991 deletions(-)
+
+Arquivos novos (untracked, nao contam no diff acima):
+?? app/Exceptions/AiRequestException.php
+?? app/Services/AnalysisEventStore.php
+?? app/Services/DataFreshnessGate.php
+?? app/Services/DerivativesEnrichmentService.php
+?? app/Services/FeaturePolicy.php
+?? app/Services/GeminiTraderClient.php
+?? app/Services/OutcomeLabeler.php
+?? app/Services/RegimeService.php
+?? app/Services/TradeFlowService.php
+?? app/Support/AiFailureCode.php
+?? app/Support/AnalysisContext.php
+?? app/Support/TraderSchema.php
+?? config/genesis.php
+?? database/migrations/2026_07_13_000001_create_genesis_analysis_events_table.php
+?? tests/Unit/AnalysisEventStoreTest.php
+?? tests/Unit/ControlCompatibilityTest.php
+?? tests/Unit/FiguraServiceTest.php
+?? tests/Unit/IncrementalBrainTest.php

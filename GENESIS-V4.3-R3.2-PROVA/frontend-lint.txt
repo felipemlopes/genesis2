@@ -1,0 +1,4 @@
+
+> versão-oficial---0006@0.0.0 lint
+> tsc --noEmit
+

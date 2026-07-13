@@ -1,0 +1,8 @@
+Reanalise real nao executada nesta sessao.
+
+Motivo: requer imagem real de grafico + consumo de orcamento real de chamadas
+a API do Gemini (ate 5 requisicoes por analise, cobradas). Nao executado sem
+autorizacao explicita do usuario, por ser acao com custo real e efeito em
+servico externo as credenciais do usuario.
+
+Ver README.md na raiz do pacote e item 30 da matriz-aceite.md.

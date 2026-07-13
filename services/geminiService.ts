@@ -2,68 +2,9 @@
 import { Type } from "@google/genai";
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
-import { TradeSetup, TradeDirection, ChartMetadata, UnifiedChartResult } from "../types";
-import { ExchangeData } from "./cryptoApi";
-import { generateAdvancedContext } from "./advancedAnalytics";
-import { fetchDexScreenerContext, fetchFredMacroContext, fetchDefiLlamaContext, fetchAlternativeMeContext, fetchCryptoCompareContext } from "./externalContextService";
-import { fetchMarketConsensus } from "./marketConsensusService";
-import { getRecentSpoofs } from "./spoofingService";
-import { detectMarketPhase } from "./marketPhaseService";
-import { evaluateLocationQuality } from "./locationQualityService";
-import { evaluateExhaustionRisk } from "./exhaustionRiskService";
-import { evaluateFlowConfirmation } from "./flowConfirmationService";
-import { buildEntryPlan } from "./entryPlannerService";
-import { calculateProbabilityScore } from "./probabilityScoreEngine";
-import { buildAnalysisGovernance } from "./analysisGovernor";
-import { detectLiquiditySweep, SweepDetectionOutput } from "./liquiditySweepDetector";
-import { calculateMaturityPenalty, MaturityOutput } from "./maturityPenalty";
-import { analyzeCvdDivergence, CvdAnalysisOutput } from "./cvdDivergenceAnalyzer";
-import { validateOcrExtraction } from "./ocrValidationService";
-import { buildLiquidityMap, LiquidityMapResult } from "./liquidityMapService";
-import { classifyRegime, RegimeClassifierResult } from "./regimeClassifierService";
-import { classifyVolatilityRegime, VolatilityRegimeResult } from "./volatilityRegimeService";
-import { buildPredictiveEntryPlan, PredictiveEntryPlannerResult } from "./predictiveEntryPlannerService";
-import { fetchWithProxy } from "./cryptoApi";
+import { GenesisAnalysisResult, TradeDirection, ChartMetadata, UnifiedChartResult } from "../types";
+import { ExchangeData, fetchWithProxy } from "./cryptoApi";
 import { normalizarPar } from "./normalizarPar";
-import { fetchInstitutionalFlow, InstitutionalFlowData } from "./institutionalDataService";
-import { fetchIntermarketCorrelations, IntermarketData } from "./intermarketCorrelationService";
-import { runSentimentEngine } from "./sentimentEngine";
-import { runQuantitativeEngine } from "./quantitativeEngine";
-import { runOnChainEngine } from "./onChainEngine";
-
-export type FinalOperationalContext = {
-  structuralBias: "long" | "short";
-  currentEntryStatus: "valid" | "weak" | "invalid";
-  bestPointAlreadyPassed: boolean;
-  marketPhase: "building" | "breakout" | "executing" | "stretched" | "exhausted" | "range" | "neutral";
-  finalScore: number;
-  nearestDefense?: number;
-  nearestAcceptanceZone?: number;
-  nextLiquidityZone?: number;
-  nextActionableZone?: number;
-  nextActionCondition?: string;
-  noTradeReason?: string;
-};
-
-export type ExecutionContext = {
-  marketPhase: ReturnType<typeof detectMarketPhase>;
-  locationQuality: ReturnType<typeof evaluateLocationQuality>;
-  exhaustionRisk: ReturnType<typeof evaluateExhaustionRisk>;
-  flowConfirmation: ReturnType<typeof evaluateFlowConfirmation>;
-  entryPlan: ReturnType<typeof buildEntryPlan>;
-  probabilityScore: ReturnType<typeof calculateProbabilityScore>;
-  analysisGovernance: ReturnType<typeof buildAnalysisGovernance>;
-  sweepDetection: SweepDetectionOutput;
-  maturityPenalty: MaturityOutput;
-  cvdDivergence: CvdAnalysisOutput;
-  liquidityMap: LiquidityMapResult;
-  predictiveEntryPlan: PredictiveEntryPlannerResult;
-  regimeClassifierResult: RegimeClassifierResult;
-  volatilityRegimeResult: VolatilityRegimeResult;
-  finalOperationalContext?: FinalOperationalContext;
-  institutionalFlow?: InstitutionalFlowData;
-  intermarketCorrelations?: IntermarketData;
-};
 
 /* INIT: API Key injection */
 
@@ -212,7 +153,7 @@ export const analyzeChart = async (
   userLeverage: number,
   cvdDataParam: { delta: number, priceChangePercent: number } | null,
   entryValue: number | '' = ''
-): Promise<TradeSetup> => {
+): Promise<GenesisAnalysisResult> => {
   const userPair = metadata.pair || "BTCUSDT";
   const userTimeframe = metadata.timeframe || "1D";
 
@@ -256,7 +197,7 @@ export const analyzeChart = async (
         throw new Error(errData.error || 'Falha ao processar analise tecnica (fallback flash)');
       }
       const result = await res.json();
-      return result as TradeSetup;
+      return result as GenesisAnalysisResult;
     }
     throw networkError;
   }
@@ -274,7 +215,7 @@ export const analyzeChart = async (
       throw new Error(errData.error || 'Falha ao processar analise tecnica (fallback flash)');
     }
     const result = await res.json();
-    return result as TradeSetup;
+    return result as GenesisAnalysisResult;
   }
 
   if (!res.ok) {
@@ -283,5 +224,5 @@ export const analyzeChart = async (
   }
 
   const result = await res.json();
-  return result as TradeSetup;
+  return result as GenesisAnalysisResult;
 };

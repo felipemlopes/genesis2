@@ -1,0 +1,53 @@
+=== Documento Mestre Secao 19.2 - Greps de remocao (Backend) ===
+Data: 2026-07-13 14:48:37
+
+--- callGemini/buildPrompt/buildTradeSetup/buscarGeopoliticaFresca ---
+app/Services/GeminiAnalysisService.php:328:        // C7: figura PHP disponivel para buildPrompt e gerarNarrativa
+app/Services/GeminiAnalysisService.php:583:        // R3.2 — Secao 17: o cerebro Gemini duplicado (buildPrompt/callGemini,
+app/Services/GeminiAnalysisService.php:586:        // cerebro decisorio. buildTradeSetup() monta apenas dados 100% PHP
+app/Services/GeminiAnalysisService.php:589:        $result = $this->buildTradeSetup($indicadores, $score, $zonas, $macro, $derivativos, $multiTimeframe, $symbol, $timeframe, $leverage, $candles, $scoreInput);
+app/Services/GeminiAnalysisService.php:1160:    private function buildTradeSetup(array $indicadores, array $score, array $zonas, array $macro, array $derivativos, array $multiTimeframe, string $symbol, string $timeframe, int $leverage, array $candles, array $scoreInput): array
+app/Services/GeoEventService.php:347:     * para injeção no prompt do Gemini via buildPrompt().
+(fim — vazio esperado, exceto comentarios/definicao legitima)
+
+--- scoreDetalhado/blocoSentimento/blocoMacro/data.confianca/ensemble.motor ---
+app/Http/Controllers/Api/IAGatewayController.php:223:                'vies' => ($resultado['scoreDetalhado'] ?? null) !== null ? ($resultado['scoreDetalhado']['vies'] ?? null) : null,
+app/Services/GeminiAnalysisService.php:587:        // (indicadores, scoreDetalhado, multiTimeframe, dados_mercado, sessao,
+app/Services/GeminiAnalysisService.php:1242:        // B5: Expor blocoMacro e blocoSentimento normalizados 0-100 (INFORMATIVOS)
+app/Services/GeminiAnalysisService.php:1244:        $score['blocoMacro']      = ['percentual' => $norm($scoreInput['geopolitica_score'] ?? 0)];
+app/Services/GeminiAnalysisService.php:1245:        $score['blocoSentimento'] = ['percentual' => $norm($scoreInput['sentimento_moeda_score'] ?? 0)];
+app/Services/GeminiAnalysisService.php:1251:        $score['blocoMacro']['micro']        = $corBloco($score['blocoMacro']['percentual'] ?? 50) . '. ' . (($score['blocoMacro']['percentual'] ?? 50) >= 65 ? 'Cenario macro favoravel. Ambiente de risco construtivo.' : (($score['blocoMacro']['percentual'] ?? 50) >= 45 ? 'Macro neutro a cauteloso. Sem gatilho claro.' : 'Macro adverso. Cenario de risk-off.'));
+app/Services/GeminiAnalysisService.php:1252:        $score['blocoSentimento']['micro']   = $corBloco($score['blocoSentimento']['percentual'] ?? 50) . '. ' . (($score['blocoSentimento']['percentual'] ?? 50) >= 65 ? 'Sentimento positivo. Narrativa do ativo ganhando tracao.' : (($score['blocoSentimento']['percentual'] ?? 50) >= 45 ? 'Sentimento neutro. Comunidade dividida.' : 'Sentimento negativo. Medo e Pressão vendedora.'));
+app/Services/GeminiAnalysisService.php:1257:        $score['blocoMacro']['vies']      = $viesPorPct($score['blocoMacro']['percentual'] ?? 50);
+app/Services/GeminiAnalysisService.php:1258:        $score['blocoSentimento']['vies'] = $viesPorPct($score['blocoSentimento']['percentual'] ?? 50);
+app/Services/GeminiAnalysisService.php:1260:        $result["scoreDetalhado"] = $score;
+
+--- viesDaFigura ---
+
+--- gerarSetup/setupLong/setupShort/stopEstrategico/nivelInvalidacao ---
+app/Services/MotorExecucaoService.php:34:    public static function gerarSetup(
+app/Services/MotorExecucaoService.php:79:        Log::info("DEBUG_MOTOR_SETUP: Inicio gerarSetup", [
+app/Services/MotorExecucaoService.php:112:            ? self::setupLong($preco, $atr, $hvn, $lvn, $liqClusters, $poc, $elementosVisuais, $atrMult, $alavMax, $zonasApi)
+app/Services/MotorExecucaoService.php:113:            : self::setupShort($preco, $atr, $hvn, $lvn, $liqClusters, $poc, $elementosVisuais, $atrMult, $alavMax, $zonasApi);
+app/Services/MotorExecucaoService.php:502:    private static function setupLong(
+app/Services/MotorExecucaoService.php:569:    private static function setupShort(
+app/Services/MotorExecucaoService.php:939:    private static function nivelInvalidacao(bool $isShort, float $preco, float $atr, array $elementosVisuais, array $hvn, float $poc): array
+app/Services/MotorExecucaoService.php:969:            $inv = self::nivelInvalidacao(false, $preco, $atr, $elementosVisuais, $hvn, $poc);
+app/Services/MotorExecucaoService.php:977:            $inv = self::nivelInvalidacao(true, $preco, $atr, $elementosVisuais, $hvn, $poc);
+
+--- thinkingBudget/temperature/top_p/top_k ---
+app/Http/Controllers/Api/MacroController.php:87:            'generationConfig' => ['temperature' => 0, 'maxOutputTokens' => 256],
+app/Http/Controllers/Api/MacroController.php:130:            'generationConfig' => ['temperature' => 0, 'maxOutputTokens' => 256],
+
+--- getLongShortRatio/long_short/lsr no caminho decisorio ---
+app/Services/GeminiAnalysisService.php:2035:     * So os blocos do grafico + squeeze. SEM sentimento/macro. SEM fontes_saude. SEM long_short.
+
+--- BybitService/OkxService/BitgetService/DeribitService/ExchangeService no caminho decisorio ---
+
+--- retry_http/INVALID_SCHEMA solto/AUDITOR_REJECTED ---
+
+--- compatibilidade escalar do book ---
+
+--- montarBarreiras le S/R bruto de elementosVisuais ---
+
+=== FIM DOS GREPS BACKEND ===

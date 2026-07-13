@@ -23,6 +23,17 @@ function getFormDataHeaders(): Record<string, string> {
   return headers;
 }
 
+/**
+ * R3.2 — Documento Mestre Seção 15.6: toda resposta HTTP não-OK lança erro
+ * explícito com status e corpo, nunca é silenciosamente tratada como sucesso.
+ */
+async function assertOk(res: Response): Promise<void> {
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    throw new Error(`Requisição falhou: HTTP ${res.status} ${body.slice(0, 300)}`);
+  }
+}
+
 // ─── AUTH ──────────────────────────────────────────────────────
 
 export async function login(email: string, password: string) {
@@ -31,7 +42,7 @@ export async function login(email: string, password: string) {
     headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
     body: JSON.stringify({ email, password }),
   });
-  const data = await res.json();
+  const data = await res.json().catch(() => ({}));
   if (res.ok && data.access_token) {
     localStorage.setItem('genesis_token', data.access_token);
     return { success: true, user: data.user };
@@ -41,7 +52,7 @@ export async function login(email: string, password: string) {
 
 export async function getMe() {
   const res = await fetch(`${API_BASE}/v1/me`, { headers: getAuthHeaders() });
-  if (!res.ok) return null;
+  await assertOk(res);
   return res.json();
 }
 
@@ -58,7 +69,7 @@ export function isAuthenticated(): boolean {
 
 export async function fetchCredits(): Promise<number | null> {
   const res = await fetch(`${API_BASE}/v1/credits`, { headers: getAuthHeaders() });
-  if (!res.ok) return null;
+  await assertOk(res);
   const data = await res.json();
   return data.credits ?? null;
 }
@@ -67,6 +78,7 @@ export async function fetchCredits(): Promise<number | null> {
 
 export async function fetchCarteiraMembro() {
   const res = await fetch(`${API_BASE}/v1/carteira-membro`, { headers: getAuthHeaders() });
+  await assertOk(res);
   return res.json();
 }
 
@@ -76,6 +88,7 @@ export async function storeCarteiraMembro(data: any) {
     headers: getAuthHeaders(),
     body: JSON.stringify(data),
   });
+  await assertOk(res);
   return res.json();
 }
 
@@ -85,6 +98,7 @@ export async function updateCarteiraMembro(id: number, data: any) {
     headers: getAuthHeaders(),
     body: JSON.stringify(data),
   });
+  await assertOk(res);
   return res.json();
 }
 
@@ -93,6 +107,7 @@ export async function deleteCarteiraMembro(id: number) {
     method: 'DELETE',
     headers: getAuthHeaders(),
   });
+  await assertOk(res);
   return res.json();
 }
 
@@ -100,6 +115,7 @@ export async function deleteCarteiraMembro(id: number) {
 
 export async function fetchCarteiraMae() {
   const res = await fetch(`${API_BASE}/v1/admin/carteira-mae`, { headers: getAuthHeaders() });
+  await assertOk(res);
   return res.json();
 }
 
@@ -109,6 +125,7 @@ export async function storeCarteiraMae(data: any) {
     headers: getAuthHeaders(),
     body: JSON.stringify(data),
   });
+  await assertOk(res);
   return res.json();
 }
 
@@ -118,6 +135,7 @@ export async function updateCarteiraMae(id: number, data: any) {
     headers: getAuthHeaders(),
     body: JSON.stringify(data),
   });
+  await assertOk(res);
   return res.json();
 }
 
@@ -126,6 +144,7 @@ export async function deleteCarteiraMae(id: number) {
     method: 'DELETE',
     headers: getAuthHeaders(),
   });
+  await assertOk(res);
   return res.json();
 }
 
@@ -133,6 +152,7 @@ export async function deleteCarteiraMae(id: number) {
 
 export async function fetchCarteiraGemas() {
   const res = await fetch(`${API_BASE}/v1/admin/carteira-gemas`, { headers: getAuthHeaders() });
+  await assertOk(res);
   return res.json();
 }
 
@@ -142,6 +162,7 @@ export async function storeCarteiraGemas(data: any) {
     headers: getAuthHeaders(),
     body: JSON.stringify(data),
   });
+  await assertOk(res);
   return res.json();
 }
 
@@ -151,6 +172,7 @@ export async function updateCarteiraGemas(id: number, data: any) {
     headers: getAuthHeaders(),
     body: JSON.stringify(data),
   });
+  await assertOk(res);
   return res.json();
 }
 
@@ -159,6 +181,7 @@ export async function deleteCarteiraGemas(id: number) {
     method: 'DELETE',
     headers: getAuthHeaders(),
   });
+  await assertOk(res);
   return res.json();
 }
 
@@ -166,19 +189,18 @@ export async function deleteCarteiraGemas(id: number) {
 
 export async function fetchHistoricoAnalises() {
   const res = await fetch(`${API_BASE}/v1/analises`, { headers: getAuthHeaders() });
+  await assertOk(res);
   return res.json();
 }
 
 export async function storeAnalise(data: any) {
-  console.log('[storeAnalise] Enviando payload:', JSON.stringify(data));
   const res = await fetch(`${API_BASE}/v1/analises`, {
     method: 'POST',
     headers: getAuthHeaders(),
     body: JSON.stringify(data),
   });
-  const json = await res.json();
-  console.log('[storeAnalise] Resposta:', JSON.stringify(json));
-  return json;
+  await assertOk(res);
+  return res.json();
 }
 
 export async function updateResultadoAnalise(id: number, data: any) {
@@ -187,6 +209,7 @@ export async function updateResultadoAnalise(id: number, data: any) {
     headers: getAuthHeaders(),
     body: JSON.stringify(data),
   });
+  await assertOk(res);
   return res.json();
 }
 
@@ -195,6 +218,7 @@ export async function deleteAnalise(id: number) {
     method: 'DELETE',
     headers: getAuthHeaders(),
   });
+  await assertOk(res);
   return res.json();
 }
 
@@ -203,6 +227,7 @@ export async function deleteAllAnalises() {
     method: 'DELETE',
     headers: getAuthHeaders(),
   });
+  await assertOk(res);
   return res.json();
 }
 
@@ -282,6 +307,7 @@ export async function fetchPrice(symbol: string): Promise<{ price: number; excha
 
 export async function fetchEstatisticas() {
   const res = await fetch(`${API_BASE}/v1/estatisticas`, { headers: getAuthHeaders() });
+  await assertOk(res);
   return res.json();
 }
 
@@ -312,6 +338,7 @@ export async function scangraph(imageFile: File) {
     headers: getFormDataHeaders(),
     body: formData,
   });
+  await assertOk(res);
   return res.json();
 }
 
@@ -328,6 +355,7 @@ export async function analyze(imageFile: File, params: Record<string, any>) {
     headers: getFormDataHeaders(),
     body: formData,
   });
+  await assertOk(res);
   return res.json();
 }
 
@@ -335,6 +363,7 @@ export async function analyze(imageFile: File, params: Record<string, any>) {
 
 export async function fetchAlertaConfig() {
   const res = await fetch(`${API_BASE}/v1/admin/alerta-config`, { headers: getAuthHeaders() });
+  await assertOk(res);
   return res.json();
 }
 
@@ -344,11 +373,13 @@ export async function updateAlertaConfig(carteira: string, data: { passo_valoriz
     headers: getAuthHeaders(),
     body: JSON.stringify(data),
   });
+  await assertOk(res);
   return res.json();
 }
 
 export async function fetchMonitorStatus() {
   const res = await fetch(`${API_BASE}/v1/admin/monitor/status`, { headers: getAuthHeaders() });
+  await assertOk(res);
   return res.json();
 }
 
@@ -357,6 +388,7 @@ export async function resetMonitorAlerta(carteira: string) {
     method: 'POST',
     headers: getAuthHeaders(),
   });
+  await assertOk(res);
   return res.json();
 }
 
@@ -365,5 +397,6 @@ export async function fetchMonitorLog(page?: number) {
     ? `${API_BASE}/v1/admin/monitor/log?page=${page}`
     : `${API_BASE}/v1/admin/monitor/log`;
   const res = await fetch(url, { headers: getAuthHeaders() });
+  await assertOk(res);
   return res.json();
 }

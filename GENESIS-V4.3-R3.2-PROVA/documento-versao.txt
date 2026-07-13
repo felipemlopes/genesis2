@@ -1,0 +1,16 @@
+Documento normativo: GENESIS_V4_3_R3_2_DOCUMENTO_UNICO_UNIVERSAL_DEV_2026-07-12.md
+Versão normativa: V4.3-R3.2
+Data-base do documento: 12/07/2026
+Responsável de produto: Fabrício Marcílio
+Destinatário: Felipe, Desenvolvimento
+
+Constantes no código (confirmam a versão implementada):
+- GeminiAnalysisService::DOCUMENTO_VERSAO = 'V4.3-R3.2'
+- GeminiAnalysisService::PROMPT_VERSAO = 'v4.3-r3.2'
+- TraderSchema::VERSION = 'v4.3-r3.2'
+
+Pacote de prova gerado em: 2026-07-13
+Spec de implementação (rastreabilidade de tarefas): .kiro/specs/genesis-r3-2-implementacao/
+  - requirements.md (20 requisitos, formato EARS)
+  - design.md (arquitetura, decisões, propriedades de corretude)
+  - tasks.md (progresso tarefa a tarefa, com notas de desvio e gaps)

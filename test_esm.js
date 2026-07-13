@@ -1,1 +1,0 @@
-console.log(require.resolve('./')); module.exports = {}

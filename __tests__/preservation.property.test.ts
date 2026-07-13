@@ -240,7 +240,7 @@ describe('Preservation 3.2: Fluxo de upload + scan + analyze', () => {
     expect(content).toContain('unifiedChartAnalysis');
     expect(content).toContain('analyzeChart');
     expect(content).toContain('setResult');
-    expect(content).toContain('TradeSetup');
+    expect(content).toContain('GenesisAnalysisResult');
   });
 });
 

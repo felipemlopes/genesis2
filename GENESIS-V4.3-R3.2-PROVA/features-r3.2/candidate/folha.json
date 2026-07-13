@@ -1,0 +1,82 @@
+{
+    "ativo": {
+        "preco": 0.6239,
+        "timeframe": "1d"
+    },
+    "estrutura_1d": {
+        "ema21": 0.6317,
+        "ema50": 0.7077,
+        "ema200": 1.294,
+        "preco_vs_emas": "abaixo da 21, abaixo da 50, abaixo da 200",
+        "wyckoff_fase": "INDETERMINADO",
+        "figura": {
+            "nome": "CANAL_BAIXA",
+            "estado": "EM_DESENVOLVIMENTO"
+        },
+        "poc": 0.66,
+        "hvn": [
+            {
+                "de": 0.74,
+                "ate": 0.76
+            }
+        ],
+        "lvn": [],
+        "suportes": [
+            0.5522
+        ],
+        "resistencias": [
+            0.8033
+        ]
+    },
+    "order_flow_1d": {
+        "cvd_inclinacao": null,
+        "cvd_saldo": null,
+        "divergencia_cvd": "NENHUMA",
+        "volume_leitura": "Volume estavel, sem divergencia relevante."
+    },
+    "derivativos": {
+        "funding_rate": null,
+        "oi_quadrante": null,
+        "oi_variacao_pct": null,
+        "liquidacoes": {
+            "acima": [],
+            "abaixo": [],
+            "dominante": "EQUILIBRADO"
+        },
+        "squeeze": null
+    },
+    "momentum_1d": {
+        "rsi": null,
+        "adx": 30,
+        "plus_di": null,
+        "minus_di": null,
+        "macd_acima_signal": null,
+        "estocastico_k": null,
+        "estocastico_zona": null
+    },
+    "imagem_qualidade": {
+        "confiavel": true
+    },
+    "multi_timeframe": [],
+    "contexto_regime": {
+        "tipo": "TENDENCIA",
+        "direcao_estrutura": "BAIXA",
+        "forca_tendencia": "MEDIA",
+        "atr_pct": 3.2056,
+        "compressao": false,
+        "mtf_alinhamento": "INDETERMINADO",
+        "regra": "CONTEXTO_NAO_DECISORIO"
+    },
+    "feature_policy": {
+        "trade_flow_enabled": true,
+        "trade_flow_windows_s": [
+            3600,
+            14400,
+            86400
+        ],
+        "streaming_book_collect": true,
+        "streaming_book_brain": false,
+        "microstructure_weight": "IGNORAR"
+    },
+    "features_version": "binance-r3.2-v1"
+}

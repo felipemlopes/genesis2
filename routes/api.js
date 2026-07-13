@@ -3,11 +3,6 @@ const router = express.Router();
 const fs = require('fs');
 const path = require('path');
 const jwt = require('jsonwebtoken');
-const { GenesisPipeline } = require('../engine/genesisPipeline');
-const { EnsembleGenesis } = require('../engine/ensembleGenesis');
-global.EnsembleGenesis = EnsembleGenesis;
-
-const { geminiClient } = require('../services/gemini');
 
 // DEV - ARQUIVO JSON DESCARTADO
 // O sistema agora não cria nem utiliza mais 'carteiras.json'.
@@ -21,8 +16,11 @@ const requiresAuth = (req, res, next) => {
     }
     
     const token = authHeader.split(' ')[1];
-    const secret = process.env.JWT_SECRET || 'fallback_secret_only_for_dev_if_missing';
-    
+    const secret = process.env.JWT_SECRET;
+    if (!secret) {
+        return res.status(500).json({ success: false, error: "Configuração do servidor incompleta: JWT_SECRET ausente." });
+    }
+
     try {
         const decoded = jwt.verify(token, secret);
         req.userId = decoded.userId;
@@ -201,127 +199,6 @@ const setupCarteiraRoutes = (carteiraName, dbArrayKey, counterKey, requireAdmin 
 setupCarteiraRoutes('carteira-mae', 'dbCarteiraMae', 'maeIdCounter', true, false);
 setupCarteiraRoutes('carteira-membro', 'dbCarteiraMembro', 'membroIdCounter', false, true);
 setupCarteiraRoutes('carteira-gemas', 'dbCarteiraGemas', 'gemasIdCounter', true, false);
-
-/* =========================================
-   EXISTING ANALYSIS ENDPOINT
-   ========================================= */
-
-router.post('/analisar', async (req, res) => {
-  try {
-    const { imageBase64, exchange, symbol, interval = '1d' } = req.body;
-
-    const promptVisao = `Você é um scanner visual especializado. Sua ÚNICA função é extrair elementos GRÁFICOS desenhados pelo usuário nesta imagem de chart.
-
-Você está TERMINANTEMENTE PROIBido de:
-- Ler valores de indicadores técnicos (RSI, ADX, MACD, EMA, etc.)
-- Estimar preços pelo eixo Y da imagem
-- Fazer análise de mercado ou prever movimentos
-- Calcular qualquer métrica matemática
-
-Você DEVE extrair APENAS estes elementos em JSON:
-
-{
-  "linhas_tendencia": [
-    {"tipo": "LTA|LTB|HORIZONTAL", "pontos": [[x1,y1],[x2,y2]], "cor": "string"}
-  ],
-  "caixas": [
-    {"label": "string", "top": float, "bottom": float, "left": float, "right": float}
-  ],
-  "suportes": [float, float],
-  "resistencias": [float, float],
-  "fibonacci": [float, float, float],
-  "anotacoes": [
-    {"texto": "string", "posicao": [x,y]}
-  ],
-  "padroes_monitorados": ["string"],
-  "setas": [
-    {"direcao": "UP|DOWN", "origem": [x,y], "destino": [x,y]}
-  ]
-}
-
-Se não houver elementos desenhados, retorne: {"elementos": []}
-
-NUNCA retorne valores de RSI, ADX, MACD, preço atual, ou qualquer número que apareça em indicadores do painel inferior. Esses dados virão de APIs separadas.`;
-
-    const elementosVisuais = await geminiClient.vision(imageBase64, promptVisao);
-
-    const pipeline = new GenesisPipeline(exchange);
-    const resultado = await pipeline.analisar(symbol, interval, elementosVisuais);
-
-    const promptNarrativa = `Você é Genesis, analista quantitativo de derivativos cripto profissional.
-
-Você recebeu um setup matemático já calculado pelo sistema. Sua função é APENAS gerar uma narrativa clara e profissional em português.
-
-DADOS FORNECIDOS (não invente nada além destes):
-- Ativo: ${symbol}
-- Preço atual: ${resultado.indicadores.preco}
-- Regime: ${resultado.ensemble.regime}
-- Score: ${resultado.ensemble.score}/100
-- Confiança: ${resultado.ensemble.confianca}%
-- Direção: ${resultado.ensemble.direcao}
-- Setup: ${JSON.stringify(resultado.execucao.setup)}
-- Indicadores: ${JSON.stringify(resultado.indicadores)}
-- Contexto visual do trader: ${JSON.stringify(resultado.contextoVisual)}
-- Alerta: ${resultado.ensemble.alerta || 'Nenhum'}
-
-REGRAS:
-1. Máximo 200 palavras
-2. Explique POR QUE o setup foi gerado, citando confluências entre dados técnicos e elementos visuais
-3. Se score < 65, ADICIONE: "Operar com cautela. Alavancagem reduzida."
-4. NUNCA invente números — use apenas os fornecidos acima
-5. NUNCA sugira alterar o setup — ele já foi validado matematicamente
-6. Tom profissional, direto, sem floreios`;
-
-    const narrativa = await geminiClient.text(promptNarrativa);
-
-    res.json({
-      success: true,
-      timestamp: new Date().toISOString(),
-      exchange,
-      symbol,
-      ...resultado,
-      narrativa,
-      direcaoProvavel: resultado.ensemble.direcao,
-      scoreProbabilidade: resultado.ensemble.score,
-      confianca: resultado.ensemble.confianca,
-      regime: resultado.ensemble.regime,
-      alerta: resultado.ensemble.alerta,
-      acao: resultado.execucao.acao,
-      motivo: resultado.execucao.motivo,
-      zonaInteresse: resultado.execucao.zonaInteresse || null,
-      entradaSugerida: resultado.execucao.setup?.entrada || null,
-      stopLoss: resultado.execucao.setup?.stop || null,
-      alvos: resultado.execucao.setup ? [
-        resultado.execucao.setup.tp1,
-        resultado.execucao.setup.tp2,
-        resultado.execucao.setup.tp3
-      ] : [],
-      alavancagem: resultado.execucao.setup?.alavancagem || null,
-      liquidacao: resultado.execucao.setup?.liquidacao || null,
-      riscoPct: resultado.execucao.setup?.riscoPct || null,
-      rr1: resultado.execucao.setup?.rr1 || null,
-      indicadores: {
-        rsi: resultado.indicadores.rsi,
-        adx: resultado.indicadores.adx,
-        plusDI: resultado.indicadores.plusDI,
-        minusDI: resultado.indicadores.minusDI,
-        macdHist: resultado.indicadores.macdHist,
-        ema21: resultado.indicadores.ema21,
-        ema50: resultado.indicadores.ema50,
-        ema200: resultado.indicadores.ema200,
-        atr: resultado.indicadores.atr,
-        cvd: resultado.indicadores.cvd
-      }
-    });
-
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      error: error.message,
-      timestamp: new Date().toISOString()
-    });
-  }
-});
 
 // POST - Salvar análise
 router.post('/salvar-analise', requiresAuth, async (req, res) => {

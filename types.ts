@@ -4,97 +4,115 @@ export enum TradeDirection {
   SHORT = 'SHORT'
 }
 
-export interface TradeSetup {
-  vies?: string;
-  viés?: string;
-  confluenciaRecomendada?: string;
-  gestaoRisco?: any;
-  sinteseDaAnalise?: string;
+// ─── Contrato R3.2 (Documento Mestre, Seção 15.2) ──────────────────────────
+// Único contrato para o resultado de /v1/analyze. Substitui o antigo
+// TradeSetup (direcaoProvavel, confianca, regime, ensemble, execucao.setup).
+// Campos proibidos no contrato público: confianca, regime, ensemble,
+// scoreDetalhado, blocoMacro, blocoSentimento, barras.
+
+export type AnalysisDirection = 'LONG' | 'SHORT' | 'INDISPONIVEL';
+
+export type AnalysisStatus =
+  | 'CONCLUIDA'
+  | 'ANALISE_INCONSISTENTE'
+  | 'INDISPONIVEL';
+
+export type ExecutionStatus =
+  | 'EXECUTAVEL'
+  | 'SHADOW_MODE'
+  | 'NAO_RECOMENDADA_RR'
+  | 'NAO_RECOMENDADA_ALVO'
+  | 'NAO_RECOMENDADA_CONVICCAO'
+  | 'NAO_RECOMENDADA_CONFIGURACAO'
+  | 'BLOQUEADA_ANALISE_INCONSISTENTE'
+  | 'INDISPONIVEL';
+
+export interface ScoreFamilias {
+  estrutura: number;
+  order_flow: number;
+  derivativos: number;
+  momentum: number;
+}
+
+export interface ScoreContexto {
+  familias_divergentes: string[];
+  limitadores: string[];
+  dados_ausentes_relevantes: string[];
+  confirmacao_necessaria: string[];
+}
+
+export interface CandidateSetup {
+  entrada: number | null;
+  stop: number | null;
+  tp1: number | null;
+  tp1_fonte: string | null;
+  tp2: number | null;
+  tp2_fonte: string | null;
+  tp3: number | null;
+  tp3_fonte: string | null;
+  alavancagem: number | null;
+  liquidacao: number | null;
+  liquidacao_rotulo: 'estimada' | null;
+  risco_preco_pct: number | null;
+  risco_margem_pct: number | null;
+  risco_usd_estimado: number | null;
+  nocional_estimado: number | null;
+  tamanho_sugerido_texto: string | null;
+  rr_bruto: number | null;
+  rr_liquido_estimado: number | null;
+  rr_aviso: string | null;
+  custos_bps: Record<string, number>;
+  entrada_ts: string | null;
+}
+
+export interface GenesisAnalysisResult {
+  analysis_id: string;
   pair: string;
-  direcaoProvavel: 'LONG' | 'SHORT';
-  scoreProbabilidade: number;
-  confianca: number;
-  regime: string;
-  alerta: string | null;
-  narrativa?: string;
-  rationalScore?: string;
-  entradaSugerida: {
-    planoA: number | string;
-    planoB: number | string;
-    descricaoPlanoA: string;
-    descricaoPlanoB: string;
+  analysis: {
+    direction: AnalysisDirection;
+    status: AnalysisStatus;
+    conviccao_modelo: number | null;
+    leitura_fraca: boolean;
+    reason_code: string | null;
+    score_familias?: ScoreFamilias;
+    justificativa_score?: string;
+    score_contexto?: ScoreContexto;
+    narrativa_tecnica?: string;
+    invalidacao_tese?: string;
   };
-  execucao: {
+  execution: {
+    status: ExecutionStatus;
+    executable: boolean;
+    action: 'LONG' | 'SHORT' | null;
+    direction_reference: 'LONG' | 'SHORT' | null;
+    reason_code: string | null;
     motivo: string;
-    setup: {
-      entrada: number | string;
-      stop: number | string;
-      tp1: number | string;
-      tp2: number | string;
-      tp3: number | string;
-      alavancagem: number;
-      liquidacao: number | string;
-      riscoPct: number;
-      rr1: number;
-      verificacao: string;
-      tamanhoSugerido?: string;
-      riscoMaximoUsd?: string;
-      tp1Usd?: string;
-      tp2Usd?: string;
-      tp3Usd?: string;
+    candidate_setup: CandidateSetup | null;
+    executable_setup: CandidateSetup | null;
+    planoB: Record<string, unknown> | null;
+    zonaInteresse: {
+      tipo: string;
+      zona: string;
+      invalidacao: string | null;
     } | null;
-  }
-  ensemble: {
-    motorTecnico?: { status: string; score: number };
-    motorDerivativos?: { status: string; score: number };
-    motorMacro?: { status: string; score: number };
-    motorSentimento?: { status: string; score: number };
-    motorOnChain?: { status: string; score: number };
-    motorQuantitativo?: { status: string; score: number };
+    avisos: string[];
+    stop_ancora: Record<string, unknown> | null;
   };
-  analiseTecnica: string;
-  macroGeopolitica: {
-    resumo: string;
-    eventos: string[];
-  };
-  multiTimeframe?: {
-    timeframe: string;
-    bias: string;
-  }[];
-  sentimentoNarrativa: {
-    score: number;
-    sentimento: 'OTIMISTA' | 'NEUTRO' | 'PESSIMISTA';
-    narrativa: string;
-    gatilhosPositivos: string[];
-    gatilhosNegativos: string[];
-  };
-  indicadores: {
-    rsi: number;
-    adx: number;
-    plusDI: number;
-    minusDI: number;
-    macdHist: number;
-    ema21: number;
-    ema50: number;
-    ema200: number;
-    atr: number;
-    cvd: number;
-    compressaoDetectada?: boolean;
-    nivelCompressao?: string;
-    fontes?: {
-      rsi: string;
-      adx: string;
-      atr: string;
-      ema21?: string;
-      ema50?: string;
-      ema200?: string;
-    };
-  };
-  zonaInteresse?: {
-    tipo: string;
-    zona: string;
-    invalidacao: string;
-  };
+  contexto_informativo: Record<string, unknown> | null;
+  ai_meta: Record<string, unknown>;
+  indicadores?: Record<string, number | string | boolean | null | Record<string, unknown>>;
+  // Campos informativos/deterministicos que o PHP ainda calcula e que nao
+  // fazem parte do contrato formal da Secao 15.1, mas continuam sendo
+  // enviados hoje (nao sao "cerebro" duplicado, sao dado calculado pelo
+  // backend): wyckoff, sessao, multiTimeframe, macroGeopolitica, sentimento.
+  // Acessados via `as any`/opcional no componente, nao tipados em detalhe
+  // aqui para nao reintroduzir um segundo contrato paralelo.
+  wyckoff?: Record<string, unknown>;
+  sessao?: { nome: string; cor: string };
+  multiTimeframe?: { timeframe: string; bias: string }[];
+  macroGeopolitica?: { resumo: string; eventos: string[] };
+  sentimentoAtivo?: Record<string, unknown>;
+  folha_decisao?: Record<string, unknown>;
 }
 
 export interface MarketSentiment {
@@ -164,20 +182,30 @@ export interface ActiveTrade {
 
 export interface SavedAnalysis {
   id: string;
+  // Opcionais: a tabela genesis_analises (histórico) ainda não tem essas
+  // colunas — só ficam preenchidas quando a análise é salva a partir de um
+  // resultado /v1/analyze fresco (GenesisPage.tsx). Ver Documento Mestre
+  // Seção 15.2; deviamos do tipo literal (que os declara obrigatórios) para
+  // não quebrar o histórico existente, que não tem esses campos no banco.
+  analysis_id?: string;
+  analysis_status?: AnalysisStatus;
+  execution_status?: ExecutionStatus;
+  executable?: boolean;
+  rr_liquido_estimado?: number | null;
   timestamp: string;
   symbol: string;
   interval: string;
-  direction: 'LONG' | 'SHORT';
-  score: number;
-  rsi: number;
-  ema200: number;
-  adx: number;
-  entry_price: number;
-  target_price: number;
-  target_price2: number;
-  target_price3: number;
-  stop_loss: number;
-  status: 'PENDENTE' | 'ACERTOU' | 'ERROU';
-  profit_loss?: number;
+  direction: AnalysisDirection;
+  score: number | null;
+  rsi: number | null;
+  ema200: number | null;
+  adx: number | null;
+  entry_price: number | null;
+  target_price: number | null;
+  target_price2: number | null;
+  target_price3: number | null;
+  stop_loss: number | null;
+  status: 'PENDENTE' | 'ACERTOU' | 'ERROU' | 'NAO_EXECUTAVEL';
+  profit_loss?: number | null;
   notes?: string;
 }
