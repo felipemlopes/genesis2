@@ -41,6 +41,47 @@ export interface ScoreContexto {
   confirmacao_necessaria: string[];
 }
 
+// ─── Adendo Seção 33: contrato canônico em inglês, publicado ao lado do
+// português (Seção 14.4) — mesmo valor, nunca recalculado no frontend.
+export interface GraphicalFamilyScores {
+  structure: number;
+  trend: number;
+  momentum: number;
+  technical_flow: number;
+  visual_confluence: number;
+}
+
+export interface GraphicalScoreContext {
+  divergent_families: string[];
+  limitations: string[];
+  missing_relevant_data: string[];
+  required_confirmation: string[];
+}
+
+export interface DerivativesContext {
+  classification: 'REFORCA' | 'ENFRAQUECE' | 'NEUTRO' | 'INDISPONIVEL';
+  modifier: number;
+  reasons: string[];
+  warnings: string[];
+  quality: string[];
+  liquidity_zones: unknown[];
+  squeeze_risk: string;
+  rule: 'CONTEXT_ONLY_CANNOT_CHANGE_DIRECTION';
+}
+
+export interface GraphicalAnalysis {
+  direction: 'LONG' | 'SHORT';
+  status: 'VALIDA' | 'INCONSISTENTE';
+  base_conviction: number;
+  conviction: number;
+  coverage: number;
+  family_scores: GraphicalFamilyScores;
+  score_justification: string;
+  technical_analysis: string;
+  score_context: GraphicalScoreContext;
+  thesis_invalidation: string;
+}
+
 export interface CandidateSetup {
   entrada: number | null;
   stop: number | null;
@@ -79,6 +120,16 @@ export interface GenesisAnalysisResult {
     score_contexto?: ScoreContexto;
     narrativa_tecnica?: string;
     invalidacao_tese?: string;
+    // Contrato canônico em inglês (Adendo Seção 33), publicado ao lado do
+    // português acima — mesmo valor, nunca recalculado (Seção 14.4/31.1).
+    base_conviction?: number;
+    conviction?: number;
+    coverage?: number;
+    family_scores?: GraphicalFamilyScores;
+    score_justification?: string;
+    technical_analysis?: string;
+    score_context?: GraphicalScoreContext;
+    thesis_invalidation?: string;
   };
   execution: {
     status: ExecutionStatus;
@@ -132,6 +183,7 @@ export interface ChartMetadata {
   timeframe: string;
   exchange?: string; // New: Detected Exchange
   symbol?: string; // New: Detected Token Symbol
+  market?: 'SPOT' | 'FUTURES'; // R3.2 — Adendo Secao 9.1: mercado lido pelo OCR 1
   price?: number; // New: Detected Current Price via OCR
   detectedIndicators?: string[]; // New: General indicators detected
   visualMarkings?: string[]; // New: Visual lines, boxes, or markings detected

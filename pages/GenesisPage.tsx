@@ -20,7 +20,7 @@ import OrderBookImbalance from '../components/OrderBookImbalance';
 import TrendQuality from '../components/TrendQuality';
 import LiquidationHeatmap from '../components/LiquidationHeatmap';
 import SectorSentiment from '../components/SectorSentiment';
-import { analyzeChart, scanChartMetadata, unifiedChartAnalysis } from '../services/geminiService';
+import { analyzeChart, scanChartMetadata } from '../services/geminiService';
 import { normalizarPar } from '../services/normalizarPar';
 import { GenesisAnalysisResult, ChartMetadata, SavedAnalysis, UnifiedChartResult } from '../types';
 import { fetchBinanceData, fetchBybitData, fetchBitgetData, fetchOkxData, formatPrice, ExchangeData } from '../services/cryptoApi';
@@ -293,21 +293,24 @@ const GenesisPage: React.FC = () => {
 
       setIsScanning(true);
       try {
-        const unifiedResult = await unifiedChartAnalysis(file, exchange);
+        // R3.2 — Adendo Secao 28: OCR 1 estrito, só metadados. Dispara aqui,
+        // na seleção do arquivo — o OCR 2 (visual) só roda dentro do fluxo de
+        // Analisar (handleAnalyze -> analyzeChart), nunca aqui.
+        const unifiedResult = await scanChartMetadata(file, exchange);
         setChartMetadata(unifiedResult);
 
         // Não sobrescreve a exchange selecionada pelo usuário
         let newExchange = exchange;
 
         let newPair = '';
-        if (unifiedResult.pair && unifiedResult.pair !== 'UNK') {
+        if (unifiedResult.pair) {
           const cleanPair = normalizarPar(unifiedResult.pair);
           newPair = cleanPair;
           setSelectedPair(cleanPair);
           setRefreshTrigger((prev) => prev + 1);
         }
 
-        if (unifiedResult.timeframe && unifiedResult.timeframe !== 'UNK') {
+        if (unifiedResult.timeframe) {
           const tfMap: Record<string, string> = {
             '1M': '1M', 'MONTHLY': '1M', 'M': '1M', 'MONTH': '1M',
             '1W': '1w', 'WEEKLY': '1w', 'W': '1w', 'WEEK': '1w', 'SEMANAL': '1w',

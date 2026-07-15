@@ -178,7 +178,14 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, currentPrice, cha
   const progressColor = isLong ? 'bg-genesis-positive' : isShort ? 'bg-genesis-negative' : 'bg-yellow-500/60';
 
   const invalidacaoAtiva = execution.zonaInteresse?.invalidacao || analysis.invalidacao_tese || null;
-  const mainRationale = analysis.narrativa_tecnica || execution.motivo || 'Leitura acionada pelos modelos.';
+
+  // R3.2 — Adendo Seção 32: contrato canônico em inglês primeiro, com
+  // fallback ao português legado. `execution.motivo` nunca alimenta a
+  // justificativa do score — é um campo de execução, não de leitura.
+  const scoreJustification = analysis.score_justification ?? analysis.justificativa_score ?? null;
+  const technicalAnalysis = analysis.technical_analysis ?? analysis.narrativa_tecnica ?? null;
+  const scoreContext = analysis.score_context ?? null;
+
   const naoOperavel = execution.status !== 'EXECUTAVEL';
 
   return (
@@ -289,17 +296,22 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, currentPrice, cha
 
           <FamiliasTrader familias={analysis.score_familias ?? null} />
 
-          {score != null && isCautela && analysis.justificativa_score && (
+          {score != null && isCautela && scoreContext && (
             <div className="mb-4 rounded-lg border border-yellow-500/30 bg-yellow-500/5 p-3 relative z-10">
               <p className="text-xs font-semibold text-yellow-400">Leitura de baixa convicção</p>
-              <p className="mt-1 text-xs text-gray-300 leading-relaxed">{analysis.justificativa_score}</p>
+              {scoreContext.limitations?.map((item) => (
+                <p key={item} className="mt-1 text-xs text-gray-300 leading-relaxed">{item}</p>
+              ))}
+              {scoreContext.required_confirmation?.map((item) => (
+                <p key={item} className="mt-1 text-xs text-gray-400 leading-relaxed">Confirmação: {item}</p>
+              ))}
             </div>
           )}
 
           <div className="bg-white/5  rounded-lg p-[16px] relative z-10 flex items-start gap-3">
             <Target className={`${badgeColor} shrink-0 mt-0.5`} size={16} />
             <p className="text-sm text-gray-300 font-medium leading-relaxed">
-              {mainRationale}
+              {scoreJustification || 'Justificativa do score indisponível.'}
             </p>
           </div>
         </div>
@@ -373,7 +385,7 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, currentPrice, cha
         <div className="bg-[#050505] rounded-[10px] p-[16px] mb-6">
           <h3 className="text-xs font-bold text-gray-400 uppercase tracking-[0.2em] mb-4">Análise Técnica</h3>
           <p className="text-sm text-gray-300 leading-relaxed text-left whitespace-normal break-normal" style={{ wordSpacing: 'normal', letterSpacing: 'normal', hyphens: 'none', lineHeight: 1.6 }}>
-            {limparTexto(analysis.narrativa_tecnica || "Análise técnica indisponível.")}
+            {limparTexto(technicalAnalysis || "Análise técnica indisponível.")}
           </p>
         </div>
 

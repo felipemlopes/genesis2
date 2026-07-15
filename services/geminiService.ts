@@ -137,11 +137,69 @@ export const unifiedChartAnalysis = async (file: File, selectedExchange?: string
   } as UnifiedChartResult;
 };
 
-// scanChartMetadata — wrapper que extrai apenas metadata do resultado unificado
-// Mantém compatibilidade com código que chama scanChartMetadata diretamente
-export const scanChartMetadata = async (file: File): Promise<ChartMetadata> => {
-  const unified = await unifiedChartAnalysis(file);
-  return unified as ChartMetadata;
+// R3.2 — Adendo Secao 28: OCR 1 estrito, somente metadados (symbol/timeframe/
+// exchange/market/confidence). Nao chama unifiedChartAnalysis — nao le nem
+// devolve elementos visuais. Dispara na selecao do arquivo, antes do clique
+// em Analisar (Invariante 2.3.1/2.3.2 do Adendo).
+export interface StrictChartMetadata {
+  pair: string;
+  symbol: string;
+  timeframe: string;
+  exchange: string;
+  // R3.2: market não bloqueia o scan — analyzeChart() não usa este campo hoje
+  // (o backend hardcoda FUTURES internamente). Continua sendo lido quando o
+  // OCR consegue, só deixou de ser obrigatório.
+  market: 'SPOT' | 'FUTURES' | null;
+  confidence: number;
+}
+
+export const scanChartMetadata = async (file: File, selectedExchange?: string): Promise<StrictChartMetadata> => {
+  const formData = new FormData();
+  formData.append('image', file);
+  if (selectedExchange) formData.append('exchange', selectedExchange);
+
+  const token = localStorage.getItem('genesis_token');
+  const headers = token ? { Authorization: `Bearer ${token}` } : {};
+
+  const response = await fetch(`${API_BASE}/v1/scangraph`, {
+    method: 'POST',
+    headers,
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const errData = await response.json().catch(() => ({}));
+    throw new Error(errData.error || `Falha no OCR de metadados: HTTP ${response.status}`);
+  }
+
+  const payload = await response.json();
+  const raw = payload.content ?? payload;
+  const parsed = typeof raw === 'string'
+    ? JSON.parse(raw.replace(/^```json\s*/i, '').replace(/```$/i, '').trim())
+    : raw;
+
+  const symbol = normalizarPar(String(parsed.symbol ?? ''));
+  const timeframe = String(parsed.timeframe ?? '').trim().toLowerCase();
+  const exchange = String(parsed.exchange ?? '').trim().toUpperCase();
+  const market = String(parsed.market ?? '').trim().toUpperCase();
+  const confidence = Number(parsed.confidence ?? 0);
+
+  if (!symbol || !timeframe || !exchange) {
+    throw new Error('Par, timeframe ou corretora não foram identificados com segurança.');
+  }
+
+  if (!Number.isFinite(confidence) || confidence < 0.85) {
+    throw new Error('A confiança do OCR de metadados ficou abaixo do mínimo.');
+  }
+
+  return {
+    pair: symbol,
+    symbol,
+    timeframe,
+    exchange,
+    market: (market === 'SPOT' || market === 'FUTURES') ? market : null,
+    confidence,
+  };
 };
 // ETAPA 2: Analise completa via Laravel backend
 export const analyzeChart = async (
@@ -154,8 +212,13 @@ export const analyzeChart = async (
   cvdDataParam: { delta: number, priceChangePercent: number } | null,
   entryValue: number | '' = ''
 ): Promise<GenesisAnalysisResult> => {
-  const userPair = metadata.pair || "BTCUSDT";
-  const userTimeframe = metadata.timeframe || "1D";
+  // R3.2 — Adendo Secao 28: sem defaults silenciosos. Par, timeframe e
+  // corretora precisam ter sido resolvidos antes de enviar a analise.
+  if (!metadata.pair || !metadata.timeframe || !activeExchange) {
+    throw new Error('Metadados obrigatórios ausentes. Refaça a leitura do gráfico.');
+  }
+  const userPair = metadata.pair;
+  const userTimeframe = metadata.timeframe;
 
   const buildFormData = (withFlashModel = false): FormData => {
     const fd = new FormData();

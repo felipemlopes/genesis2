@@ -237,7 +237,12 @@ describe('Preservation 3.2: Fluxo de upload + scan + analyze', () => {
     // Verificar que os handlers de fluxo existem
     expect(content).toContain('handleFileChange');
     expect(content).toContain('handleAnalyze');
-    expect(content).toContain('unifiedChartAnalysis');
+    // R3.2 (genesis-cerebro-grafico-r3-2) — Adendo Secao 28: handleFileChange
+    // (upload -> scan) passou a chamar scanChartMetadata, não mais
+    // unifiedChartAnalysis, para separar OCR 1 (metadados) de OCR 2 (visual)
+    // por exigência das Invariantes 2.3.2/2.3.3. O fluxo upload -> scan ->
+    // analyze em si continua existindo, só a função de scan mudou.
+    expect(content).toContain('scanChartMetadata');
     expect(content).toContain('analyzeChart');
     expect(content).toContain('setResult');
     expect(content).toContain('GenesisAnalysisResult');
