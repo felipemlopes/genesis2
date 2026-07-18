@@ -54,8 +54,17 @@ mensagem_st = st.text(min_size=1, max_size=100, alphabet=st.characters(whitelist
 # --- Helper ---
 
 def create_worker_with_mocks():
-    """Create a MonitorWorker with enviar_telegram and gravar_banco mocked."""
-    worker = MonitorWorker()
+    """Create a MonitorWorker with enviar_telegram and gravar_banco mocked.
+
+    __init__ does real MySQL DDL/queries and 15 real HTTP calls to Binance
+    (~5-6s per instantiation) — patched out here so property-based tests can
+    construct a fresh worker per Hypothesis example without hitting the
+    deadline (this was causing spurious DeadlineExceeded failures).
+    """
+    with patch.object(MonitorWorker, '_criar_tabela_oi'), \
+         patch.object(MonitorWorker, '_carregar_oi_banco'), \
+         patch.object(MonitorWorker, '_carregar_historico_inicial'):
+        worker = MonitorWorker()
     worker.enviar_telegram = MagicMock(return_value=True)
     worker.gravar_banco = MagicMock()
     worker.ultimos_alertas = {}

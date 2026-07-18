@@ -19,16 +19,21 @@ const RadarNewsCard: React.FC<{ item: RadarNewsItem; onClose: (id: number) => vo
     const sev = SEVERITY_CONFIG[item.severity];
     const bias = BIAS_LABEL[item.market_bias] || BIAS_LABEL.NEUTRAL;
     const isDiscovery = item.is_discovery;
+    // C10: Nível 1 (crítico/acionável) vem destacado; Nível 2 vem discreto — mesmo
+    // conteúdo, menos ênfase visual (sem glow, menor, opacidade reduzida).
+    const destacado = item.nivel !== 2;
     // biasGlow replaces severity glow for directional feedback (Req 6.2, 6.3)
 
-    const biasGlow = item.market_bias === 'BULLISH'
+    const biasGlow = !destacado
+        ? ''
+        : item.market_bias === 'BULLISH'
         ? 'shadow-[0_0_15px_rgba(16,185,129,0.2)]'
         : item.market_bias === 'BEARISH'
         ? 'shadow-[0_0_15px_rgba(239,68,68,0.2)]'
         : '';
 
     return (
-        <div className={`relative flex flex-col pointer-events-auto bg-[#0a0a0f] border ${sev.border} rounded-xl p-4 mb-3 w-[350px] shadow-2xl ${biasGlow} animate-in slide-in-from-right fade-in duration-500 overflow-hidden`}>
+        <div className={`relative flex flex-col pointer-events-auto bg-[#0a0a0f] border ${sev.border} rounded-xl p-4 mb-3 w-[350px] shadow-2xl ${biasGlow} animate-in slide-in-from-right fade-in duration-500 overflow-hidden ${destacado ? '' : 'opacity-80 scale-[0.97]'}`}>
             {/* Auto-dismiss progress bar (12s) */}
             <div className="absolute bottom-0 left-0 h-1 bg-white/10 w-full animate-[radarProgress_12s_linear_forwards] origin-left" />
 

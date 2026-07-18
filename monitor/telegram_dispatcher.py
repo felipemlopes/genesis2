@@ -1,52 +1,52 @@
 """
-Telegram Dispatcher — Gênesis Labs Radar News
-Formata e envia alertas de notícias e descobertas para o Telegram via Bot API (HTML parse_mode).
+Telegram Dispatcher — Gênesis Labs Radar News V1.0
+Formata e envia alertas de notícias no formato oficial (seção 5) para o Telegram
+via Bot API (HTML parse_mode). Envio para a comunidade Cripto.ico — mesmo grupo
+e mesmo sistema de envio de sempre (Aviso 3); só o critério do que entra mudou.
 """
 
+import html
 import logging
 import os
-import threading
-import time
 
 import requests
+
+from ai_classifier import CATEGORIAS_NOMES
 
 logger = logging.getLogger('radar-news')
 
 TELEGRAM_TIMEOUT = 15  # seconds
 RETRY_DELAY = 10       # seconds
-HIGH_SEVERITY_DELAY = 30  # seconds
 
-SIGNATURE = 'Cripto.ico | Genesis Labs'
+SIGNATURE = 'Cripto.ico'
 
+# Emojis por SEVERIDADE, não por categoria (seção 5)
 SEVERITY_EMOJI = {
     'CRITICAL': '🔴',
     'HIGH': '🟠',
+    'MEDIUM': '🟡',
+    'LOW': '🟢',
+}
+
+SEVERITY_LABELS = {
+    'CRITICAL': 'CRÍTICA',
+    'HIGH': 'ALTA',
+    'MEDIUM': 'MÉDIA',
+    'LOW': 'BAIXA',
 }
 
 BIAS_LABELS = {
-    'BULLISH': '📈 BULLISH',
-    'BEARISH': '📉 BEARISH',
-    'NEUTRAL': '➖ NEUTRAL',
+    'BULLISH': 'BULLISH',
+    'BEARISH': 'BEARISH',
+    'NEUTRAL': 'NEUTRO',
 }
 
-MAX_SUMMARY_LENGTH = 500
-
-
-def truncate_summary(text: str, max_length: int = MAX_SUMMARY_LENGTH) -> str:
-    """Trunca texto se exceder max_length, adicionando '...' ao final.
-
-    Se o texto tiver mais de max_length caracteres, retorna os primeiros
-    max_length caracteres seguidos de '...'.
-    """
-    if not isinstance(text, str):
-        return text
-    if len(text) > max_length:
-        return text[:max_length] + '...'
-    return text
+# Categorias com Observação opcional (Risco/Macro/Geopolítica)
+CATEGORIAS_COM_OBSERVACAO = (2, 5, 6)
 
 
 class TelegramDispatcher:
-    """Formata e envia alertas para Telegram via Bot API."""
+    """Formata e envia alertas de notícias e o resumo diário para o Telegram via Bot API."""
 
     def __init__(self, bot_token: str | None = None, chat_id: str | None = None):
         self.bot_token = bot_token or os.getenv('TELEGRAM_BOT_TOKEN', '')
@@ -54,11 +54,11 @@ class TelegramDispatcher:
         self.api_url = f'https://api.telegram.org/bot{self.bot_token}/sendMessage'
 
     def send_news_alert(self, entry: dict) -> bool:
-        """Envia alerta de notícia classificada para o Telegram.
+        """Envia alerta de notícia (Nível 1) para o Telegram no formato oficial.
 
         Args:
-            entry: dict com keys: title, severity, impact_summary,
-                   affected_assets, source_url, market_bias
+            entry: dict classificado — titulo_pt, impacto_pt, categoria, ativo_tema,
+                   market_bias, severity, source, observacao (opcional).
 
         Returns:
             True se enviado com sucesso, False caso contrário.
@@ -66,149 +66,55 @@ class TelegramDispatcher:
         message = self._format_news_message(entry)
         return self._send_message(message)
 
-    def send_discovery_alert(self, entry: dict) -> bool:
-        """Envia alerta de descoberta (Discovery Radar) para o Telegram.
+    def send_resumo_diario(self, text: str) -> bool:
+        """Envia o resumo diário (seção 5.1) já formatado para o Telegram."""
+        return self._send_message(text)
 
-        Args:
-            entry: dict com keys: symbol, discovery_score, volume_24h,
-                   exchanges, context, source_url
-
-        Returns:
-            True se enviado com sucesso, False caso contrário.
-        """
-        message = self._format_discovery_message(entry)
-        return self._send_message(message)
-
-    # ─── Dispatch Decision Logic ─────────────────────────────────────────────
-
-    def dispatch(self, entry: dict) -> bool:
-        """Decide se e quando enviar alerta com base na severidade.
-
-        - CRITICAL: envia imediatamente sempre
-        - HIGH: primeira do ciclo envia imediatamente, demais com delay de 30s
-        - MEDIUM/LOW: não envia (skip)
-
-        Args:
-            entry: dict com keys de notícia classificada (severity, title, etc.)
-
-        Returns:
-            True se despacho foi executado/agendado, False se ignorado (MEDIUM/LOW).
-        """
-        severity = entry.get('severity', 'LOW').upper()
-
-        if severity == 'CRITICAL':
-            logger.info(f'[Dispatch] CRITICAL — enviando imediatamente: {entry.get("title", "")[:80]}')
-            self._first_sent = True
-            return self.send_news_alert(entry)
-
-        if severity == 'HIGH':
-            if not getattr(self, '_first_sent', False):
-                # Primeira notícia — envia na hora
-                logger.info(f'[Dispatch] HIGH — enviando imediatamente (primeira): {entry.get("title", "")[:80]}')
-                self._first_sent = True
-                return self.send_news_alert(entry)
-            else:
-                # Demais — delay de 30s pra não spammar
-                logger.info(f'[Dispatch] HIGH — agendando envio em {HIGH_SEVERITY_DELAY}s: {entry.get("title", "")[:80]}')
-                timer = threading.Timer(HIGH_SEVERITY_DELAY, self.send_news_alert, args=[entry])
-                timer.daemon = True
-                timer.start()
-                return True
-
-        # MEDIUM / LOW — skip
-        logger.debug(f'[Dispatch] {severity} — ignorando: {entry.get("title", "")[:80]}')
-        return False
-
-    # ─── Formatação ───────────────────────────────────────────────────────────
+    # ─── Formatação (seção 5 — formato oficial das mensagens) ────────────────
 
     def _format_news_message(self, entry: dict) -> str:
-        """Formata mensagem de notícia para Telegram (HTML)."""
-        title = self._translate_to_pt(entry.get('title', 'Sem título'))
-        impact = truncate_summary(self._translate_to_pt(entry.get('impact_summary', '')))
-        source_url = entry.get('source_url', '')
-        severity = entry.get('severity', 'HIGH').upper()
-        affected_assets = entry.get('affected_assets', [])
+        """Formata mensagem de notícia para Telegram (HTML), no formato oficial da seção 5."""
+        severity = (entry.get('severity') or 'LOW').upper()
+        if severity not in SEVERITY_EMOJI:
+            severity = 'LOW'
+        emoji = SEVERITY_EMOJI[severity]
+        severity_label = SEVERITY_LABELS[severity]
 
-        severity_emoji = SEVERITY_EMOJI.get(severity, '🟠')
+        categoria_num = entry.get('categoria')
+        categoria_nome = CATEGORIAS_NOMES.get(categoria_num) or entry.get('category') or 'Radar News'
+
+        title = html.escape((entry.get('titulo_pt') or entry.get('title') or 'Sem título').strip()[:85])
+        impact = html.escape((entry.get('impacto_pt') or entry.get('impact_summary') or '').strip()[:220])
+
+        affected_assets = entry.get('affected_assets') or []
+        ativo_tema_raw = entry.get('ativo_tema') or (', '.join(affected_assets) if affected_assets else '-')
+        ativo_tema = html.escape(ativo_tema_raw.strip()[:45] or '-')
+
+        bias = BIAS_LABELS.get((entry.get('market_bias') or 'NEUTRAL').upper(), 'NEUTRO')
+        source = html.escape((entry.get('source') or '-').strip())
+        observacao = html.escape((entry.get('observacao') or '').strip()[:120])
 
         lines = [
-            f'{severity_emoji} <b>Radar News</b>',
+            f'{emoji} <b>RADAR NEWS - {html.escape(categoria_nome)}</b>',
             '',
             f'<b>{title}</b>',
             '',
-            f'👀 Impacto: {impact}',
-            '',
+            f'Ativo ou tema: {ativo_tema}',
+            f'Impacto: {impact}',
+            f'Viés: {bias}',
+            f'Severidade: {severity_label}',
         ]
 
-        if affected_assets:
-            assets_str = ', '.join(affected_assets)
-            lines.append(f'💰 Ativos: {assets_str}')
-            lines.append('')
+        if categoria_num in CATEGORIAS_COM_OBSERVACAO and observacao:
+            lines.append(f'Observação: {observacao}')
 
-        if source_url:
-            lines.append(f'🔗 <a href="{source_url}">Fonte</a>')
-            lines.append('')
-
-        lines.append(SIGNATURE)
-
-        return '\n'.join(lines)
-
-    def _format_discovery_message(self, entry: dict) -> str:
-        """Formata mensagem de descoberta para Telegram (HTML)."""
-        symbol = entry.get('symbol', '???')
-        score = entry.get('discovery_score', 0)
-        volume = entry.get('volume_24h', 'N/A')
-        exchanges = entry.get('exchanges', [])
-        context = truncate_summary(entry.get('context', ''))
-        source_url = entry.get('source_url', '')
-
-        exchanges_str = ', '.join(exchanges) if exchanges else 'N/A'
-
-        # Formata volume legível
-        if isinstance(volume, (int, float)):
-            volume_str = f'${volume:,.0f}'
-        else:
-            volume_str = str(volume)
-
-        lines = [
-            f'🔍 <b>{symbol} — Discovery Score: {score}/10</b>',
-            '',
-            f'📊 <b>Volume 24h:</b> {volume_str}',
-            f'🏦 <b>Exchanges:</b> {exchanges_str}',
-            f'📝 <b>Contexto:</b> {context}',
-        ]
-
-        if source_url:
-            lines.append(f'🔗 <a href="{source_url}">CoinGecko</a>')
-
+        lines.append(f'Fonte: {source}')
         lines.append('')
         lines.append(SIGNATURE)
 
         return '\n'.join(lines)
 
     # ─── Envio ────────────────────────────────────────────────────────────────
-
-    def _translate_to_pt(self, text: str) -> str:
-        """Traduz texto para português usando Google Translate API gratuita."""
-        if not text or not text.strip():
-            return text
-        try:
-            url = 'https://translate.googleapis.com/translate_a/single'
-            params = {
-                'client': 'gtx',
-                'sl': 'en',
-                'tl': 'pt',
-                'dt': 't',
-                'q': text,
-            }
-            resp = requests.get(url, params=params, timeout=5)
-            if resp.status_code == 200:
-                data = resp.json()
-                translated = ''.join(part[0] for part in data[0] if part[0])
-                return translated
-        except Exception as e:
-            logger.debug(f'[Translate] Falha ao traduzir, usando original: {e}')
-        return text
 
     def _send_message(self, text: str) -> bool:
         """Envia mensagem para Telegram com retry (1x após 10s em caso de erro).
@@ -245,9 +151,9 @@ class TelegramDispatcher:
                     f'[Telegram] Erro de rede (tentativa {attempt + 1}): {e}'
                 )
 
-            # Retry após RETRY_DELAY (10s) apenas na primeira tentativa
             if attempt == 0:
                 logger.info(f'[Telegram] Retentando em {RETRY_DELAY}s...')
+                import time
                 time.sleep(RETRY_DELAY)
 
         logger.error('[Telegram] Falha ao enviar mensagem após 2 tentativas.')

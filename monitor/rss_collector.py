@@ -180,29 +180,31 @@ class RSSCollector:
         for entry in parsed.entries:
             parsed_entry = self._parse_entry(entry, name)
             if parsed_entry:
-                # Filtrar entradas antigas (>3h) para evitar flood na primeira execução
-                if self._is_recent(entry, hours=3, minutes=0):
+                # Janela de frescor: 30 min (C1). Notícia velha dispara movimento que já aconteceu.
+                if self._is_recent(entry, hours=0, minutes=30):
                     entries.append(parsed_entry)
 
         return entries
 
     @staticmethod
-    def _is_recent(entry, hours: int = 0, minutes: int = 10) -> bool:
+    def _is_recent(entry, hours: int = 0, minutes: int = 30) -> bool:
         """Verifica se a entrada foi publicada nos últimos N minutos."""
         import time as _time
         from calendar import timegm
 
         published_parsed = getattr(entry, 'published_parsed', None) or getattr(entry, 'updated_parsed', None)
         if not published_parsed:
-            # Sem data → assume recente (fail-open)
-            return True
+            # Sem data de publicação → sem como garantir frescor (fail-CLOSED, C1)
+            logger.debug(f"[RSS] Sem data de publicacao, descartada: {getattr(entry, 'title', '')[:60]}")
+            return False
 
         try:
             entry_timestamp = timegm(published_parsed)
             cutoff = _time.time() - (hours * 3600) - (minutes * 60)
             return entry_timestamp >= cutoff
         except (TypeError, ValueError):
-            return True
+            logger.debug(f"[RSS] Data de publicacao invalida, descartada: {getattr(entry, 'title', '')[:60]}")
+            return False
 
     def _parse_entry(self, entry, source: str) -> dict | None:
         """Extrai campos relevantes de uma entrada feedparser.

@@ -1,23 +1,28 @@
 """
-Worker Radar News — Gênesis Labs
-Coleta notícias de RSS a cada 3 minutos, classifica via Gemini 2.5 Flash,
-persiste no MySQL e despacha alertas para Telegram.
-Executa Discovery Radar a cada 20 minutos.
+Worker Radar News — Gênesis Labs V1.0
+Coleta notícias de RSS a cada 3 minutos, classifica via Gemini (API interna Genesis),
+persiste no MySQL, roteia por nível (C4) e despacha para o Telegram por fila
+persistente (C8) com orçamento/cooldown por tema (C9). Envia o resumo diário
+às 20h horário de Brasília (seção 5.1).
+
+Radar News NÃO é Radar de Oportunidades: nenhum código de descoberta/scoring de
+tokens roda neste worker (C11) — isso é outro sistema.
 """
 
+import json
 import os
 import sys
 import time
 import signal
 import logging
+from datetime import datetime, timedelta, timezone
 
 import pymysql
 from dotenv import load_dotenv
 
 from rss_collector import RSSCollector
-from ai_classifier import AIClassifier
+from ai_classifier import AIClassifier, load_carteira_tokens
 from telegram_dispatcher import TelegramDispatcher
-from discovery_radar import DiscoveryRadar
 
 load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env'))
 
@@ -33,10 +38,19 @@ TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN', '')
 TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID', '')
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', '')
 
-# ─── Ciclos (em segundos) ────────────────────────────────────────────────────
+# ─── Ciclos e janelas ──────────────────────────────────────────────────────────
 
-RSS_CYCLE_SECONDS = 180       # 3 minutos
-DISCOVERY_CYCLE_SECONDS = 1200  # 20 minutos
+RSS_CYCLE_SECONDS = 180             # 3 minutos
+QUEUE_DRAIN_TICK_SECONDS = 5        # granularidade de checagem da fila de Telegram
+TELEGRAM_SEND_SPACING_SECONDS = 30  # intervalo mínimo entre envios (C8, mantido)
+
+RESUMO_HOUR_BRT = 20                # 20h horário de Brasília (seção 5.1)
+BRT_OFFSET = timedelta(hours=-3)    # Brasília não tem horário de verão desde 2019
+
+# Orçamento e cooldown por tema (C9)
+NIVEL1_HOURLY_CAP = 3
+NIVEL1_DAILY_CAP = 10
+TEMA_COOLDOWN_HOURS = 2
 
 # ─── Logging ──────────────────────────────────────────────────────────────────
 
@@ -56,6 +70,10 @@ error_handler.setFormatter(formatter)
 logger.addHandler(error_handler)
 
 
+def _agora_brt() -> datetime:
+    return datetime.now(timezone.utc) + BRT_OFFSET
+
+
 # ─── Worker Class ─────────────────────────────────────────────────────────────
 
 class RadarNewsWorker:
@@ -64,15 +82,12 @@ class RadarNewsWorker:
     def __init__(self):
         self.running = True
         self._last_rss_cycle = 0.0
-        self._last_discovery_cycle = 0.0
+        self._last_telegram_send_ts = 0.0
+        self._last_resumo_date = None
+
         self.rss_collector = RSSCollector()
         self.ai_classifier = AIClassifier()
         self.telegram_dispatcher = TelegramDispatcher()
-        self.discovery_radar = DiscoveryRadar(
-            ai_classifier=self.ai_classifier,
-            telegram_dispatcher=self.telegram_dispatcher,
-            cmc_api_key=os.getenv('CMC_API_KEY', ''),
-        )
 
         signal.signal(signal.SIGINT, self._signal_handler)
         signal.signal(signal.SIGTERM, self._signal_handler)
@@ -104,12 +119,7 @@ class RadarNewsWorker:
     # ─── Validate startup ────────────────────────────────────────────────────
 
     def _validate_env(self):
-        """Valida que variáveis de ambiente críticas estão configuradas.
-
-        Variáveis obrigatórias (fatal se ausentes):
-          TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, GEMINI_API_KEY,
-          MYSQL_HOST, MYSQL_USER, MYSQL_DATABASE
-        """
+        """Valida que variáveis de ambiente críticas estão configuradas."""
         required_vars = {
             'TELEGRAM_BOT_TOKEN': TELEGRAM_BOT_TOKEN,
             'TELEGRAM_CHAT_ID': TELEGRAM_CHAT_ID,
@@ -129,7 +139,6 @@ class RadarNewsWorker:
 
         logger.info("Todas variáveis de ambiente obrigatórias presentes.")
 
-        # MySQL — testa conexão real
         conn = self.conectar_bd()
         if conn is None:
             logger.critical("Não foi possível conectar ao MySQL. Abortando.")
@@ -140,96 +149,229 @@ class RadarNewsWorker:
     # ─── RSS cycle ────────────────────────────────────────────────────────────
 
     def _run_rss_cycle(self):
-        """Executa um ciclo de coleta RSS + classificação + persistência + dispatch."""
+        """Coleta + classifica + persiste. O disparo ao Telegram acontece na fila (drain)."""
         logger.info("─── Iniciando ciclo RSS ───")
         try:
             entries = self.rss_collector.fetch_all_feeds()
 
-            # Deduplicação contra MySQL
+            carteira = []
             conn = self.conectar_bd()
             if conn:
                 try:
                     entries = self.rss_collector.deduplicate(entries, conn)
+                    carteira = load_carteira_tokens(conn)
                 finally:
                     conn.close()
             else:
-                logger.warning("Sem conexão MySQL para dedup; seguindo com todas entradas.")
+                logger.warning("Sem conexão MySQL para dedup/carteira; seguindo com todas as entradas.")
 
-            # Classificação via Gemini 2.5 Flash
-            if entries:
-                classified = self.ai_classifier.classify(entries)
-                logger.info(f"[AI] {len(classified)} entrada(s) classificada(s).")
+            if not entries:
+                logger.info("Ciclo RSS concluído. 0 entrada(s) nova(s) após dedup.")
+                return
 
-                # Persistência no MySQL
-                if classified:
-                    conn = self.conectar_bd()
-                    if conn:
-                        try:
-                            persisted = 0
-                            for entry in classified:
-                                if self.ai_classifier.persist_classified(entry, conn):
-                                    persisted += 1
-                            logger.info(f"[DB] {persisted}/{len(classified)} entrada(s) persistida(s).")
-                        finally:
-                            conn.close()
-                    else:
-                        logger.error("Sem conexão MySQL para persistir entradas classificadas.")
-            else:
-                classified = []
+            classified = self.ai_classifier.classify(entries, carteira)
+            logger.info(f"[AI] {len(classified)} entrada(s) classificada(s).")
 
-            # Dispatch Telegram — todas as entradas CRITICAL/HIGH do ciclo
-            # Só envia se ainda não foi despachada pro Telegram (telegram_sent=0)
             if classified:
-                # Prioriza CRITICAL (imediato), depois HIGH (delay 3min)
-                critical = [e for e in classified if e.get('severity') == 'CRITICAL']
-                high = [e for e in classified if e.get('severity') == 'HIGH']
-                candidates_tg = critical + high
-                for top_entry in candidates_tg:
-                    # Verifica no banco se já foi enviado pro Telegram
-                    conn_check = self.conectar_bd()
-                    if conn_check:
-                        try:
-                            with conn_check.cursor() as cur:
-                                cur.execute(
-                                    "SELECT telegram_sent FROM genesis_radar_news WHERE title_hash = %s LIMIT 1",
-                                    (top_entry.get('title_hash', ''),)
-                                )
-                                row = cur.fetchone()
-                                if row and row.get('telegram_sent'):
-                                    continue  # já enviado, pula
-                            # Envia via dispatcher (CRITICAL = imediato, HIGH = 3-min delay)
-                            self.telegram_dispatcher.dispatch(top_entry)
-                            # Marca como enviado no banco
-                            with conn_check.cursor() as cur:
-                                cur.execute(
-                                    "UPDATE genesis_radar_news SET telegram_sent = 1 WHERE title_hash = %s",
-                                    (top_entry.get('title_hash', ''),)
-                                )
-                            conn_check.commit()
-                            logger.info(f"[Telegram] Despachado: {top_entry.get('title', '')[:60]}... ({top_entry.get('severity')})")
-                        finally:
-                            conn_check.close()
+                conn = self.conectar_bd()
+                if conn:
+                    try:
+                        persisted = 0
+                        for entry in classified:
+                            if self.ai_classifier.persist_classified(entry, conn):
+                                persisted += 1
+                        logger.info(f"[DB] {persisted}/{len(classified)} entrada(s) persistida(s).")
+                    finally:
+                        conn.close()
+                else:
+                    logger.error("Sem conexão MySQL para persistir entradas classificadas.")
+
             logger.info(f"Ciclo RSS concluído. {len(entries)} entrada(s) nova(s) após dedup.")
         except Exception as e:
             logger.error(f"Erro no ciclo RSS: {e}")
 
-    # ─── Discovery cycle ──────────────────────────────────────────────────────
+    # ─── Orçamento e cooldown por tema (C9) ───────────────────────────────────
 
-    def _run_discovery_cycle(self):
-        """Executa um ciclo do Discovery Radar."""
-        logger.info("─── Iniciando ciclo Discovery Radar ───")
+    def _pode_disparar(self, row: dict, conn) -> bool:
+        """CRITICAL nunca é limitado. Nível 1 não-crítico: teto de 3/hora e 10/dia;
+        mesmo tema (categoria + ativo principal) em 2h rebaixa para Nível 2."""
+        if (row.get('severity') or '').upper() == 'CRITICAL':
+            return True
+
         try:
-            conn = self.conectar_bd()
-            if conn:
-                try:
-                    self.discovery_radar.run_discovery_cycle(conn)
-                finally:
-                    conn.close()
-            else:
-                logger.error("Sem conexão MySQL para Discovery Radar.")
-            logger.info("Ciclo Discovery Radar concluído.")
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT COUNT(*) AS n FROM genesis_radar_news "
+                    "WHERE nivel = 1 AND telegram_sent = 1 AND created_at >= NOW() - INTERVAL 1 HOUR"
+                )
+                hora = cur.fetchone()['n']
+
+                cur.execute(
+                    "SELECT COUNT(*) AS n FROM genesis_radar_news "
+                    "WHERE nivel = 1 AND telegram_sent = 1 AND DATE(created_at) = CURDATE()"
+                )
+                dia = cur.fetchone()['n']
+
+                tema = 0
+                affected_assets = json.loads(row.get('affected_assets') or '[]')
+                ativo_principal = affected_assets[0] if affected_assets else None
+                if row.get('categoria') is not None and ativo_principal:
+                    cur.execute(
+                        "SELECT COUNT(*) AS n FROM genesis_radar_news "
+                        "WHERE categoria = %s AND JSON_CONTAINS(affected_assets, %s) AND telegram_sent = 1 "
+                        "AND created_at >= NOW() - INTERVAL %s HOUR",
+                        (row['categoria'], json.dumps(ativo_principal), TEMA_COOLDOWN_HOURS),
+                    )
+                    tema = cur.fetchone()['n']
         except Exception as e:
-            logger.error(f"Erro no ciclo Discovery Radar: {e}")
+            logger.error(f"[Budget] Erro ao checar orçamento/cooldown: {e}")
+            return True  # falha de leitura do orçamento não deve bloquear notícia crítica de fato
+
+        return hora < NIVEL1_HOURLY_CAP and dia < NIVEL1_DAILY_CAP and tema == 0
+
+    # ─── Fila persistente do Telegram (C8) ────────────────────────────────────
+
+    def _drain_telegram_queue(self):
+        """Drena a fila persistente de Nível 1 pendente, 1 mensagem por vez, respeitando
+        o intervalo mínimo de 30s. telegram_sent só é marcado DEPOIS da confirmação de envio —
+        sobrevive a restart do pm2 porque a fila vive na própria tabela, não em thread."""
+        now = time.time()
+        if now - self._last_telegram_send_ts < TELEGRAM_SEND_SPACING_SECONDS:
+            return
+
+        conn = self.conectar_bd()
+        if not conn:
+            return
+
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT * FROM genesis_radar_news WHERE nivel = 1 AND telegram_sent = 0 "
+                    "ORDER BY (severity = 'CRITICAL') DESC, created_at ASC LIMIT 1"
+                )
+                row = cur.fetchone()
+
+            if not row:
+                return
+
+            if not self._pode_disparar(row, conn):
+                with conn.cursor() as cur:
+                    cur.execute("UPDATE genesis_radar_news SET nivel = 2 WHERE id = %s", (row['id'],))
+                conn.commit()
+                logger.info(
+                    f"[Budget] Nível 1 rebaixado para Nível 2 (orçamento/cooldown): "
+                    f"id={row['id']} \"{(row.get('title') or '')[:60]}\""
+                )
+                return
+
+            row['affected_assets'] = json.loads(row.get('affected_assets') or '[]')
+
+            sent = self.telegram_dispatcher.send_news_alert(row)
+
+            if sent:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "UPDATE genesis_radar_news SET telegram_sent = 1, telegram_sent_at = NOW() WHERE id = %s",
+                        (row['id'],),
+                    )
+                conn.commit()
+                self._last_telegram_send_ts = time.time()
+                logger.info(f"[Telegram] Despachado id={row['id']}: {(row.get('title') or '')[:60]}")
+            else:
+                logger.error(
+                    f"[Telegram] Falha ao enviar id={row['id']}; telegram_sent permanece 0, "
+                    f"reprocessa no próximo ciclo."
+                )
+        except Exception as e:
+            logger.error(f"Erro ao drenar fila do Telegram: {e}")
+        finally:
+            conn.close()
+
+    # ─── Resumo diário — 20h horário de Brasília (seção 5.1) ─────────────────
+
+    def _maybe_send_resumo_diario(self):
+        agora = _agora_brt()
+        hoje = agora.date()
+
+        if agora.hour < RESUMO_HOUR_BRT:
+            return
+        if self._last_resumo_date == hoje:
+            return
+
+        self._last_resumo_date = hoje  # marca antes de tentar: nunca reenvia no mesmo dia
+        self._run_resumo_diario()
+
+    def _run_resumo_diario(self):
+        logger.info("─── Gerando resumo diário do Radar News ───")
+        conn = self.conectar_bd()
+        if not conn:
+            logger.error("Sem conexão MySQL para o resumo diário.")
+            return
+
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT * FROM genesis_radar_news "
+                    "WHERE nivel IN (1, 2) AND DATE(created_at) = CURDATE() "
+                    "ORDER BY nivel ASC, impact_score DESC, created_at DESC "
+                    "LIMIT 10"
+                )
+                top10 = cur.fetchall()
+        except Exception as e:
+            logger.error(f"Erro ao buscar notícias do dia para o resumo: {e}")
+            return
+        finally:
+            conn.close()
+
+        if not top10:
+            logger.info("Sem notícia relevante hoje — resumo diário não enviado.")
+            return
+
+        conclusao = self._gerar_conclusao_do_dia(top10)
+        texto = self._formatar_resumo_diario(top10, conclusao)
+
+        if self.telegram_dispatcher.send_resumo_diario(texto):
+            logger.info("Resumo diário enviado com sucesso.")
+        else:
+            logger.error("Falha ao enviar o resumo diário.")
+
+    def _formatar_resumo_diario(self, top10: list[dict], conclusao: str) -> str:
+        linhas = [
+            '📰 <b>RADAR NEWS - Resumo do dia</b>',
+            '',
+            'As 10 principais notícias que movimentaram o mercado hoje:',
+            '',
+        ]
+        for i, item in enumerate(top10, start=1):
+            categoria_nome = item.get('category') or 'Radar News'
+            titulo = item.get('title') or 'Sem título'
+            impacto = (item.get('impact_summary') or '').strip()
+            linhas.append(f'{i}. [{categoria_nome}] {titulo}')
+            if impacto:
+                linhas.append(f'   Impacto: {impacto}')
+            linhas.append('')
+
+        linhas.append(f'Conclusão do dia: {conclusao}')
+        linhas.append('')
+        linhas.append('Cripto.ico')
+        return '\n'.join(linhas)
+
+    def _gerar_conclusao_do_dia(self, top10: list[dict]) -> str:
+        """Pede ao Gemini (via API interna Genesis) uma leitura objetiva do tom do mercado."""
+        resumo_itens = "\n".join(
+            f"- [{item.get('category') or ''}] {item.get('title') or ''}: {(item.get('impact_summary') or '')[:200]}"
+            for item in top10
+        )
+        prompt = (
+            "Com base nas notícias de mercado cripto abaixo, escreva UMA frase objetiva em "
+            "português descrevendo o tom geral do mercado hoje (ex.: aumento de aversão a risco, "
+            "fluxo institucional positivo, pressão regulatória, risco em stablecoins). "
+            "Responda apenas com a frase, sem explicação.\n\n" + resumo_itens
+        )
+        texto = self.ai_classifier._call_gemini(prompt)
+        if not texto:
+            return "Sem leitura disponível hoje."
+        return texto.strip().splitlines()[0][:300]
 
     # ─── Main loop ────────────────────────────────────────────────────────────
 
@@ -238,32 +380,26 @@ class RadarNewsWorker:
         self._validate_env()
 
         logger.info("=" * 60)
-        logger.info("📡 RADAR NEWS WORKER INICIADO")
+        logger.info("📡 RADAR NEWS WORKER INICIADO (V1.0)")
         logger.info(f"   Ciclo RSS: a cada {RSS_CYCLE_SECONDS}s ({RSS_CYCLE_SECONDS // 60} min)")
-        logger.info(f"   Ciclo Discovery: a cada {DISCOVERY_CYCLE_SECONDS}s ({DISCOVERY_CYCLE_SECONDS // 60} min)")
+        logger.info(f"   Resumo diário: {RESUMO_HOUR_BRT}h (horário de Brasília)")
         logger.info(f"   MySQL: {MYSQL_HOST}:{MYSQL_PORT}/{MYSQL_DATABASE}")
         logger.info("=" * 60)
 
-        # Executa ciclo RSS imediatamente na primeira vez
         self._last_rss_cycle = 0.0
-        self._last_discovery_cycle = 0.0
 
         while self.running:
             try:
                 now = time.time()
 
-                # Ciclo RSS (3 min)
                 if now - self._last_rss_cycle >= RSS_CYCLE_SECONDS:
                     self._run_rss_cycle()
                     self._last_rss_cycle = time.time()
 
-                # Ciclo Discovery (20 min)
-                if now - self._last_discovery_cycle >= DISCOVERY_CYCLE_SECONDS:
-                    self._run_discovery_cycle()
-                    self._last_discovery_cycle = time.time()
+                self._drain_telegram_queue()
+                self._maybe_send_resumo_diario()
 
-                # Sleep curto para não consumir CPU
-                time.sleep(1)
+                time.sleep(QUEUE_DRAIN_TICK_SECONDS)
 
             except Exception as e:
                 logger.error(f"Erro no loop principal: {e}")

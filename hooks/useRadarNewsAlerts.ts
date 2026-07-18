@@ -9,6 +9,8 @@ export interface RadarNewsItem {
     source_url: string | null;
     severity: 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW';
     category: string | null;
+    /** Nível 1 = destacado (crítico/acionável), Nível 2 = discreto. Nível 3 nunca chega aqui (C10). */
+    nivel: 1 | 2;
     affected_assets: string[];
     market_bias: 'BULLISH' | 'BEARISH' | 'NEUTRAL';
     impact_summary: string | null;
