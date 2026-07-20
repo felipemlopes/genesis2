@@ -48,10 +48,6 @@ RSS_FEEDS = [
         'name': 'FT Markets',
         'url': 'https://www.ft.com/markets?format=rss',
     },
-    {
-        'name': 'Reuters',
-        'url': 'https://www.reutersagency.com/feed/',
-    },
 ]
 
 

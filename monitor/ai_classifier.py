@@ -17,32 +17,14 @@ from rapidfuzz import fuzz
 
 logger = logging.getLogger('radar-news')
 
-# ─── Configuração da chamada Gemini (Aviso 2 da spec Radar News V1.0) ────────
-#
-# O sistema de chamada é o mesmo de sempre (payload/resposta no formato Gemini
-# generateContent); só o destino muda. GEMINI_API_URL deve apontar para a API
-# interna Genesis (baixo custo). Sem essa variável configurada, cai no endpoint
-# oficial do Google como fallback — NÃO usar isso em produção com o radar
-# rodando a cada 3 minutos (a conta explode).
+# ─── Configuração da chamada Gemini ───────────────────────────────────────────
 
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', '')
 GEMINI_MODEL = os.getenv('GEMINI_ANALYSIS_MODEL', 'gemini-2.5-flash')
-GEMINI_API_URL = os.getenv('GEMINI_API_URL', '').strip()
 GEMINI_TIMEOUT = 30  # seconds
 RETRY_DELAY = 5      # seconds
 
-_GOOGLE_FALLBACK_URL = (
-    f'https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent'
-)
-
-if not GEMINI_API_URL:
-    logger.warning(
-        "[AI] GEMINI_API_URL nao configurada — usando a API oficial do Google como "
-        "fallback de desenvolvimento. Configure GEMINI_API_URL com o endpoint da API "
-        "interna Genesis antes de rodar em producao (Aviso 2, spec Radar News V1.0)."
-    )
-
-GEMINI_URL = GEMINI_API_URL or _GOOGLE_FALLBACK_URL
+GEMINI_URL = f'https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent'
 
 # ─── Categorias oficiais (seção 3 da spec) ────────────────────────────────────
 
