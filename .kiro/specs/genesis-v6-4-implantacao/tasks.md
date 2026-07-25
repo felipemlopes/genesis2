@@ -702,16 +702,37 @@ do lado do Fabrício, não algo que se execute neste repositório.
       cobre canário/smoke automatizado. `canary-pass.txt` **não aparece em nenhum lugar do código deste
       documento** (nem é checado por `release_v6_4.sh`) — não afirmado como nome prescrito por este PDF.
 
-- [ ] 11. Passo 11 (Seção 16) — Rollback (contingência, não sequencial — usar se qualquer gate acima falhar)
-  - [ ] 11.1 **[API][FE]** Provar `deploy/rollback_v6_4.sh` funciona **antes** de ir para produção de verdade
-    - `git checkout PRE_MIGRATION_TAG` nos dois repositórios + `DATABASE_RESTORE_COMMAND` validado + `composer
-      install`/`npm ci` + `config:clear`/`route:clear`
+- [x] 11. Passo 11 (Seção 16) — Rollback (contingência, não sequencial — usar se qualquer gate acima falhar) —
+      feito em 2026-07-25, autorizado explicitamente pelo usuário ("pode executar a 11")
+  - [x] 11.1 **[API][FE]** Provar `deploy/rollback_v6_4.sh` funciona **antes** de ir para produção de verdade
+    - **Rodado em ambiente isolado, não nos diretórios reais em uso** — o script literal
+      (`_v6_4_package/deploy/rollback_v6_4.sh`) faz `git checkout "$PRE_MIGRATION_TAG"` diretamente em
+      `BACKEND_ROOT`/`FRONTEND_ROOT`; rodá-lo contra os diretórios reais deixaria o ambiente de trabalho ativo
+      da sessão inteira em HEAD destacado no estado pré-V6.4 (código antigo com o banco real já migrado para o
+      schema novo — incompatível), além de `composer install --no-dev` já ter quebrado o ambiente local uma vez
+      antes (Tarefa 3.5). Em vez disso: `git worktree add` em `/c/rb/api` e `/c/rb/fe` na tag
+      `genesis-v6.4-pre-migration-2026-07-25` (caminho curto necessário — `git worktree` falha com "Filename too
+      long" em caminhos longos do Windows por causa de alguns nomes de migration/teste compridos), preservando
+      os diretórios reais intocados durante todo o teste.
+    - Rodado, em sequência, exatamente o que o script faz: `composer install --no-dev --prefer-dist
+      --optimize-autoloader --no-interaction` (OK, contra o `composer.lock` antigo), `npm ci` (OK, 366 pacotes),
+      `eval "$DATABASE_RESTORE_COMMAND"` (comando real de restore do dump `pre-migration-4-dump.sql` para um
+      banco isolado novo, `genesisteste_rollback_test` — nunca o banco real `genesisteste`), `php artisan
+      config:clear`/`route:clear`/`up`.
+    - **Verificação real do estado pós-rollback (não só "os comandos rodaram sem erro"):** `migrate:status` sem
+      nenhuma das 4 migrations V6.4 (`2026_07_22_*`); `route:list` mostra `/api/v1/scangraph`,
+      `/api/v1/unified-scan`, `/api/v1/analyze` de volta (rotas legadas); `IAGatewayController.php`,
+      `ScoringService.php`, `TraderAuditor.php` presentes em disco de novo — confirma que é genuinamente o
+      estado pré-V6.4, não só "o script não deu erro".
+    - **Limpeza:** worktrees (`/c/rb/api`, `/c/rb/fe`) e os dois bancos de teste isolados
+      (`genesisteste_rollback_test`, `genesisteste_restore_test` da Tarefa 1.2) removidos depois da prova.
+      Confirmado depois: repositórios reais sem nenhuma alteração (`git status`/`git log` inalterados nos dois).
     - _Checklist G04 ("Rollback integral provado. Evidência: ______"); Rastreabilidade R08 (rollback =
       "git checkout PRE_MIGRATION_TAG")_
-    - **Evidência [COMANDO]:** o script `rollback_v6_4.sh` só imprime uma mensagem final, sem gravar arquivo de
-      prova. `rollback-pass.txt`, pela mesma razão do item 10.2, **não aparece no código deste documento** — não
-      reafirmar como nome prescrito sem reconferir a `Orientação.pdf`. Prova real = rodar o script de fato num
-      ambiente de teste e confirmar que o sistema volta a responder no estado pré-migração.
+    - **Evidência [COMANDO]:** `genesis_v6_4_proofs/rollback-pass.txt` (timestamp) +
+      `genesis_v6_4_proofs/rollback-drill.txt` (passo a passo e resultado da verificação) — nomes não
+      prescritos pelo documento (mesma ressalva já registrada na Tarefa 10.2 sobre `rollback-pass.txt` não
+      constar no código deste PDF), seguindo o padrão `[COMANDO]` do resto do plano.
 
 ## Checkpoint final — critérios de aceite
 
