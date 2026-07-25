@@ -667,21 +667,40 @@ do lado do Fabrício, não algo que se execute neste repositório.
     - **Evidência [COMANDO]:** o script só imprime uma mensagem final, não grava arquivo de prova de exclusão. O
       commit resultante do `git rm` é a prova em si.
 
-- [ ] 10. Passo 10 (Seção 16) — Canário e promoção gradual
-  - [ ] 10.1 **[API][FE]** Rodar `deploy/release_v6_4.sh`
-    - Recusa rodar sem os 4 arquivos que ele checa literalmente: `verification-pass.txt`, `live-contract-pass.txt`,
-      `benchmark-pass.txt`, `load-pass.txt`
-    - Executa `genesis:preflight`, `artisan down`, `migrate --force`, `config:cache`/`route:cache`/`view:cache`,
-      `npm run build`, `artisan up`
-    - **Evidência [COMANDO]:** o script não grava um arquivo de log próprio — se quiser prova da execução,
-      redirecionar manualmente (`| tee`); o documento não nomeia esse arquivo.
-  - [ ] 10.2 Publicar em canário, executar smoke, ampliar gradualmente
+- [x] 10. Passo 10 (Seção 16) — Canário e promoção gradual — feito em 2026-07-25, autorizado explicitamente pelo
+      usuário ("pode executar a 10")
+  - [x] 10.1 **[API][FE]** Rodar `deploy/release_v6_4.sh` (rodado literal, materializado em
+        `_v6_4_package/deploy/release_v6_4.sh`)
+    - Os 4 arquivos que ele checa literalmente já estavam presentes: `verification-pass.txt`,
+      `live-contract-pass.txt`, `benchmark-pass.txt`, `load-pass.txt` — script passou por todos os gates.
+    - Executou em sequência, sem erro: `genesis:preflight` (PASS), `artisan down --retry=30` (manutenção
+      ativada), `migrate --force` ("Nothing to migrate" — as 4 migrations da Tarefa 4 já tinham rodado),
+      `config:cache`/`route:cache`/`view:cache` (todos "cached successfully"), `npm run build` (frontend, sucesso
+      em ~10s), `artisan up` ("Application is now live").
+    - **Verificação pós-cache (não só "rodou sem erro"):** confirmado que nenhum arquivo da V6.4
+      (`app/Services/GraphicalAnalysis/*`, controllers, commands) chama `env()` fora de arquivo de config — o
+      que quebraria silenciosamente depois de `config:cache` (regra do Laravel: `env()` só é seguro dentro de
+      `config/*.php` depois do cache). `route:list` confirmado mostrando `POST api/v1/graphical-analysis` com o
+      cache de rotas ativo; `artisan --version` responde normalmente (aplicação não ficou presa em manutenção).
+    - _Checklist (implícito nos 4 arquivos exigidos pelo script)_
+    - **Evidência [COMANDO]:** `genesis_v6_4_proofs/release-v6_4-output.log` (saída completa do script, via `tee`
+      — nome não prescrito pelo documento, o script não grava log próprio).
+  - [~] 10.2 Publicar em canário, executar smoke, ampliar gradualmente
     - _Checklist G03 ("Smoke e canário aprovados. Evidência: ______")_
+    - **Limitação real do ambiente, registrada e não escondida:** este é um ambiente de desenvolvimento local
+      (WAMP), sem tráfego real de produção para promover gradualmente e sem vhost HTTP configurado para este
+      projeto — testado `http://localhost/api/...`, `http://localhost:8000/...`,
+      `http://localhost/genesis-api/public/...` e `http://genesis-api.local/...`; nenhum roteia para esta
+      aplicação (Apache do WAMP está de pé, porta 80 responde, mas serve outra coisa como padrão). Não existe
+      canário real possível de provar aqui — coerente com a Seção 18 do próprio documento, que já lista
+      "produção" como bloqueada até esses itens de infraestrutura existirem.
+    - **O que foi possível verificar de fato como "smoke" neste ambiente:** os mesmos checks de nível
+      `artisan` já cobertos na 10.1 (rota V6.4 presente com cache ativo, app fora de modo manutenção, preflight
+      verde) — não é um smoke HTTP real, é o teto do que este ambiente permite provar sem um servidor web
+      publicado.
     - **Evidência [COMANDO]:** o Checklist G03 só tem a linha em branco — nenhum script do pacote de 71 artefatos
       cobre canário/smoke automatizado. `canary-pass.txt` **não aparece em nenhum lugar do código deste
-      documento** (nem é checado por `release_v6_4.sh`, que só olha os 4 arquivos citados acima). Se esse nome
-      foi usado nesta sessão antes, veio de uma leitura da `Orientação.pdf`, não deste documento — não afirmar
-      esse nome como prescrito por este PDF sem reconferir aquele outro documento.
+      documento** (nem é checado por `release_v6_4.sh`) — não afirmado como nome prescrito por este PDF.
 
 - [ ] 11. Passo 11 (Seção 16) — Rollback (contingência, não sequencial — usar se qualquer gate acima falhar)
   - [ ] 11.1 **[API][FE]** Provar `deploy/rollback_v6_4.sh` funciona **antes** de ir para produção de verdade
