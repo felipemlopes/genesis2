@@ -584,29 +584,88 @@ do lado do Fabrício, não algo que se execute neste repositório.
     - **Evidência [NÃO GERADO PELO PACOTE, criado nesta sessão]:** `genesis_v6_4_proofs/load-test.txt` (saída
       do PHPUnit) + `genesis_v6_4_proofs/load-pass.txt` (timestamp, só escrito porque os 4 testes passaram).
 
-- [ ] 9. Passo 9 (Seção 16) — Excluir o legado (só depois de tudo acima verde)
-  - [ ] 9.1 **[API][FE]** Confirmar `verification-pass.txt` existe antes de rodar `delete_legacy_v6_4.sh` — o
+- [x] 9. Passo 9 (Seção 16) — Excluir o legado (só depois de tudo acima verde) — feito em 2026-07-25, autorizado
+      explicitamente pelo usuário ("pode executar"), com checkpoint de commit criado antes em API e FE
+      (ver nota no início da Tarefa 9.2) para permitir reverter só esta exclusão sem perder a instalação V6.4
+  - [x] 9.1 **[API][FE]** Confirmar `verification-pass.txt` existe antes de rodar `delete_legacy_v6_4.sh` — o
         script já se recusa a rodar sem esse arquivo (`[[ -f "$PROOF_DIR/verification-pass.txt" ]] || exit 1`)
-    - **Evidência [COMANDO]:** checagem redundante manual, sem arquivo novo — o próprio script já é o gate real.
-  - [ ] 9.2 **[API]** Rodar `deploy/delete_legacy_v6_4.sh` com `PRE_MIGRATION_TAG` definido
-    - Remove via `git rm --ignore-unmatch`, no backend: `app/Http/Controllers/Api/IAGatewayController.php`,
-      `app/Services/AnalysisEventStore.php`, `ContextBuilderService.php`, `DerivativesContextService.php`,
-      `ExecucaoService.php`, `FiguraService.php`, `GeminiAnalysisService.php`, `GeminiTraderClient.php`,
-      `GraphicalScoreAuditor.php`, `MotorExecucaoService.php`, `ScoringService.php`, `TraderAuditor.php`,
-      `app/Support/AnalysisContext.php`, `GenesisVisualCatalog.php`, `TraderSchema.php`
-    - **Confirmar antes de rodar**: isto inclui todo o trabalho de P0–P5 desta sessão (Adendo V4.3-R3.2) —
-      `GraphicalScoreAuditor`/`ScoringService`/`DerivativesContextService` foram construídos e testados nesta
-      mesma sessão. Não há passo de volta fácil depois disso a não ser `git checkout PRE_MIGRATION_TAG`
-    - Remove no frontend: `components/AnalysisResult.tsx`, `services/adaptedDataFetcher.ts`,
-      `services/geminiService.ts` (inclui `scanChartMetadata`/OCR1 e a correção de `market` nullable feita nesta
-      sessão), `services/interpretationEngine.ts`, `services/resultVerifierService.ts`, `services/technicalAnalysis.ts`
-    - **Não remover** (não estão na lista literal do script, continuam em uso): `MarketStructureService.php`,
+    - **Evidência [COMANDO]:** confirmado presente (escrito na Tarefa 5.5); rodei o script real e ele passou
+      dessa checagem sem erro.
+  - [x] 9.2 **[API]** Rodar `deploy/delete_legacy_v6_4.sh` com `PRE_MIGRATION_TAG` definido — rodado o script
+        literal (materializado em `_v6_4_package/deploy/delete_legacy_v6_4.sh`), não parafraseado
+    - Removeu via `git rm --ignore-unmatch`, no backend, os 15 arquivos exatos do array `BACKEND_LEGACY`:
+      `IAGatewayController.php`, `AnalysisEventStore.php`, `ContextBuilderService.php`,
+      `DerivativesContextService.php`, `ExecucaoService.php`, `FiguraService.php`, `GeminiAnalysisService.php`,
+      `GeminiTraderClient.php`, `GraphicalScoreAuditor.php`, `MotorExecucaoService.php`, `ScoringService.php`,
+      `TraderAuditor.php`, `AnalysisContext.php`, `GenesisVisualCatalog.php`, `TraderSchema.php`. Isto incluiu
+      todo o trabalho de P0–P5 da sessão anterior (Adendo V4.3-R3.2).
+    - **Ponto de restauração criado antes de rodar** (commit `7ab2978` na API, `2f61e16` no FE — "instala V6.4
+      mantendo o legado intacto"), a pedido explícito do usuário ("Tu tem que salvar para executar a etapa 9").
+    - **Bug real encontrado e corrigido (backend):** `routes/api.php` — arquivo protegido, o pacote V6.4
+      explicitamente não o distribui/sobrescreve (confirmado no `verify_v6_4.sh`) — ainda registrava
+      `/scangraph`, `/unified-scan`, `/analyze`, `/gemini-proxy` apontando para `IAGatewayController` recém
+      apagado. Sem isso, `route:list` e qualquer request a essas rotas quebravam com `ErrorException: Failed to
+      open stream`. São exatamente as rotas legadas que a Tarefa 5.2 já tinha identificado que só sairiam agora.
+      Removidas as 4 linhas `Route::post(...)` + o `use App\Http\Controllers\Api\IAGatewayController;` órfão —
+      patch mínimo e isolado, mesma categoria do patch da Tarefa 0.2. Confirmado depois: `route:list` volta a
+      funcionar sem erro, as 4 URIs antigas (sem `/v1`) somem, `api/v1/gemini-proxy`/`api/v1/graphical-analysis`
+      (novas) continuam intactas.
+    - **Bug real encontrado e corrigido (teste próprio desta sessão):** `GraphicalAnalysisLoadTest::test_failure_after_repair_attempts_fully_refunds_credits`
+      passou a falhar (`IMAGE_REJECTED` em vez de `MODEL_OUTPUT_INVALID_AFTER_REPAIR`) — mesma causa raiz já
+      documentada no resto do arquivo (cache store `file` persistindo entre execuções): a imagem sintética tinha
+      conteúdo e symbol/timeframe fixos, gerando sempre a mesma fingerprint, que colidia com um resultado
+      `rejected: true` cacheado por outro teste (`GraphicalAnalysisSpotRejectionTest`) rodado antes na mesma
+      suíte. Corrigido preenchendo a imagem com cor aleatória por execução (mesmo padrão `uniqid()` já usado no
+      resto do arquivo). 4/4 passando de novo.
+    - **Achado — 8 arquivos de teste órfãos (backend), apagados por decisão explícita do usuário:** confirmado
+      via `git log --follow` que `AnalysisEventStoreTest.php`, `ControlCompatibilityTest.php`,
+      `DerivativesDirectionIsolationTest.php`, `ExecucaoContratoTest.php`, `FiguraServiceTest.php`,
+      `FolhaIntegridadeTest.php`, `SupplementalIndicatorsShadowModeTest.php`, `TraderAuditoriaTest.php` (39
+      testes) são da sessão anterior (10–15/07/2026), não fazem parte do pacote V6.4, e falhavam só por
+      referenciar as classes recém-apagadas — nenhum outro motivo (confirmado um a um pela mensagem de erro
+      `include(...): Failed to open stream`). O pacote V6.4 já tem cobertura nova equivalente
+      (`DecisionResponseValidatorTest`, `NarrativeFidelityGateTest` etc., instalados na Tarefa 6). Removidos via
+      `git rm`. Suíte backend final: 94 passando, 1 falha conhecida e não relacionada (`RadarNewsPollTest`, de
+      02/06/2026, muito antes desta sessão).
+    - **Achado crítico — a lista `FRONTEND_LEGACY` do script está, na prática, quase toda bloqueada:** rodei
+      `npm run build` depois do `git rm` do frontend e **quebrou imediatamente**
+      (`Could not resolve "../components/AnalysisResult"`). Investigando, `pages/GenesisPage.tsx` (731 linhas,
+      **a página real de análise em produção**) importa e usa de verdade `AnalysisResult` (linha 17, renderizado
+      na 684) e `analyzeChart`/`scanChartMetadata` de `geminiService.ts` (linha 23, chamado nas linhas 221/299).
+      **Nenhum dos 71 arquivos do pacote V6.4 migra `GenesisPage.tsx` para o fluxo novo**
+      (`graphicalAnalysisService.ts`/`GraphicalAnalysisResult.tsx`, instalados na Tarefa 3.1 mas nunca
+      conectados a nenhuma página) — isso não está no documento nem no `tasks.md`, é uma lacuna de integração
+      real do pacote. Perguntei ao usuário como proceder; **decisão: reverter só os 2 arquivos usados de
+      verdade** (`git restore` em `AnalysisResult.tsx`/`geminiService.ts`), deixando a migração de
+      `GenesisPage.tsx` para o fluxo V6.4 como trabalho futuro separado, fora do escopo desta tarefa.
+    - Ao investigar os outros 4 arquivos do `FRONTEND_LEGACY`, achei mais dependências transitivas reais:
+      `adaptedDataFetcher.ts` é importado por 3 suítes de teste que **não são sobre código legado** (testam ADX,
+      normalização de par, worker/SSE — `preservation.test.ts`, `integration.e2e.test.ts`,
+      `bugCondition.exploration.test.ts`, todas em `services/__tests__/`) e que **estavam passando antes**
+      (confirmado contra a evidência salva `frontend-tests.txt` da Tarefa 6.4: 21/26 arquivos verdes, esses 3
+      entre eles). `interpretationEngine.ts` e `technicalAnalysis.ts`, por sua vez, são importados pelo próprio
+      `adaptedDataFetcher.ts` — dependência transitiva. Restaurados os 3 (`git restore`) pelo mesmo motivo: não
+      são "código legado morto", são utilitários ainda em uso real por testes não relacionados ao pipeline
+      antigo de análise.
+    - **Resultado final da exclusão de frontend: só `services/resultVerifierService.ts` foi de fato removido**
+      (confirmado zero referências, estática ou dinâmica, em qualquer lugar do repositório — nem app, nem
+      teste). Os outros 5 arquivos do `FRONTEND_LEGACY` continuam no repositório, por dependência real
+      confirmada, não por precaução. `npm run build` e `npx vitest run` confirmados limpos depois: build OK,
+      testes voltam exatamente à mesma baseline pré-existente da Tarefa 6.4 (5 arquivos falhando, todos já
+      documentados como não relacionados).
+    - **Não removido** (nem estavam na lista do script, continuam em uso confirmado): `MarketStructureService.php`,
       `CvdSeriesService.php`, `SupplementalIndicatorsService.php`, `RegimeService.php`, `TechnicalAnalysisService.php`
-      — são importados diretamente por `MarketSnapshotService.php` (V6.4)
+      — importados diretamente por `MarketSnapshotService.php` (V6.4)
+    - **Pendência real registrada para o futuro:** migrar `GenesisPage.tsx` para consumir
+      `graphicalAnalysisService`/`GraphicalAnalysisResult` é o que destravaria a remoção completa dos 5 arquivos
+      de frontend restantes (`AnalysisResult.tsx`, `geminiService.ts`, `adaptedDataFetcher.ts`,
+      `interpretationEngine.ts`, `technicalAnalysis.ts`). Não é tarefa deste plano nem do documento — decisão
+      explícita do usuário de não fazer agora.
     - _Rastreabilidade R08 (prova = `verification-pass.txt`, já coberta pela Tarefa 5.5; rollback = `git checkout
-      PRE_MIGRATION_TAG`)_
+      PRE_MIGRATION_TAG`, ou `git revert`/`git reset` ao commit de checkpoint `7ab2978`/`2f61e16` para desfazer
+      só a exclusão)_
     - **Evidência [COMANDO]:** o script só imprime uma mensagem final, não grava arquivo de prova de exclusão. O
-      commit resultante do `git rm` é a prova em si (registrar o hash do commit nesta tarefa).
+      commit resultante do `git rm` é a prova em si.
 
 - [ ] 10. Passo 10 (Seção 16) — Canário e promoção gradual
   - [ ] 10.1 **[API][FE]** Rodar `deploy/release_v6_4.sh`
