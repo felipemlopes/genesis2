@@ -38,6 +38,49 @@ export interface VisualObservations {
   fibonacci: FibonacciObservation[];
 }
 
+// Spec genesis-v6-4-contexto-informativo, Tarefa 2.1: restaura os campos de indicadores/macro/sentimento
+// que a tela de resultado sempre mostrou (V4.3-R3.2) — valor bruto, sem narrativa (ver requirements.md,
+// "Decisão de escopo necessária": não existe mais chamada de IA dedicada a gerar essa narrativa no V6.4).
+export interface EvidenceValue<T = number> {
+  value: T | null;
+  unit: string | null;
+  status: 'AVAILABLE' | 'UNAVAILABLE';
+}
+
+export interface MultiTimeframeEntry {
+  timeframe: string;
+  status: 'AVAILABLE' | 'UNAVAILABLE';
+  price: number | null;
+  ema21: number | null;
+  ema50: number | null;
+  rsi: number | null;
+  macd: number | null;
+  bias: 'BULLISH' | 'BEARISH' | 'MIXED' | null;
+}
+
+export interface InformativeContext {
+  indicators: {
+    rsi14: EvidenceValue;
+    adx14: EvidenceValue;
+    atr14: EvidenceValue;
+    ema21: EvidenceValue;
+    ema50: EvidenceValue;
+    ema200: EvidenceValue;
+    wyckoff: EvidenceValue<Record<string, unknown>>;
+    session: EvidenceValue<{ name: string; utc_hour: number }>;
+    multi_timeframe: EvidenceValue<MultiTimeframeEntry[]>;
+  };
+  macro: {
+    vix: EvidenceValue;
+    dxy_change_pct: EvidenceValue;
+    sp500_change_pct: EvidenceValue;
+  };
+  sentiment: {
+    fear_greed: EvidenceValue;
+    btc_dominance: EvidenceValue;
+  };
+}
+
 export interface GraphicalAnalysisResult {
   analysis_id: string;
   status: 'COMPLETED';
@@ -56,6 +99,7 @@ export interface GraphicalAnalysisResult {
   display_only: {
     long_short_ratio: unknown;
   };
+  informative_context: InformativeContext;
   created_at: string;
 }
 

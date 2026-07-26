@@ -1,11 +1,27 @@
-import React from 'react';
-import { Activity, BarChart3, RefreshCcw, ShieldCheck } from 'lucide-react';
+import React, { useState } from 'react';
+import html2canvas from 'html2canvas';
+import {
+  Activity, BarChart2, Download, RefreshCcw, Share2, ShieldCheck, Target,
+} from 'lucide-react';
 import type { GraphicalAnalysisResult as Result } from '../types/graphicalAnalysis';
 
 interface Props {
   data: Result;
   onReset: () => void;
 }
+
+// Spec genesis-v6-4-contexto-informativo, Tarefa 3.1: reusa literalmente os rótulos/mapas do
+// components/AnalysisResult.tsx original (V4.3-R3.2) para a coluna de indicadores.
+const WYCKOFF_LABEL: Record<string, string> = {
+  DISTRIBUICAO_RANGE: 'Distribuição em range',
+  DISTRIBUICAO_UAT: 'Distribuição (UAT)',
+  DISTRIBUICAO_SPRING: 'Distribuição com spring',
+  ACUMULACAO_RANGE: 'Acumulação em range',
+  ACUMULACAO_SPRING: 'Acumulação com spring',
+  MARKUP: 'Markup',
+  MARKDOWN: 'Markdown',
+  INDETERMINADO: 'Indeterminado',
+};
 
 const strengthLabel: Record<string, string> = {
   WEAKENS: 'Enfraquece', NEUTRAL: 'Neutro', STRENGTHENS: 'Fortalece', UNAVAILABLE: 'Indisponível',
@@ -16,14 +32,32 @@ const squeezeLabel: Record<string, string> = {
   SHORT_SQUEEZE: 'Risco de short squeeze', BOTH: 'Risco bilateral', UNAVAILABLE: 'Indisponível',
 };
 
+const biasColor: Record<string, string> = {
+  BULLISH: 'text-genesis-positive bg-genesis-positive/10 border-genesis-positive/20',
+  BEARISH: 'text-genesis-negative bg-genesis-negative/10 border-genesis-negative/20',
+  MIXED: 'text-yellow-500 bg-yellow-500/10 border-yellow-500/20',
+};
+
 const humanize = (value: string) => value
   .toLowerCase()
   .split('_')
   .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
   .join(' ');
 
+// Formata um EvidenceValue como o componente antigo fazia: "N/D" quando indisponível, nunca "0" nem inventado.
+const fmt = (entry: { value: unknown; status: string } | undefined, suffix = '', digits = 2): string => {
+  if (!entry || entry.status !== 'AVAILABLE' || entry.value == null || typeof entry.value !== 'number') {
+    return 'N/D';
+  }
+  return `${entry.value.toFixed(digits)}${suffix}`;
+};
+
 const GraphicalAnalysisResult: React.FC<Props> = ({ data, onReset }) => {
+  const [showIndicators, setShowIndicators] = useState(false);
   const isLong = data.direction === 'LONG';
+  const badgeColor = isLong ? 'text-genesis-positive' : 'text-genesis-negative';
+  const progressColor = isLong ? 'bg-genesis-positive' : 'bg-genesis-negative';
+
   const patterns = data.visual_observations?.patterns ?? [];
   const objects = data.visual_observations?.objects ?? [];
   const fibonacci = data.visual_observations?.fibonacci ?? [];
@@ -36,100 +70,280 @@ const GraphicalAnalysisResult: React.FC<Props> = ({ data, onReset }) => {
   const longShortRatio = latestLongShort && typeof latestLongShort.longShortRatio === 'string'
     ? latestLongShort.longShortRatio
     : null;
+
+  const ctx = data.informative_context;
+  const wyckoffFase = ctx?.indicators.wyckoff.status === 'AVAILABLE'
+    ? String((ctx.indicators.wyckoff.value as Record<string, unknown> | null)?.fase ?? (ctx.indicators.wyckoff.value as Record<string, unknown> | null)?.type ?? '')
+    : '';
+  const sessionName = ctx?.indicators.session.status === 'AVAILABLE'
+    ? (ctx.indicators.session.value as { name?: string } | null)?.name ?? null
+    : null;
+  const multiTimeframe = ctx?.indicators.multi_timeframe.status === 'AVAILABLE'
+    ? (ctx.indicators.multi_timeframe.value as Array<{ timeframe: string; bias: string | null }> | null) ?? []
+    : [];
+
+  const handleShare = async () => {
+    const element = document.getElementById('analysis-capture');
+    if (!element) return;
+    try {
+      const canvas = await html2canvas(element, {
+        backgroundColor: '#000000', scale: 2, logging: false, useCORS: true,
+      });
+      const link = document.createElement('a');
+      link.href = canvas.toDataURL('image/jpeg', 0.9);
+      link.download = `genesis-setup-${data.pair}.jpg`;
+      link.click();
+    } catch (error) {
+      console.error('Erro ao gerar imagem:', error);
+    }
+  };
+
   return (
-    <article className="relative z-10 flex h-full flex-col gap-5 text-white">
-      <header className="flex flex-col gap-4 border-b border-white/10 pb-5 sm:flex-row sm:items-center sm:justify-between">
+    <div className="space-y-4">
+      {/* Action Bar — mesmo padrão do AnalysisResult.tsx original */}
+      <div className="flex items-center justify-between border-b border-white/[0.02] bg-transparent pb-4">
         <div>
-          <p className="text-[10px] uppercase tracking-[0.22em] text-genesis-text-secondary">
-            {data.pair} · {data.timeframe} · Binance Futures
-          </p>
-          <div className="mt-2 flex items-end gap-3">
-            <h2 className={`text-4xl font-semibold tracking-tight ${isLong ? 'text-genesis-positive' : 'text-red-400'}`}>
-              {data.direction}
-            </h2>
-            <span className="mb-1 text-xs text-genesis-text-secondary">direção interpretada</span>
-          </div>
+          <h2 className="text-xl font-bold tracking-tight text-white">{data.pair}</h2>
+          <span className="text-[10px] uppercase tracking-widest text-genesis-accent font-mono">
+            {data.timeframe} · Binance Futures
+          </span>
         </div>
-        <div className="rounded-xl border border-genesis-accent/30 bg-genesis-accent/10 px-5 py-3 text-right">
-          <p className="text-[9px] uppercase tracking-[0.2em] text-genesis-text-secondary">Score contextual</p>
-          <p className="font-mono text-3xl font-bold text-genesis-accent">{data.score}<span className="text-sm">/90</span></p>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={onReset}
+            className="hidden items-center gap-2 rounded-lg bg-transparent px-3 py-2 font-mono text-xs uppercase tracking-wider text-gray-400 transition-colors hover:bg-white/5 hover:text-white sm:flex"
+          >
+            <RefreshCcw size={14} /> Nova análise
+          </button>
+          <button
+            onClick={handleShare}
+            className="flex items-center gap-2 rounded-lg bg-white/5 px-4 py-2 font-mono text-xs uppercase tracking-wider text-white transition-colors hover:bg-white/10"
+          >
+            <Download size={16} /> Salvar Análise
+          </button>
         </div>
-      </header>
-      <section className="rounded-xl border border-white/10 bg-white/[0.03] p-5">
-        <div className="mb-3 flex items-center gap-2 text-genesis-accent">
-          <ShieldCheck size={16} />
-          <h3 className="text-[11px] font-bold uppercase tracking-[0.18em]">Força do score</h3>
+      </div>
+
+      <div id="analysis-capture" className="relative rounded-xl bg-black p-[16px]">
+        <div className="pointer-events-none absolute right-4 top-[16px] z-10 flex items-center gap-2 opacity-30">
+          <Share2 size={12} className="text-white" />
+          <span className="font-mono text-[8px] uppercase tracking-widest text-white">Gênesis V6.4</span>
         </div>
-        <p className="text-sm leading-6 text-gray-200">{data.score_description}</p>
-      </section>
-      <section className="rounded-xl border border-white/10 bg-white/[0.03] p-5">
-        <div className="mb-3 flex items-center gap-2 text-genesis-positive">
-          <BarChart3 size={16} />
-          <h3 className="text-[11px] font-bold uppercase tracking-[0.18em]">Análise técnica</h3>
-        </div>
-        <p className="text-sm leading-6 text-gray-200">{data.technical_analysis}</p>
-      </section>
-      <section className="grid gap-4 md:grid-cols-2">
-        <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
-          <div className="mb-2 flex items-center gap-2 text-purple-300">
-            <Activity size={15} />
-            <h3 className="text-[10px] font-bold uppercase tracking-[0.16em]">Derivativos</h3>
-          </div>
-          <p className="text-xs text-gray-200">{data.derivatives_context?.summary}</p>
-          <div className="mt-3 flex flex-wrap gap-2 text-[10px]">
-            <span className="rounded bg-purple-500/10 px-2 py-1 text-purple-200">
-              {strengthLabel[data.derivatives_context?.strength] ?? 'Indisponível'}
-            </span>
-            <span className="rounded bg-white/5 px-2 py-1 text-gray-300">
-              {squeezeLabel[data.derivatives_context?.squeeze_risk] ?? 'Indisponível'}
-            </span>
-          </div>
-          <p className="mt-3 text-[10px] text-genesis-text-secondary">
-            Long/Short Ratio (informativo, fora da decisão): {longShortRatio ?? 'indisponível'}
-          </p>
-        </div>
-        <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
-          <h3 className="mb-2 text-[10px] font-bold uppercase tracking-[0.16em] text-genesis-positive">Leitura visual</h3>
-          {patterns.length > 0 ? (
-            <div className="flex flex-wrap gap-2">
-              {patterns.map((pattern) => (
-                <span key={`${pattern.id}-${pattern.state}`} className="rounded bg-green-500/10 px-2 py-1 text-[10px] text-green-200">
-                  {humanize(pattern.id)} · {humanize(pattern.state)}
-                </span>
-              ))}
+
+        {/* CAMADA 1: DECISÃO RÁPIDA — mesma estrutura visual do componente original */}
+        <div className="relative mt-8 mb-6 overflow-hidden rounded-3xl border border-white/[0.03] bg-[#0a0a0f] p-[16px] shadow-2xl">
+          <div className={`pointer-events-none absolute right-0 top-0 h-64 w-64 rounded-full ${isLong ? 'bg-genesis-positive/5' : 'bg-genesis-negative/5'} blur-[100px]`} />
+
+          <div className="relative z-10 mb-6 flex flex-col items-start justify-between md:flex-row md:items-center">
+            <div className="mb-4 flex items-center gap-[16px] md:mb-0">
+              <div className="flex flex-col">
+                <span className="mb-1 text-[10px] font-bold uppercase tracking-[0.2em] text-gray-500">Direção Interpretada</span>
+                <span className={`text-6xl font-bold uppercase tracking-tighter ${badgeColor}`}>{data.direction}</span>
+              </div>
             </div>
-          ):(
-            <p className="text-xs text-genesis-text-secondary">Nenhuma figura clara foi identificada.</p>
-          )}
-          {objects.length > 0 && (
-            <div className="mt-3 flex flex-wrap gap-2">
-              {objects.map((object, index) => (
-                <span key={`${object.type}-${index}`} className="rounded bg-purple-500/10 px-2 py-1 text-[10px] text-purple-200">
-                  {humanize(object.type)}
-                </span>
-              ))}
+            <div className="flex w-full flex-col items-start md:w-auto md:items-end">
+              <span className="mb-1 text-[10px] font-bold uppercase tracking-[0.2em] text-gray-500">Score Contextual</span>
+              <span className={`font-mono text-4xl font-bold ${badgeColor}`}>
+                {data.score}<span className="text-lg text-gray-600">/90</span>
+              </span>
             </div>
-          )}
-          {fibonacci.length > 0 && (
-            <p className="mt-3 text-[10px] text-genesis-text-secondary">
-              Fibo desenhado: {fibonacci.map((item) => item.label).join(', ')}
+          </div>
+
+          <div className="relative z-10 mb-5 h-2 w-full overflow-hidden rounded-full bg-gray-900">
+            <div className={`h-full ${progressColor} transition-all duration-1000`} style={{ width: `${Math.min((data.score / 90) * 100, 100)}%` }} />
+          </div>
+
+          <div className="relative z-10 flex items-start gap-3 rounded-lg bg-white/5 p-[16px]">
+            <Target className={`${badgeColor} mt-0.5 shrink-0`} size={16} />
+            <p className="text-sm font-medium leading-relaxed text-gray-300">
+              {data.score_description || 'Justificativa do score indisponível.'}
             </p>
+          </div>
+        </div>
+
+        {/* Análise Técnica */}
+        <div className="mb-6 rounded-[10px] bg-[#050505] p-[16px]">
+          <div className="mb-4 flex items-center gap-2 text-genesis-positive">
+            <BarChart2 size={14} />
+            <h3 className="text-xs font-bold uppercase tracking-[0.2em] text-gray-400">Análise Técnica</h3>
+          </div>
+          <p className="text-sm leading-relaxed text-gray-300">{data.technical_analysis}</p>
+        </div>
+
+        {/* Derivativos e Leitura Visual — específicos do V6.4, mesma paleta escura */}
+        <div className="mb-6 grid gap-[16px] md:grid-cols-2">
+          <div className="rounded-[10px] bg-[#050505] p-[16px]">
+            <div className="mb-2 flex items-center gap-2 text-purple-300">
+              <Activity size={15} />
+              <h3 className="text-[10px] font-bold uppercase tracking-[0.16em]">Derivativos</h3>
+            </div>
+            <p className="text-xs text-gray-300">{data.derivatives_context?.summary}</p>
+            <div className="mt-3 flex flex-wrap gap-2 text-[10px]">
+              <span className="rounded bg-purple-500/10 px-2 py-1 text-purple-200">
+                {strengthLabel[data.derivatives_context?.strength] ?? 'Indisponível'}
+              </span>
+              <span className="rounded bg-white/5 px-2 py-1 text-gray-300">
+                {squeezeLabel[data.derivatives_context?.squeeze_risk] ?? 'Indisponível'}
+              </span>
+            </div>
+            <p className="mt-3 text-[10px] text-gray-500">
+              Long/Short Ratio (informativo, fora da decisão): {longShortRatio ?? 'indisponível'}
+            </p>
+          </div>
+          <div className="rounded-[10px] bg-[#050505] p-[16px]">
+            <h3 className="mb-2 text-[10px] font-bold uppercase tracking-[0.16em] text-genesis-positive">Leitura visual</h3>
+            {patterns.length > 0 ? (
+              <div className="flex flex-wrap gap-2">
+                {patterns.map((pattern) => (
+                  <span key={`${pattern.id}-${pattern.state}`} className="rounded bg-green-500/10 px-2 py-1 text-[10px] text-green-200">
+                    {humanize(pattern.id)} · {humanize(pattern.state)}
+                  </span>
+                ))}
+              </div>
+            ) : (
+              <p className="text-xs text-gray-500">Nenhuma figura clara foi identificada.</p>
+            )}
+            {objects.length > 0 && (
+              <div className="mt-3 flex flex-wrap gap-2">
+                {objects.map((object, index) => (
+                  <span key={`${object.type}-${index}`} className="rounded bg-purple-500/10 px-2 py-1 text-[10px] text-purple-200">
+                    {humanize(object.type)}
+                  </span>
+                ))}
+              </div>
+            )}
+            {fibonacci.length > 0 && (
+              <p className="mt-3 text-[10px] text-gray-500">
+                Fibo desenhado: {fibonacci.map((item) => item.label).join(', ')}
+              </p>
+            )}
+          </div>
+        </div>
+
+        {/* CAMADA 4: FUNDAMENTAÇÃO (Avançada) — indicadores/macro/sentimento, restaurado nesta correção
+            (spec genesis-v6-4-contexto-informativo). Valores brutos, sem narrativa — ver requirements.md,
+            "Decisão de escopo necessária": não existe mais chamada de IA dedicada a gerar essa narrativa
+            no V6.4 (decisor único, Seção 4 do Oficial Mestre.pdf). */}
+        <div className="relative rounded-[10px] bg-black/40 p-[16px]">
+          <div className="mb-6 flex items-center justify-between">
+            <h3 className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.2em] text-gray-500">
+              <BarChart2 size={12} /> Visão Quantitativa e Macro
+            </h3>
+            <button
+              onClick={() => setShowIndicators(!showIndicators)}
+              className="rounded-full bg-white/5 px-3 py-1.5 text-[9px] uppercase tracking-widest text-genesis-accent transition-colors hover:text-white"
+            >
+              {showIndicators ? 'Ocultar Detalhes' : 'Revelar Matriz Completa'}
+            </button>
+          </div>
+
+          {showIndicators && ctx && (
+            <div className="grid animate-in fade-in slide-in-from-top-2 grid-cols-1 gap-[16px] pt-6 duration-300 md:grid-cols-3">
+              {/* Coluna 1: Métricas Técnicas */}
+              <div className="rounded-lg bg-[#050505] p-[16px]">
+                <span className="mb-3 block border-b border-white/5 pb-2 text-[10px] font-bold uppercase tracking-widest text-genesis-accent">
+                  Métricas Técnicas
+                </span>
+                <div className="mt-3 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[9px] font-bold uppercase tracking-wider text-gray-500">RSI (14)</span>
+                    <span className="font-mono text-[10px] text-white">{fmt(ctx.indicators.rsi14, '', 1)}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-[9px] font-bold uppercase tracking-wider text-gray-500">ADX</span>
+                    <span className="font-mono text-[10px] text-white">{fmt(ctx.indicators.adx14, '', 1)}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-[9px] font-bold uppercase tracking-wider text-gray-500">ATR</span>
+                    <span className="font-mono text-[10px] text-white">
+                      {ctx.indicators.atr14.status === 'AVAILABLE' && typeof ctx.indicators.atr14.value === 'number' ? `$${ctx.indicators.atr14.value.toFixed(4)}` : 'N/D'}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-[9px] font-bold uppercase tracking-wider text-gray-500">EMAs (21/50/200)</span>
+                    <span className="font-mono text-[9px] text-white">
+                      {fmt(ctx.indicators.ema21)} | {fmt(ctx.indicators.ema50)} | {fmt(ctx.indicators.ema200)}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-[9px] font-bold uppercase tracking-wider text-gray-500">Wyckoff</span>
+                    <span className="font-mono text-[10px] text-white">
+                      {WYCKOFF_LABEL[wyckoffFase] ?? (wyckoffFase ? humanize(wyckoffFase) : 'N/D')}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-[9px] font-bold uppercase tracking-wider text-gray-500">Sessão</span>
+                    <span className="font-mono text-[10px] text-white">{sessionName ?? 'N/D'}</span>
+                  </div>
+                  {multiTimeframe.length > 0 && (
+                    <div className="col-span-full mt-4 border-t border-white/5 pt-4">
+                      <span className="mb-3 block text-[10px] font-bold uppercase tracking-widest text-genesis-accent">
+                        Confluência Temporal
+                      </span>
+                      <div className="flex flex-wrap gap-2">
+                        {multiTimeframe.map((tf, idx) => (
+                          <div key={idx} className={`flex items-center gap-2 rounded border px-3 py-1.5 ${biasColor[tf.bias ?? ''] ?? biasColor.MIXED}`}>
+                            <span className="text-[9px] font-bold uppercase">{tf.timeframe}</span>
+                            <span className="font-mono text-[9px] font-bold">{tf.bias ?? 'N/D'}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Coluna 2: Macro e Geopolítico */}
+              <div className="rounded-lg bg-[#050505] p-[16px]">
+                <span className="mb-3 block border-b border-white/5 pb-2 text-[10px] font-bold uppercase tracking-widest text-genesis-positive">
+                  Macro e Geopolítico
+                </span>
+                <div className="mt-3 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[9px] font-bold uppercase tracking-wider text-gray-500">VIX</span>
+                    <span className="font-mono text-[10px] text-white">{fmt(ctx.macro.vix, '', 2)}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-[9px] font-bold uppercase tracking-wider text-gray-500">Variação DXY</span>
+                    <span className="font-mono text-[10px] text-white">{fmt(ctx.macro.dxy_change_pct, '%', 4)}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-[9px] font-bold uppercase tracking-wider text-gray-500">Variação S&amp;P 500</span>
+                    <span className="font-mono text-[10px] text-white">{fmt(ctx.macro.sp500_change_pct, '%', 4)}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Coluna 3: Sentimento */}
+              <div className="rounded-lg bg-[#050505] p-[16px]">
+                <span className="mb-3 block border-b border-white/5 pb-2 text-[10px] font-bold uppercase tracking-widest text-purple-400">
+                  Sentimento
+                </span>
+                <div className="mt-3 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[9px] font-bold uppercase tracking-wider text-gray-500">Fear &amp; Greed</span>
+                    <span className="font-mono text-[10px] text-white">{fmt(ctx.sentiment.fear_greed, '/100', 0)}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-[9px] font-bold uppercase tracking-wider text-gray-500">Dominância BTC</span>
+                    <span className="font-mono text-[10px] text-white">{fmt(ctx.sentiment.btc_dominance, '%', 2)}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
           )}
         </div>
-      </section>
-      <footer className="mt-auto flex items-center justify-between border-t border-white/10 pt-4">
+      </div>
+
+      <div className="flex items-center justify-between border-t border-white/10 pt-4">
         <p className="text-[9px] uppercase tracking-[0.14em] text-genesis-text-muted">
           Score contextual; não representa probabilidade de acerto. Dados: {data.snapshot_observed_at ?? 'horário indisponível'}.
         </p>
-        <button
-          type="button"
-          onClick={onReset}
-          className="flex items-center gap-2 rounded-lg border border-white/10 px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-gray-300 hover:border-genesis-accent/50 hover:text-white"
-        >
-          <RefreshCcw size={13} /> Nova análise
-        </button>
-      </footer>
-    </article>
+        <div className="flex items-center gap-2 text-genesis-accent">
+          <ShieldCheck size={12} />
+        </div>
+      </div>
+    </div>
   );
 };
 
