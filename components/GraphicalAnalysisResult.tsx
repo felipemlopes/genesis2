@@ -312,6 +312,22 @@ const GraphicalAnalysisResult: React.FC<Props> = ({ data, onReset }) => {
                     <span className="font-mono text-[10px] text-white">{fmt(ctx.macro.sp500_change_pct, '%', 4)}</span>
                   </div>
                 </div>
+                {/* Correção pós-entrega (2026-07-26): narrativa restaurada, mesmo padrão do AnalysisResult.tsx original */}
+                <p className={`mb-4 mt-4 pt-3 border-t border-white/5 text-[10px] leading-relaxed text-gray-400 ${ctx.macro.narrative.status !== 'AVAILABLE' ? 'italic' : ''}`}>
+                  {ctx.macro.narrative.status === 'AVAILABLE' && ctx.macro.narrative.value?.resumo
+                    ? ctx.macro.narrative.value.resumo
+                    : 'Contexto informativo indisponível para esta análise (orçamento de IA esgotado ou serviço fora do ar).'}
+                </p>
+                {ctx.macro.narrative.status === 'AVAILABLE' && (ctx.macro.narrative.value?.eventos?.length ?? 0) > 0 && (
+                  <div className="space-y-2">
+                    {ctx.macro.narrative.value!.eventos.map((evt, idx) => (
+                      <div key={idx} className="flex gap-2">
+                        <span className="mt-0.5 text-genesis-accent">•</span>
+                        <p className="font-mono text-[9.5px] leading-relaxed text-gray-400">{evt}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
               {/* Coluna 3: Sentimento */}
@@ -329,6 +345,51 @@ const GraphicalAnalysisResult: React.FC<Props> = ({ data, onReset }) => {
                     <span className="font-mono text-[10px] text-white">{fmt(ctx.sentiment.btc_dominance, '%', 2)}</span>
                   </div>
                 </div>
+                {/* Correção pós-entrega (2026-07-26): narrativa restaurada, mesmo padrão do AnalysisResult.tsx original */}
+                {ctx.sentiment.narrative.status === 'AVAILABLE' && ctx.sentiment.narrative.value ? (
+                  <>
+                    <div className="mb-3 mt-4 flex items-center justify-between border-t border-white/5 pt-3">
+                      <span className="text-[9px] font-bold uppercase tracking-widest text-gray-500">Score da narrativa</span>
+                      <span className={`rounded bg-white/5 px-2 font-mono text-[10px] font-bold ${
+                        ctx.sentiment.narrative.value.score == null ? 'text-gray-500'
+                          : ctx.sentiment.narrative.value.score > 60 ? 'text-genesis-positive' : 'text-genesis-negative'
+                      }`}>
+                        {ctx.sentiment.narrative.value.score == null ? 'Sem dado' : `${ctx.sentiment.narrative.value.score}/100`}
+                      </span>
+                    </div>
+                    <p className="mb-4 text-[10px] leading-relaxed text-gray-400">
+                      {ctx.sentiment.narrative.value.narrativa || 'Contexto informativo indisponível para esta análise.'}
+                    </p>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <span className="mb-2 block text-[8px] font-bold uppercase tracking-widest text-gray-600">Gatilhos (+)</span>
+                        <ul className="space-y-2 text-[9.5px] text-genesis-positive/80">
+                          {ctx.sentiment.narrative.value.gatilhos_positivos.slice(0, 2).map((p, i) => (
+                            <li key={i} className="line-clamp-2 leading-tight">- {p}</li>
+                          ))}
+                          {ctx.sentiment.narrative.value.gatilhos_positivos.length === 0 && (
+                            <li className="italic text-gray-600">Nenhum</li>
+                          )}
+                        </ul>
+                      </div>
+                      <div>
+                        <span className="mb-2 block text-[8px] font-bold uppercase tracking-widest text-gray-600">Gatilhos (-)</span>
+                        <ul className="space-y-2 text-[9.5px] text-genesis-negative/80">
+                          {ctx.sentiment.narrative.value.gatilhos_negativos.slice(0, 2).map((n, i) => (
+                            <li key={i} className="line-clamp-2 leading-tight">- {n}</li>
+                          ))}
+                          {ctx.sentiment.narrative.value.gatilhos_negativos.length === 0 && (
+                            <li className="italic text-gray-600">Nenhum</li>
+                          )}
+                        </ul>
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <p className="mb-4 mt-4 border-t border-white/5 pt-3 text-[10px] italic leading-relaxed text-gray-400">
+                    Contexto informativo indisponível para esta análise (orçamento de IA esgotado ou serviço fora do ar).
+                  </p>
+                )}
               </div>
             </div>
           )}

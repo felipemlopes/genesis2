@@ -39,8 +39,7 @@ export interface VisualObservations {
 }
 
 // Spec genesis-v6-4-contexto-informativo, Tarefa 2.1: restaura os campos de indicadores/macro/sentimento
-// que a tela de resultado sempre mostrou (V4.3-R3.2) — valor bruto, sem narrativa (ver requirements.md,
-// "Decisão de escopo necessária": não existe mais chamada de IA dedicada a gerar essa narrativa no V6.4).
+// que a tela de resultado sempre mostrou (V4.3-R3.2).
 export interface EvidenceValue<T = number> {
   value: T | null;
   unit: string | null;
@@ -56,6 +55,21 @@ export interface MultiTimeframeEntry {
   rsi: number | null;
   macd: number | null;
   bias: 'BULLISH' | 'BEARISH' | 'MIXED' | null;
+}
+
+// Correção pós-entrega (2026-07-26): narrativa de macro/sentimento, gerada por uma chamada Gemini
+// separada do decisor único (InformativeNarrativeService, backend) — recria o texto que a tela sempre
+// mostrou no V4.3-R3.2. Best-effort: pode vir com status UNAVAILABLE se a chamada falhar.
+export interface MacroNarrative {
+  resumo: string;
+  eventos: string[];
+}
+
+export interface SentimentNarrative {
+  score: number | null;
+  narrativa: string;
+  gatilhos_positivos: string[];
+  gatilhos_negativos: string[];
 }
 
 export interface InformativeContext {
@@ -74,10 +88,12 @@ export interface InformativeContext {
     vix: EvidenceValue;
     dxy_change_pct: EvidenceValue;
     sp500_change_pct: EvidenceValue;
+    narrative: EvidenceValue<MacroNarrative>;
   };
   sentiment: {
     fear_greed: EvidenceValue;
     btc_dominance: EvidenceValue;
+    narrative: EvidenceValue<SentimentNarrative>;
   };
 }
 

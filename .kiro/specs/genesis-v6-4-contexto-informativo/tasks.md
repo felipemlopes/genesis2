@@ -15,6 +15,37 @@ spec) — este plano assume o backend/frontend V6.4 já instalado e funcionando.
 
 **Concluído em 2026-07-26**, todas as tarefas, autorizado explicitamente pelo usuário ("execute todas tasks").
 
+## Adendo (2026-07-26, mesmo dia) — narrativa de macro/sentimento
+
+Depois da entrega, o usuário testou e reportou que faltava o **texto** explicando macro/geopolítica/sentimento
+(não só os números) — era assim antes do V6.4 (`GeminiAnalysisService::gerarContextoInformativoUnico()`, arquivo
+apagado na Tarefa 9 do plano de implantação). Confirmado pelo usuário: "tem que deixar como antes por que ele
+[Fabrício] vai reclamar".
+
+Restaurado com uma chamada Gemini **completamente separada** do decisor único do V6.4 (não toca em
+`GenesisPrompt.php`, `GenesisDecisionSchema.php` nem `GeminiInteractionsClient.php` — respeitando a instrução já
+dada nesta sessão de nunca mexer no prompt de decisão):
+
+- **[API]** `app/Services/GraphicalAnalysis/InformativeNarrativeService.php` (novo) — porta literal da lógica
+  antiga (prompt, endpoint `v1beta/models/{model}:generateContent`, parsing defensivo), chamado só depois da
+  decisão principal já validada, nunca antes — não afeta `bundle_json` enviado ao decisor nem `manifest_hash`.
+- **[API]** `GraphicalAnalysisOrchestrator`: narrativa injetada como 2 itens sintéticos
+  (`macro.narrative`/`sentiment.narrative`, `decision_role: DISPLAY_ONLY`) no `evidence_manifest` persistido —
+  **sem migration**, reaproveita a coluna JSON já existente. `informativeContext()` estendido pra expor os 2
+  campos novos.
+- **[FE]** `types/graphicalAnalysis.ts`: `MacroNarrative`/`SentimentNarrative`, campo `narrative` em
+  `informative_context.macro`/`.sentiment`.
+- **[FE]** `GraphicalAnalysisResult.tsx`: renderização da narrativa restaurada, mesmo padrão visual do
+  `AnalysisResult.tsx` original (resumo + eventos pra macro; score badge + narrativa + gatilhos ± pra sentimento).
+
+**Verificado:** chamada isolada ao `InformativeNarrativeService` (real) e fluxo completo `analyze()` (real, mesma
+imagem HYPEUSDT) — os 2 campos vieram `AVAILABLE` com texto real nos dois casos. Suíte completa (backend + testes
+`GraphicalAnalysis*`) e suíte frontend (build/tsc/vitest) confirmadas sem regressão, mesma baseline de falhas
+pré-existentes. Registro de teste e crédito da verificação end-to-end estornados/apagados depois.
+
+**Custo real assumido:** mais uma chamada Gemini por análise nova (não usa cache — roda de novo a cada geração
+fresca), best-effort (nunca derruba a análise principal se falhar).
+
 ## Tarefas
 
 - [x] 1. Backend — expor `informative_context` na resposta pública
