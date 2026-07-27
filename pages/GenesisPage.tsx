@@ -20,7 +20,8 @@ import OrderBookImbalance from '../components/OrderBookImbalance';
 import TrendQuality from '../components/TrendQuality';
 import LiquidationHeatmap from '../components/LiquidationHeatmap';
 import SectorSentiment from '../components/SectorSentiment';
-import { analyzeGraphicalChart, newAnalysisIdempotencyKey, GraphicalAnalysisApiError } from '../services/graphicalAnalysisService';
+import { analyzeGraphicalChart, newAnalysisIdempotencyKey, scanChartMetadata, GraphicalAnalysisApiError } from '../services/graphicalAnalysisService';
+import { normalizarPar } from '../services/normalizarPar';
 import type { GraphicalAnalysisResult as GraphicalAnalysisResultData } from '../types/graphicalAnalysis';
 
 const TRADING_QUOTES = [
@@ -90,6 +91,7 @@ const GenesisPage: React.FC = () => {
   } = useAppContext();
 
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [isScanning, setIsScanning] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [hoverAnalyze, setHoverAnalyze] = useState(false);
   const [result, setResult] = useState<GraphicalAnalysisResultData | null>(null);
@@ -191,10 +193,53 @@ const GenesisPage: React.FC = () => {
     }
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
-      setSelectedFile(e.target.files[0]);
+      const file = e.target.files[0];
+      setSelectedFile(file);
       setResult(null);
+
+      setIsScanning(true);
+      try {
+        // Restauração pós-entrega (2026-07-26): OCR de metadados dispara aqui, na seleção do
+        // arquivo — nunca dentro do fluxo de Analisar (handleAnalyze -> analyzeGraphicalChart).
+        const scanned = await scanChartMetadata(file, exchange);
+
+        if (scanned.exchange) {
+          setExchange(scanned.exchange);
+        }
+
+        if (scanned.symbol) {
+          const cleanPair = normalizarPar(scanned.symbol);
+          setSelectedPair(cleanPair);
+          setRefreshTrigger((prev) => prev + 1);
+        }
+
+        if (scanned.timeframe) {
+          const tfMap: Record<string, string> = {
+            '1M': '1w', 'MONTHLY': '1w', 'M': '1w', 'MONTH': '1w',
+            '1W': '1w', 'WEEKLY': '1w', 'W': '1w', 'WEEK': '1w', 'SEMANAL': '1w',
+            '1D': '1d', 'DAILY': '1d', 'D': '1d', 'DAY': '1d', 'DIARIO': '1d', 'DIÁRIO': '1d',
+            '12H': '4h', 'H12': '4h',
+            '4H': '4h', 'H4': '4h',
+            '3H': '4h', 'H3': '4h',
+            '2H': '1h', 'H2': '1h',
+            '1H': '1h', 'H1': '1h', '60M': '1h', 'HOURLY': '1h',
+            '15M': '15m', 'M15': '15m',
+          };
+          const validTimeframes = ['15m', '1h', '4h', '1d', '1w'];
+          const upperTf = scanned.timeframe.toUpperCase().trim();
+          const normalizedTf = tfMap[upperTf] || scanned.timeframe.toLowerCase().trim();
+          if (validTimeframes.includes(normalizedTf)) {
+            setTimeframe(normalizedTf);
+          }
+        }
+      } catch (err) {
+        console.error('Auto-scan failed', err);
+        alert('Não foi possível detectar automaticamente a moeda do gráfico. Por favor, digite manualmente no campo Par.');
+      } finally {
+        setIsScanning(false);
+      }
     }
   };
 
@@ -309,7 +354,12 @@ const GenesisPage: React.FC = () => {
                   className={`dashed ${selectedFile ? 'border-genesis-positive bg-green-900/5' : 'border-white/10 hover:border-white/30 hover:bg-white/5'} rounded-xl transition-all h-20 flex flex-col items-center justify-center relative cursor-pointer group`}
                 >
                   <input type="file" accept="image/*" onChange={handleFileChange} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
-                  {selectedFile ? (
+                  {isScanning ? (
+                    <div className="flex items-center gap-2 text-genesis-accent text-xs font-medium">
+                      <div className="w-3.5 h-3.5 border-2 genesis-accent border-t-transparent rounded-full animate-spin"></div>
+                      Lendo gráfico (OCR)...
+                    </div>
+                  ) : selectedFile ? (
                     <div className="flex items-center gap-2 text-genesis-positive text-xs font-medium">
                       <CheckCircle size={14} />
                       {selectedFile.name.substring(0, 15)}...
@@ -359,7 +409,8 @@ const GenesisPage: React.FC = () => {
               onClick={() => handleAnalyze()}
               onMouseEnter={() => setHoverAnalyze(true)}
               onMouseLeave={() => setHoverAnalyze(false)}
-              className={`mt-4 w-full py-3.5 rounded-lg font-bold tracking-widest text-[11px] flex items-center justify-center gap-3 transition-all duration-300 relative overflow-hidden group ${
+              disabled={isScanning}
+              className={`mt-4 w-full py-3.5 rounded-lg font-bold tracking-widest text-[11px] flex items-center justify-center gap-3 transition-all duration-300 relative overflow-hidden group disabled:opacity-50 disabled:cursor-not-allowed ${
                 isAnalyzing
                   ? hoverAnalyze
                     ? 'bg-red-900/10 border-red-500 text-red-500 shadow-[0_0_20px_rgba(239,68,68,0.2)]'
