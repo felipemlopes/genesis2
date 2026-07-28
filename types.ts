@@ -164,6 +164,9 @@ export interface GenesisAnalysisResult {
   macroGeopolitica?: { resumo: string; eventos: string[] };
   sentimentoAtivo?: Record<string, unknown>;
   folha_decisao?: Record<string, unknown>;
+  // Restauração pós-entrega (2026-07-27): score_basis já vem pronto do decisor (justificativa
+  // estruturada), reaproveitado pras barras Técnico/Derivativos sem recalcular nada.
+  score_basis?: Record<string, string> | null;
 }
 
 export interface MarketSentiment {

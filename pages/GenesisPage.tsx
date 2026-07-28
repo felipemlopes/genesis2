@@ -14,15 +14,18 @@ import {
   ArrowDown,
 } from 'lucide-react';
 import { useAppContext } from '../contexts/AppContext';
-import GraphicalAnalysisResult from '../components/GraphicalAnalysisResult';
+import AnalysisResult from '../components/AnalysisResult';
 import NewsTicker from '../components/NewsTicker';
 import OrderBookImbalance from '../components/OrderBookImbalance';
 import TrendQuality from '../components/TrendQuality';
 import LiquidationHeatmap from '../components/LiquidationHeatmap';
 import SectorSentiment from '../components/SectorSentiment';
-import { analyzeGraphicalChart, newAnalysisIdempotencyKey, scanChartMetadata, GraphicalAnalysisApiError } from '../services/graphicalAnalysisService';
+import { analyzeChart, scanChartMetadata } from '../services/geminiService';
 import { normalizarPar } from '../services/normalizarPar';
-import type { GraphicalAnalysisResult as GraphicalAnalysisResultData } from '../types/graphicalAnalysis';
+import { GenesisAnalysisResult, ChartMetadata, SavedAnalysis, UnifiedChartResult } from '../types';
+import { fetchBinanceData, fetchBybitData, fetchBitgetData, fetchOkxData, formatPrice, ExchangeData } from '../services/cryptoApi';
+import { calculateLiquidationPrice } from '../services/futuresCalculations';
+import { saveAnalysisToHistory } from '../components/AnalysisHistoryDashboard';
 
 const TRADING_QUOTES = [
   "Lucro bom é lucro no bolso.",
@@ -77,6 +80,17 @@ const TRADING_QUOTES = [
   "O sucesso deixa rastros no gráfico."
 ];
 
+const toNullableNumber = (value: unknown): number | null => {
+  if (value === null || value === undefined || value === '') return null;
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+  const normalized = String(value)
+    .split('\n')[0]
+    .replace(/[^0-9,.-]+/g, '')
+    .replace(',', '.');
+  const parsed = Number.parseFloat(normalized);
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
 const GenesisPage: React.FC = () => {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -84,17 +98,28 @@ const GenesisPage: React.FC = () => {
     exchange, setExchange,
     selectedPair, setSelectedPair,
     pairsList, isLoadingPairs,
+    marketData, cvdData,
     currentPrice, change24h, isPositiveChange,
     timeframe, setTimeframe,
+    equity, setEquity,
+    targetProfit, setTargetProfit,
+    leverage, setLeverage,
+    leverageOptions,
+    entryValue, setEntryValue,
     isDataLoading,
     refreshTrigger, setRefreshTrigger,
+    activeTrades, setActiveTrades,
+    analysisResult, setAnalysisResult,
+    currentAnaliseId, setCurrentAnaliseId,
   } = useAppContext();
 
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [isScanning, setIsScanning] = useState(false);
+  const [chartMetadata, setChartMetadata] = useState<ChartMetadata | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [hoverAnalyze, setHoverAnalyze] = useState(false);
-  const [result, setResult] = useState<GraphicalAnalysisResultData | null>(null);
+  const [isScanning, setIsScanning] = useState(false);
+  const result = analysisResult;
+  const setResult = setAnalysisResult;
   const [quoteIndex, setQuoteIndex] = useState(0);
   const [radarId, setRadarId] = useState<string | null>(null);
   const analysisFormRef = useRef<HTMLDivElement>(null);
@@ -159,14 +184,26 @@ const GenesisPage: React.FC = () => {
     }
   }, [isAnalyzing]);
 
-  const handleAnalyze = async () => {
-    if (isAnalyzing) return;
+  const handleAnalyze = async (
+    fileOverride?: File,
+    metadataOverride?: ChartMetadata,
+    exchangeOverride?: string,
+    pairOverride?: string,
+    marketDataOverride?: ExchangeData
+  ) => {
+    const fileToUse = fileOverride || selectedFile;
+    const metaToUse = metadataOverride || chartMetadata;
+    const exchangeToUse = exchangeOverride || exchange;
+    const pairToUse = pairOverride || selectedPair;
+    const marketDataToUse = marketDataOverride || marketData;
 
-    if (!selectedFile) {
+    if (isAnalyzing && !fileOverride) return;
+
+    if (!fileToUse) {
       alert("Por favor, faça upload de um gráfico.");
       return;
     }
-    if (!selectedPair || selectedPair.trim() === "") {
+    if (!pairToUse || pairToUse.trim() === "") {
       alert("Por favor, digite o nome do par (ex: SUIUSDT) no campo Par antes de analisar.");
       return;
     }
@@ -175,19 +212,73 @@ const GenesisPage: React.FC = () => {
     setResult(null);
 
     try {
-      const data = await analyzeGraphicalChart({
-        image: selectedFile,
-        symbol: selectedPair,
-        timeframe,
-        idempotencyKey: newAnalysisIdempotencyKey(),
-      });
+      const analysisMetadata: ChartMetadata = {
+        ...(metaToUse || {}),
+        pair: pairToUse,
+        timeframe: metaToUse?.timeframe || timeframe,
+      } as ChartMetadata;
+
+      const data = await analyzeChart(
+        fileToUse,
+        analysisMetadata,
+        equity,
+        marketDataToUse,
+        exchangeToUse,
+        leverage,
+        cvdData,
+        entryValue
+      );
+
+      if (data) {
+        if (data.pair && data.pair !== selectedPair) {
+          setSelectedPair(data.pair.toUpperCase().replace('/', ''));
+        }
+
+        const setup = data.execution?.candidate_setup ?? null;
+        const planoB = (data.execution?.planoB ?? null) as { entrada?: number } | null;
+
+        const savedAnalysis: SavedAnalysis = {
+          id: Date.now().toString(),
+          analysis_id: data.analysis_id,
+          analysis_status: data.analysis.status,
+          execution_status: data.execution.status,
+          executable: data.execution.executable,
+          rr_liquido_estimado: toNullableNumber(setup?.rr_liquido_estimado),
+          timestamp: new Date().toISOString(),
+          symbol: data.pair || pairToUse,
+          interval: analysisMetadata.timeframe || timeframe,
+          direction: data.analysis.direction,
+          score: data.analysis.conviccao_modelo,
+          rsi: toNullableNumber(data.indicadores?.rsi),
+          ema200: toNullableNumber(data.indicadores?.ema200),
+          adx: toNullableNumber(data.indicadores?.adx),
+          entry_price: toNullableNumber(setup?.entrada),
+          target_price: toNullableNumber(setup?.tp1),
+          target_price2: toNullableNumber(setup?.tp2),
+          target_price3: toNullableNumber(setup?.tp3),
+          stop_loss: toNullableNumber(setup?.stop),
+          status: data.execution.executable ? 'PENDENTE' : 'NAO_EXECUTAVEL',
+        };
+        const savedId = await saveAnalysisToHistory(savedAnalysis, {
+          corretora: exchange || 'BINANCE',
+          vies: data.analysis.direction ?? '',
+          alavancagem: setup?.alavancagem ?? '',
+          resumo_analise: (data.analysis.narrativa_tecnica || '').substring(0, 500),
+          setup_entrada: JSON.stringify(setup || {}).substring(0, 500),
+          entrada: toNullableNumber(setup?.entrada),
+          plano_a: toNullableNumber(setup?.entrada),
+          plano_b: toNullableNumber(planoB?.entrada),
+          take_profit_2: toNullableNumber(setup?.tp2),
+          take_profit_3: toNullableNumber(setup?.tp3),
+          risco_retorno: setup?.rr_liquido_estimado ?? setup?.rr_bruto ?? '',
+        });
+        setCurrentAnaliseId(savedId);
+      }
+
       setResult(data);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Analysis Error:', error);
-      const message = error instanceof GraphicalAnalysisApiError
-        ? error.message
-        : 'Falha ao processar análise técnica. Tente novamente.';
-      alert(message);
+      alert(error.message || 'Falha ao processar análise técnica. Tente novamente.');
     } finally {
       setIsAnalyzing(false);
     }
@@ -197,44 +288,85 @@ const GenesisPage: React.FC = () => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
       setSelectedFile(file);
+      setChartMetadata(null);
       setResult(null);
 
       setIsScanning(true);
       try {
-        // Restauração pós-entrega (2026-07-26): OCR de metadados dispara aqui, na seleção do
-        // arquivo — nunca dentro do fluxo de Analisar (handleAnalyze -> analyzeGraphicalChart).
-        const scanned = await scanChartMetadata(file, exchange);
+        // R3.2 — Adendo Secao 28: OCR 1 estrito, só metadados. Dispara aqui,
+        // na seleção do arquivo — o OCR 2 (visual) só roda dentro do fluxo de
+        // Analisar (handleAnalyze -> analyzeChart), nunca aqui.
+        const unifiedResult = await scanChartMetadata(file, exchange);
+        setChartMetadata(unifiedResult);
 
-        if (scanned.exchange) {
-          setExchange(scanned.exchange);
-        }
+        // Não sobrescreve a exchange selecionada pelo usuário
+        let newExchange = exchange;
 
-        if (scanned.symbol) {
-          const cleanPair = normalizarPar(scanned.symbol);
+        let newPair = '';
+        if (unifiedResult.pair) {
+          const cleanPair = normalizarPar(unifiedResult.pair);
+          newPair = cleanPair;
           setSelectedPair(cleanPair);
           setRefreshTrigger((prev) => prev + 1);
         }
 
-        if (scanned.timeframe) {
+        if (unifiedResult.timeframe) {
           const tfMap: Record<string, string> = {
-            '1M': '1w', 'MONTHLY': '1w', 'M': '1w', 'MONTH': '1w',
+            '1M': '1M', 'MONTHLY': '1M', 'M': '1M', 'MONTH': '1M',
             '1W': '1w', 'WEEKLY': '1w', 'W': '1w', 'WEEK': '1w', 'SEMANAL': '1w',
             '1D': '1d', 'DAILY': '1d', 'D': '1d', 'DAY': '1d', 'DIARIO': '1d', 'DIÁRIO': '1d',
-            '12H': '4h', 'H12': '4h',
+            '12H': '12h', 'H12': '12h',
             '4H': '4h', 'H4': '4h',
-            '3H': '4h', 'H3': '4h',
-            '2H': '1h', 'H2': '1h',
+            '3H': '3h', 'H3': '3h',
+            '2H': '2h', 'H2': '2h', '120M': '2h',
             '1H': '1h', 'H1': '1h', '60M': '1h', 'HOURLY': '1h',
             '15M': '15m', 'M15': '15m',
+            '5M': '5m', 'M5': '5m',
           };
-          const validTimeframes = ['15m', '1h', '4h', '1d', '1w'];
-          const upperTf = scanned.timeframe.toUpperCase().trim();
-          const normalizedTf = tfMap[upperTf] || scanned.timeframe.toLowerCase().trim();
+          const rawTf = unifiedResult.timeframe;
+          const upperTf = rawTf.toUpperCase().trim();
+          const normalizedTf = tfMap[upperTf] || rawTf.toLowerCase().trim();
+          const validTimeframes = ['15m', '5m', '1h', '2h', '3h', '4h', '12h', '1d', '1w', '1M'];
+
+          console.log('[TF-DEBUG] Raw timeframe from scan:', JSON.stringify(rawTf));
+          console.log('[TF-DEBUG] Uppercase lookup key:', JSON.stringify(upperTf));
+          console.log('[TF-DEBUG] tfMap result:', JSON.stringify(tfMap[upperTf]));
+          console.log('[TF-DEBUG] Final normalizedTf:', JSON.stringify(normalizedTf));
+          console.log('[TF-DEBUG] Is valid?', validTimeframes.includes(normalizedTf));
+          console.log('[TF-DEBUG] Current timeframe before set:', timeframe);
+
           if (validTimeframes.includes(normalizedTf)) {
+            console.log('[TF-DEBUG] ✅ Setting timeframe to:', normalizedTf);
             setTimeframe(normalizedTf);
+          } else {
+            // Fallback: try regex extraction for formats like "1d", "4h", etc.
+            const regexMatch = rawTf.match(/^(\d+)(m|h|d|w|M)$/i);
+            if (regexMatch) {
+              const fallbackTf = `${regexMatch[1]}${regexMatch[2].toLowerCase()}`;
+              console.log('[TF-DEBUG] Regex fallback matched:', fallbackTf);
+              if (validTimeframes.includes(fallbackTf)) {
+                console.log('[TF-DEBUG] ✅ Setting timeframe via regex fallback:', fallbackTf);
+                setTimeframe(fallbackTf);
+              } else {
+                console.warn('[TF-DEBUG] ❌ Regex fallback not in valid list:', fallbackTf);
+              }
+            } else {
+              console.warn('[TF-DEBUG] ❌ No match found for timeframe:', rawTf);
+            }
           }
+        } else {
+          console.log('[TF-DEBUG] ⚠️ No timeframe detected or UNK. Raw value:', unifiedResult?.timeframe);
         }
-      } catch (err) {
+
+        if (newPair) {
+          const [bn, by, bg, ok] = await Promise.all([
+            fetchBinanceData(newPair),
+            fetchBybitData(newPair),
+            fetchBitgetData(newPair),
+            fetchOkxData(newPair),
+          ]);
+        }
+      } catch (err: any) {
         console.error('Auto-scan failed', err);
         alert('Não foi possível detectar automaticamente a moeda do gráfico. Por favor, digite manualmente no campo Par.');
       } finally {
@@ -246,6 +378,58 @@ const GenesisPage: React.FC = () => {
   const handleResetAnalysis = () => {
     setResult(null);
     setSelectedFile(null);
+    setChartMetadata(null);
+    setCurrentAnaliseId(null);
+  };
+
+  const handleSaveTrade = () => {
+    if (!result) return;
+
+    if (!result.execution.executable || !result.execution.executable_setup) {
+      alert(result.execution.motivo || 'Esta análise não possui execução validada.');
+      return;
+    }
+
+    const setup = result.execution.executable_setup;
+    const direction = result.execution.action;
+    if (!direction) return;
+
+    const now = new Date();
+    const formattedDate = `${now.getDate().toString().padStart(2, '0')}/${(now.getMonth() + 1).toString().padStart(2, '0')}/${now.getFullYear()}, ${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+
+    const parsePrice = (p: string | number) => {
+      if (!p || p === '-' || p === '---') return 0;
+      if (typeof p === 'number') return p;
+      const firstPart = String(p).split('\n')[0];
+      return parseFloat(firstPart.replace(/[^0-9,.-]+/g, '').replace(',', '.'));
+    };
+
+    const entryP = currentPrice ? parsePrice(currentPrice) : (toNullableNumber(setup.entrada) ?? 0);
+    const targetP = toNullableNumber(setup.tp1) ?? 0;
+    const levVal = setup.alavancagem ?? leverage;
+    const liqPrice = setup.liquidacao != null
+      ? setup.liquidacao
+      : calculateLiquidationPrice(entryP, levVal, direction, exchange);
+
+    const newTrade = {
+      id: Date.now().toString(),
+      exchange: exchange,
+      date: formattedDate,
+      asset: selectedPair.includes('/') ? selectedPair : selectedPair.replace('USDT', '/USDT'),
+      leverage: `${levVal}x`,
+      direction: direction,
+      status: 'Pendente',
+      pnl: '$0.00 (0.00%)',
+      entryPrice: entryP,
+      currentPriceStr: currentPrice || '-',
+      targetPrice: targetP,
+      financialTarget: parseFloat(targetProfit) || 0,
+      liquidationPrice: liqPrice,
+      amount: parseFloat(equity),
+    };
+
+    setActiveTrades((prev) => [newTrade, ...prev]);
+    navigate('/dashboard/performance');
   };
 
   return (
@@ -329,21 +513,54 @@ const GenesisPage: React.FC = () => {
                 </div>
               </div>
 
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-[9px] font-bold text-genesis-text-secondary uppercase mb-2 tracking-wider">Timeframe</label>
+                  <div className="relative">
+                    <select
+                      value={timeframe}
+                      onChange={(e) => setTimeframe(e.target.value)}
+                      className="w-full bg-[#050505] border border-white/5 rounded-md px-3 py-2.5 text-xs text-white appearance-none focus:border-white/20 focus:outline-none transition-all"
+                    >
+                      <option value="15m">15m</option>
+                      <option value="1h">1h</option>
+                      <option value="4h">4h</option>
+                      <option value="1d">1d</option>
+                      <option value="1w">1w</option>
+                    </select>
+                    <ChevronDown className="absolute right-3 top-3.5 text-genesis-text-muted pointer-events-none" size={14} />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-[9px] font-bold text-genesis-text-secondary uppercase mb-2 tracking-wider">Alavancagem</label>
+                  <div className="relative">
+                    <select
+                      value={leverage}
+                      onChange={(e) => setLeverage(Number(e.target.value))}
+                      className="w-full bg-[#050505] border border-white/5 rounded-md px-3 py-2.5 text-xs text-white appearance-none focus:border-white/20 focus:outline-none transition-all font-mono"
+                    >
+                      {leverageOptions.map((opt) => (
+                        <option key={opt} value={opt}>{opt}x</option>
+                      ))}
+                    </select>
+                    <ChevronDown className="absolute right-3 top-3.5 text-genesis-text-muted pointer-events-none" size={14} />
+                  </div>
+                </div>
+              </div>
+
               <div>
-                <label className="block text-[9px] font-bold text-genesis-text-secondary uppercase mb-2 tracking-wider">Timeframe</label>
+                <label className="block text-[9px] font-bold text-genesis-text-secondary uppercase mb-2 tracking-wider">Valor de Entrada (Opcional)</label>
                 <div className="relative">
-                  <select
-                    value={timeframe}
-                    onChange={(e) => setTimeframe(e.target.value)}
-                    className="w-full bg-[#050505] border border-white/5 rounded-md px-3 py-2.5 text-xs text-white appearance-none focus:border-white/20 focus:outline-none transition-all"
-                  >
-                    <option value="15m">15m</option>
-                    <option value="1h">1h</option>
-                    <option value="4h">4h</option>
-                    <option value="1d">1d</option>
-                    <option value="1w">1w</option>
-                  </select>
-                  <ChevronDown className="absolute right-3 top-3.5 text-genesis-text-muted pointer-events-none" size={14} />
+                  <span className="absolute left-3 top-2.5 text-gray-500 font-mono text-xs">$</span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="any"
+                    value={entryValue}
+                    onChange={(e) => setEntryValue(e.target.value ? Number(e.target.value) : '')}
+                    placeholder="Ex: 100"
+                    className="w-full bg-[#050505] border border-white/5 rounded-md pl-7 pr-3 py-2.5 text-xs text-white focus:border-white/20 focus:outline-none transition-all font-mono"
+                  />
                 </div>
               </div>
 
@@ -355,9 +572,9 @@ const GenesisPage: React.FC = () => {
                 >
                   <input type="file" accept="image/*" onChange={handleFileChange} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
                   {isScanning ? (
-                    <div className="flex items-center gap-2 text-genesis-accent text-xs font-medium">
-                      <div className="w-3.5 h-3.5 border-2 genesis-accent border-t-transparent rounded-full animate-spin"></div>
-                      Lendo gráfico (OCR)...
+                    <div className="flex flex-col items-center gap-1 text-genesis-accent">
+                      <ScanEye className="animate-pulse" size={18} />
+                      <span className="text-[9px] font-mono tracking-wider">LENDO METADADOS...</span>
                     </div>
                   ) : selectedFile ? (
                     <div className="flex items-center gap-2 text-genesis-positive text-xs font-medium">
@@ -410,7 +627,7 @@ const GenesisPage: React.FC = () => {
               onMouseEnter={() => setHoverAnalyze(true)}
               onMouseLeave={() => setHoverAnalyze(false)}
               disabled={isScanning}
-              className={`mt-4 w-full py-3.5 rounded-lg font-bold tracking-widest text-[11px] flex items-center justify-center gap-3 transition-all duration-300 relative overflow-hidden group disabled:opacity-50 disabled:cursor-not-allowed ${
+              className={`mt-4 w-full py-3.5 rounded-lg font-bold tracking-widest text-[11px] flex items-center justify-center gap-3 transition-all duration-300 relative overflow-hidden group ${
                 isAnalyzing
                   ? hoverAnalyze
                     ? 'bg-red-900/10 border-red-500 text-red-500 shadow-[0_0_20px_rgba(239,68,68,0.2)]'
@@ -464,9 +681,14 @@ const GenesisPage: React.FC = () => {
                 </div>
               </div>
             ) : result ? (
-              <GraphicalAnalysisResult
+              <AnalysisResult
                 data={result}
+                currentPrice={currentPrice}
+                change24h={change24h}
+                isPositiveChange={!!isPositiveChange}
+                onSaveTrade={handleSaveTrade}
                 onReset={handleResetAnalysis}
+                analiseId={currentAnaliseId}
               />
             ) : (
               <div className="h-full flex flex-col items-center justify-center text-center">

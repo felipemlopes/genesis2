@@ -61,6 +61,7 @@ export interface MultiTimeframeEntry {
 // separada do decisor único (InformativeNarrativeService, backend) — recria o texto que a tela sempre
 // mostrou no V4.3-R3.2. Best-effort: pode vir com status UNAVAILABLE se a chamada falhar.
 export interface MacroNarrative {
+  score: number | null;
   resumo: string;
   eventos: string[];
 }
@@ -97,6 +98,76 @@ export interface InformativeContext {
   };
 }
 
+// Restauração pós-entrega (2026-07-27): justificativa estruturada que o próprio decisor já devolve
+// junto da decisão — não é um cálculo novo, só nunca tinha sido exposto na resposta pública. Usado
+// pra colorir os blocos Técnico/Derivativos sem recalcular nada em paralelo ao Gemini.
+export interface ScoreBasis {
+  technical_coherence: 'VERY_LOW' | 'LOW' | 'MODERATE' | 'HIGH' | 'VERY_HIGH';
+  structure_clarity: 'UNCLEAR' | 'PARTIAL' | 'CLEAR' | 'VERY_CLEAR';
+  derivatives_confirmation: 'OPPOSES' | 'NEUTRAL' | 'SUPPORTS' | 'STRONGLY_SUPPORTS' | 'UNAVAILABLE';
+  contradiction_level: 'NONE' | 'LOW' | 'MODERATE' | 'HIGH';
+  data_quality: 'LOW' | 'MODERATE' | 'HIGH' | 'VERY_HIGH';
+}
+
+// Restauração pós-entrega (2026-07-27): pipeline de execução (entrada/stop/TP/tamanho/risco-retorno),
+// calculado depois da decisão do Gemini (ExecucaoService/MotorExecucaoService, backend). Nunca decide
+// direção/score — só matemática de risco em cima da direção já decidida. null quando ATR/preço não
+// estavam disponíveis ou o cálculo falhou (best-effort).
+export interface ExecutionCandidateSetup {
+  entrada: number;
+  stop: number;
+  tp1: number | null;
+  tp1_fonte: string | null;
+  tp2: number | null;
+  tp2_fonte: string | null;
+  tp3: number | null;
+  tp3_fonte: string | null;
+  alavancagem: number;
+  liquidacao: number | null;
+  liquidacao_rotulo: string | null;
+  risco_preco_pct: number | null;
+  risco_margem_pct: number | null;
+  risco_usd_estimado: number | null;
+  nocional_estimado: number | null;
+  tamanho_sugerido_texto: string | null;
+  rr_bruto: number | null;
+  rr_liquido_estimado: number | null;
+  rr_aviso: string | null;
+  custos_bps: Record<string, number>;
+  entrada_ts: string;
+}
+
+export interface ExecutionPlanB {
+  entrada: number;
+  stop: number;
+  tp1: number | null;
+  tp2: number | null;
+  tp3: number | null;
+  alavancagem: number;
+  liquidacao: number | string | null;
+  riscoPct: number;
+  rr1: number;
+  verificacao: 'SEGURO' | 'INSEGURO';
+  verificacao_motivo: string | null;
+  tipo: string;
+  descricao: string;
+}
+
+export interface ExecutionPipelineResult {
+  status: string;
+  executable: boolean;
+  action: AnalysisDirection | null;
+  direction_reference: AnalysisDirection | null;
+  reason_code: string | null;
+  motivo: string;
+  candidate_setup: ExecutionCandidateSetup | null;
+  executable_setup: ExecutionCandidateSetup | null;
+  planoB: ExecutionPlanB | null;
+  zonaInteresse: { tipo: string; zona: string; invalidacao: string | null } | null;
+  avisos: string[];
+  stop_ancora: { tipo: string; valor: number } | null;
+}
+
 export interface GraphicalAnalysisResult {
   analysis_id: string;
   status: 'COMPLETED';
@@ -107,6 +178,7 @@ export interface GraphicalAnalysisResult {
   direction: AnalysisDirection;
   score: number;
   score_description: string;
+  score_basis: ScoreBasis | null;
   technical_analysis: string;
   derivatives_context: DerivativesContext;
   visual_observations: VisualObservations;
@@ -116,6 +188,7 @@ export interface GraphicalAnalysisResult {
     long_short_ratio: unknown;
   };
   informative_context: InformativeContext;
+  execution: ExecutionPipelineResult | null;
   created_at: string;
 }
 

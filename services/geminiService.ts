@@ -2,9 +2,11 @@
 import { Type } from "@google/genai";
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
-import { GenesisAnalysisResult, TradeDirection, ChartMetadata, UnifiedChartResult } from "../types";
+import { GenesisAnalysisResult, TradeDirection, ChartMetadata, UnifiedChartResult, CandidateSetup, ExecutionStatus } from "../types";
 import { ExchangeData, fetchWithProxy } from "./cryptoApi";
 import { normalizarPar } from "./normalizarPar";
+import type { GraphicalAnalysisResult } from "../types/graphicalAnalysis";
+import { newAnalysisIdempotencyKey } from "./graphicalAnalysisService";
 
 /* INIT: API Key injection */
 
@@ -201,7 +203,108 @@ export const scanChartMetadata = async (file: File, selectedExchange?: string): 
     confidence,
   };
 };
-// ETAPA 2: Analise completa via Laravel backend
+// Placeholder visual (2026-07-27): o motor V6.4 não calcula entrada/stop/TP (só direção,
+// score e contexto informativo) — nenhum valor é calculado no frontend, é literalmente um
+// objeto vazio (todos os campos null) só para a Zona de Entrada/Metas/Stop aparecerem na
+// tela com "—"/"N/A". Os dados reais entram depois, quando o backend voltar a mandá-los.
+const emptyCandidateSetup: CandidateSetup = {
+  entrada: null,
+  stop: null,
+  tp1: null, tp1_fonte: null,
+  tp2: null, tp2_fonte: null,
+  tp3: null, tp3_fonte: null,
+  alavancagem: null,
+  liquidacao: null,
+  liquidacao_rotulo: null,
+  risco_preco_pct: null,
+  risco_margem_pct: null,
+  risco_usd_estimado: null,
+  nocional_estimado: null,
+  tamanho_sugerido_texto: null,
+  rr_bruto: null,
+  rr_liquido_estimado: null,
+  rr_aviso: null,
+  custos_bps: {},
+  entrada_ts: null,
+};
+
+// Adaptador (2026-07-27): traduz a resposta do motor V6.4 (rota /v1/graphical-analysis) para o
+// contrato antigo que AnalysisResult.tsx espera. Restauração pós-entrega (mesmo dia): quando o
+// backend manda v64.execution (pipeline restaurado — ExecucaoService/MotorExecucaoService, calculado
+// DEPOIS da decisão do Gemini, sem alterar direção/score), usa os dados reais; senão cai no
+// placeholder vazio (motor sem dado disponível para essa análise específica).
+const mapGraphicalToLegacy = (v64: GraphicalAnalysisResult): GenesisAnalysisResult => {
+  const ctx = v64.informative_context;
+  const macroNarrative = ctx?.macro?.narrative?.value ?? null;
+  const sentimentNarrative = ctx?.sentiment?.narrative?.value ?? null;
+  const exec = v64.execution;
+
+  return {
+    analysis_id: v64.analysis_id,
+    pair: v64.pair,
+    analysis: {
+      direction: v64.direction,
+      status: 'CONCLUIDA',
+      conviccao_modelo: v64.score,
+      leitura_fraca: false,
+      reason_code: null,
+      justificativa_score: v64.score_description,
+      score_justification: v64.score_description,
+      narrativa_tecnica: v64.technical_analysis,
+      technical_analysis: v64.technical_analysis,
+      conviction: v64.score,
+      base_conviction: v64.score,
+    },
+    execution: exec ? {
+      status: exec.status as ExecutionStatus,
+      executable: exec.executable,
+      action: exec.action,
+      direction_reference: exec.direction_reference,
+      reason_code: exec.reason_code,
+      motivo: exec.motivo,
+      candidate_setup: (exec.candidate_setup as unknown as CandidateSetup) ?? emptyCandidateSetup,
+      executable_setup: exec.executable_setup as unknown as CandidateSetup | null,
+      planoB: exec.planoB as unknown as Record<string, unknown> | null,
+      zonaInteresse: exec.zonaInteresse,
+      avisos: exec.avisos,
+      stop_ancora: exec.stop_ancora,
+    } : {
+      status: 'INDISPONIVEL',
+      executable: false,
+      action: null,
+      direction_reference: v64.direction,
+      reason_code: 'V6_4_EXECUCAO_INDISPONIVEL',
+      motivo: 'Não foi possível calcular o setup de entrada/stop/TP para esta análise (preço ou ATR indisponível).',
+      candidate_setup: emptyCandidateSetup,
+      executable_setup: null,
+      planoB: null,
+      zonaInteresse: null,
+      avisos: [],
+      stop_ancora: null,
+    },
+    contexto_informativo: (macroNarrative || sentimentNarrative) ? {
+      macro: macroNarrative,
+      sentimento: sentimentNarrative,
+    } : null,
+    ai_meta: {},
+    indicadores: {
+      rsi: ctx?.indicators?.rsi14?.value ?? null,
+      adx: ctx?.indicators?.adx14?.value ?? null,
+      atr: ctx?.indicators?.atr14?.value ?? null,
+      ema21: ctx?.indicators?.ema21?.value ?? null,
+      ema50: ctx?.indicators?.ema50?.value ?? null,
+      ema200: ctx?.indicators?.ema200?.value ?? null,
+    },
+    wyckoff: (ctx?.indicators?.wyckoff?.value as Record<string, unknown> | null) ?? undefined,
+    sessao: ctx?.indicators?.session?.value
+      ? { nome: ctx.indicators.session.value.name, cor: 'text-white' }
+      : undefined,
+    multiTimeframe: (ctx?.indicators?.multi_timeframe?.value as { timeframe: string; bias: string }[] | null) ?? [],
+    score_basis: v64.score_basis as unknown as Record<string, string> | null,
+  };
+};
+
+// ETAPA 2: Analise completa via Laravel backend (motor V6.4)
 export const analyzeChart = async (
   file: File,
   metadata: ChartMetadata,
@@ -212,80 +315,39 @@ export const analyzeChart = async (
   cvdDataParam: { delta: number, priceChangePercent: number } | null,
   entryValue: number | '' = ''
 ): Promise<GenesisAnalysisResult> => {
-  // R3.2 — Adendo Secao 28: sem defaults silenciosos. Par, timeframe e
-  // corretora precisam ter sido resolvidos antes de enviar a analise.
-  if (!metadata.pair || !metadata.timeframe || !activeExchange) {
+  // R3.2 — Adendo Secao 28: sem defaults silenciosos. Par e timeframe
+  // precisam ter sido resolvidos antes de enviar a analise.
+  if (!metadata.pair || !metadata.timeframe) {
     throw new Error('Metadados obrigatórios ausentes. Refaça a leitura do gráfico.');
   }
-  const userPair = metadata.pair;
-  const userTimeframe = metadata.timeframe;
-
-  const buildFormData = (withFlashModel = false): FormData => {
-    const fd = new FormData();
-    fd.append('image', file);
-    fd.append('symbol', userPair);
-    fd.append('timeframe', userTimeframe);
-    fd.append('leverage', String(userLeverage));
-    fd.append('exchange', activeExchange);
-    if (entryValue !== '' && entryValue !== 0) {
-      fd.append('entry_value', String(entryValue));
-    }
-    if (withFlashModel) {
-      fd.append('model', 'flash');
-    }
-    return fd;
-  };
 
   const token = localStorage.getItem('genesis_token');
-  const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
-
-  let res: Response;
-  try {
-    res = await fetch(`${API_BASE}/v1/analyze`, {
-      method: 'POST',
-      headers,
-      body: buildFormData(false),
-    });
-  } catch (networkError) {
-    // Network error (timeout, connection refused) — try fallback with flash model
-    if (isModelOverloadOrTimeout(networkError)) {
-      console.warn('[Genesis] Análise visual: modelo pro indisponível (network error), ativando fallback para gemini-2.0-flash');
-      res = await fetch(`${API_BASE}/v1/analyze`, {
-        method: 'POST',
-        headers,
-        body: buildFormData(true),
-      });
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({}));
-        throw new Error(errData.error || 'Falha ao processar analise tecnica (fallback flash)');
-      }
-      const result = await res.json();
-      return result as GenesisAnalysisResult;
-    }
-    throw networkError;
+  if (!token) {
+    throw new Error('Sessão expirada. Entre novamente.');
   }
 
-  // If response is 503, retry with flash model
-  if (res.status === 503) {
-    console.warn('[Genesis] Análise visual: modelo pro retornou 503, ativando fallback para gemini-2.0-flash');
-    res = await fetch(`${API_BASE}/v1/analyze`, {
-      method: 'POST',
-      headers,
-      body: buildFormData(true),
-    });
-    if (!res.ok) {
-      const errData = await res.json().catch(() => ({}));
-      throw new Error(errData.error || 'Falha ao processar analise tecnica (fallback flash)');
-    }
-    const result = await res.json();
-    return result as GenesisAnalysisResult;
-  }
+  const fd = new FormData();
+  fd.append('image', file);
+  fd.append('symbol', metadata.pair);
+  fd.append('timeframe', metadata.timeframe);
+  if (userLeverage > 0) fd.append('leverage', String(userLeverage));
+  if (equity && Number(equity) > 0) fd.append('equity', equity);
+
+  const res = await fetch(`${API_BASE}/v1/graphical-analysis`, {
+    method: 'POST',
+    headers: {
+      Accept: 'application/json',
+      Authorization: `Bearer ${token}`,
+      'Idempotency-Key': newAnalysisIdempotencyKey(),
+    },
+    body: fd,
+  });
 
   if (!res.ok) {
     const errData = await res.json().catch(() => ({}));
-    throw new Error(errData.error || 'Falha ao processar analise tecnica');
+    throw new Error(errData.error || `Falha ao processar analise tecnica (HTTP ${res.status})`);
   }
 
-  const result = await res.json();
-  return result as GenesisAnalysisResult;
+  const result = (await res.json()) as GraphicalAnalysisResult;
+  return mapGraphicalToLegacy(result);
 };

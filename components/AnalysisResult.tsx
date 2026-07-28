@@ -7,7 +7,7 @@ import {
 import { GenesisAnalysisResult, AnalysisDirection, ExecutionStatus } from '../types';
 import { selecionarZona, getMe } from '../services/api';
 import { formatPrice } from '../services/cryptoApi';
-import FamiliasTrader from './FamiliasTrader';
+import ScoreBasisBars from './ScoreBasisBars';
 
 interface AnalysisResultProps {
   data: GenesisAnalysisResult;
@@ -294,7 +294,12 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, currentPrice, cha
             </div>
           )}
 
-          <FamiliasTrader familias={analysis.score_familias ?? null} />
+          <ScoreBasisBars
+            scoreBasis={anyData.score_basis ?? null}
+            direction={direction}
+            macroScore={macroInfo?.score ?? null}
+            sentimentScore={sentimento?.score ?? null}
+          />
 
           {score != null && isCautela && scoreContext && (
             <div className="mb-4 rounded-lg border border-yellow-500/30 bg-yellow-500/5 p-3 relative z-10">
@@ -325,7 +330,10 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, currentPrice, cha
           </div>
         )}
 
-        {naoOperavel && (
+        {/* Esconde o aviso quando o motivo é "este motor não calcula execução" (V6.4) —
+            isso não é um bloqueio, é o motor atual não tendo esse dado. Continua avisando
+            para os demais motivos legítimos de não-executável. */}
+        {naoOperavel && execution.reason_code !== 'V6_4_SEM_EXECUCAO' && (
           <div className="rounded-xl border border-amber-500/40 bg-amber-950/30 p-6 mb-6">
             <div className="text-amber-400 font-bold text-lg tracking-widest">{executionLabel[execution.status]}</div>
             <p className="text-amber-200/80 text-sm mt-2">
@@ -334,9 +342,18 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, currentPrice, cha
           </div>
         )}
 
-        {/* R27: pipeline sempre visivel quando ha candidate_setup — TP/stop sao informativos
-            mesmo quando nao executavel; o gate operacional fica no botao de confirmacao. */}
-        {setup && setup.stop != null && (
+        {/* Análise Técnica — narrativa do trader. Fora do gate de setup: o motor V6.4
+            manda technical_analysis mesmo sem candidate_setup (sem stop/TP calculado). */}
+        <div className="bg-[#050505] rounded-[10px] p-[16px] mb-6">
+          <h3 className="text-xs font-bold text-gray-400 uppercase tracking-[0.2em] mb-4">Análise Técnica</h3>
+          <p className="text-sm text-gray-300 leading-relaxed text-left whitespace-normal break-normal" style={{ wordSpacing: 'normal', letterSpacing: 'normal', hyphens: 'none', lineHeight: 1.6 }}>
+            {limparTexto(technicalAnalysis || "Análise técnica indisponível.")}
+          </p>
+        </div>
+
+        {/* R27: pipeline sempre visível (mesmo com candidate_setup vazio) — cada campo cai em
+            "—"/"N/A" sozinho quando null; o gate operacional fica no botão de confirmação. */}
+        {setup && (
         <>
         {/* CAMADA 2: RISCO-RETORNO */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-[16px] mb-6">
@@ -379,14 +396,6 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, currentPrice, cha
               })()}
             </span>
           </div>
-        </div>
-
-        {/* Análise Técnica — narrativa do trader */}
-        <div className="bg-[#050505] rounded-[10px] p-[16px] mb-6">
-          <h3 className="text-xs font-bold text-gray-400 uppercase tracking-[0.2em] mb-4">Análise Técnica</h3>
-          <p className="text-sm text-gray-300 leading-relaxed text-left whitespace-normal break-normal" style={{ wordSpacing: 'normal', letterSpacing: 'normal', hyphens: 'none', lineHeight: 1.6 }}>
-            {limparTexto(technicalAnalysis || "Análise técnica indisponível.")}
-          </p>
         </div>
 
         {/* CAMADA 3: O PLANO DE AÇÃO */}
@@ -583,8 +592,11 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, currentPrice, cha
             </div>
           )}
         </div>
+        </>)}
 
-        {/* CAMADA 4: FUNDAMENTAÇÃO (Avançada) */}
+        {/* CAMADA 4: FUNDAMENTAÇÃO (Avançada). Fora do gate de setup: indicadores,
+            macro e sentimento vêm de informative_context, independente de haver
+            candidate_setup (o motor V6.4 não calcula entrada/stop/TP). */}
         <div className="bg-black/40  rounded-[10px] p-[16px] relative">
           <div className="flex items-center justify-between mb-6">
             <h3 className="text-[10px] font-bold text-gray-500 uppercase tracking-[0.2em] flex items-center gap-2">
@@ -750,7 +762,6 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, currentPrice, cha
           </div>
           )}
         </div>
-        </>)}
       </div>
     </div>
   );
