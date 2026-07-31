@@ -1,0 +1,5 @@
+=== G09: header da análise usa market_price do snapshot + horário ===
+287:          {data.market_price != null && (
+293:                  {formatPrice(data.market_price)}
+303:          {data.snapshot_observed_at && (
+305:              preço no momento da análise · {new Date(data.snapshot_observed_at).toLocaleTimeString('pt-BR')}

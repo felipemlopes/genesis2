@@ -2,11 +2,20 @@
 import { Type } from "@google/genai";
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
-import { GenesisAnalysisResult, TradeDirection, ChartMetadata, UnifiedChartResult, CandidateSetup, ExecutionStatus } from "../types";
+import { GenesisAnalysisResult, TradeDirection, ChartMetadata, UnifiedChartResult, CandidateSetup, ExecutionStatus, PlanoSetup } from "../types";
 import { ExchangeData, fetchWithProxy } from "./cryptoApi";
 import { normalizarPar } from "./normalizarPar";
 import type { GraphicalAnalysisResult } from "../types/graphicalAnalysis";
-import { newAnalysisIdempotencyKey } from "./graphicalAnalysisService";
+
+// V6.5 (G10-G11): antes importado de services/graphicalAnalysisService.ts (o cliente duplicado
+// deletado neste item) — única exportação daquele arquivo que o cliente real (analyzeChart, abaixo)
+// de fato usava. Movida para cá para não perder a dependência real na deleção.
+function newAnalysisIdempotencyKey(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return `ga_${crypto.randomUUID()}`;
+  }
+  return `ga_${Date.now()}_${Math.random().toString(36).slice(2)}_${Math.random().toString(36).slice(2)}`;
+}
 
 /* INIT: API Key injection */
 
@@ -148,11 +157,21 @@ export interface StrictChartMetadata {
   symbol: string;
   timeframe: string;
   exchange: string;
-  // R3.2: market não bloqueia o scan — analyzeChart() não usa este campo hoje
-  // (o backend hardcoda FUTURES internamente). Continua sendo lido quando o
-  // OCR consegue, só deixou de ser obrigatório.
+  // V6.5 (D01): 'market' agora bloqueia o scan no backend (ChartMetadataScanService exige FUTURES) —
+  // um gráfico SPOT ou não identificado nunca chega a devolver metadados aqui, cai no catch abaixo como
+  // ChartMetadataBlockedError. Este campo nunca mais chega como 'SPOT' ou null quando o scan tem sucesso.
   market: 'SPOT' | 'FUTURES' | null;
   confidence: number;
+}
+
+// V6.5 (D01): erro distinguível do genérico "falha no OCR" — sinaliza que o próprio backend recusou
+// o gráfico por não ser FUTURES (SPOT detectado ou mercado não identificado com segurança), pra a tela
+// bloquear o clique em "Analisar" e não gastar crédito numa análise que já se sabe que vai falhar.
+export class ChartMetadataBlockedError extends Error {
+  constructor(message: string, public readonly blockedReason: string) {
+    super(message);
+    this.name = 'ChartMetadataBlockedError';
+  }
 }
 
 export const scanChartMetadata = async (file: File, selectedExchange?: string): Promise<StrictChartMetadata> => {
@@ -171,6 +190,12 @@ export const scanChartMetadata = async (file: File, selectedExchange?: string): 
 
   if (!response.ok) {
     const errData = await response.json().catch(() => ({}));
+    if (errData.blocked_reason === 'MARKET_NOT_FUTURES') {
+      throw new ChartMetadataBlockedError(
+        errData.error || 'Este gráfico não é de mercado FUTURES.',
+        errData.blocked_reason
+      );
+    }
     throw new Error(errData.error || `Falha no OCR de metadados: HTTP ${response.status}`);
   }
 
@@ -214,18 +239,21 @@ const emptyCandidateSetup: CandidateSetup = {
   tp2: null, tp2_fonte: null,
   tp3: null, tp3_fonte: null,
   alavancagem: null,
+  alavancagem_info: null,
   liquidacao: null,
   liquidacao_rotulo: null,
   risco_preco_pct: null,
   risco_margem_pct: null,
   risco_usd_estimado: null,
   nocional_estimado: null,
-  tamanho_sugerido_texto: null,
+  quantidade_base_estimada: null,
+  ativo_base: null,
   rr_bruto: null,
   rr_liquido_estimado: null,
   rr_aviso: null,
   custos_bps: {},
   entrada_ts: null,
+  qualidade_entrada: null,
 };
 
 // Adaptador (2026-07-27): traduz a resposta do motor V6.4 (rota /v1/graphical-analysis) para o
@@ -242,22 +270,32 @@ const mapGraphicalToLegacy = (v64: GraphicalAnalysisResult): GenesisAnalysisResu
   return {
     analysis_id: v64.analysis_id,
     pair: v64.pair,
+    analysis_version: v64.analysis_version,
+    market_price: v64.market_price,
+    snapshot_observed_at: v64.snapshot_observed_at,
     analysis: {
       direction: v64.direction,
       status: 'CONCLUIDA',
       conviccao_modelo: v64.score,
-      leitura_fraca: false,
       reason_code: null,
       justificativa_score: v64.score_description,
       score_justification: v64.score_description,
       narrativa_tecnica: v64.technical_analysis,
       technical_analysis: v64.technical_analysis,
       conviction: v64.score,
-      base_conviction: v64.score,
+      coverage: v64.coverage_percent ?? undefined,
+      // V6.5 (G14): antes leitura_fraca vinha chumbado em false e base_conviction reintroduzia o
+      // score final com outro nome — nenhum dos dois refletia dado real. cobertura_baixa é derivado
+      // de coverage_percent de verdade.
+      cobertura_baixa: v64.coverage_percent != null ? v64.coverage_percent < 70 : undefined,
     },
     execution: exec ? {
       status: exec.status as ExecutionStatus,
       executable: exec.executable,
+      // V6.5 (E02): campo novo do backend — default true (equivalente ao comportamento antigo, onde
+      // executable já implicava recomendado) só quando a resposta vier de uma decisão cacheada antes
+      // deste campo existir.
+      recommended: exec.recommended ?? exec.executable,
       action: exec.action,
       direction_reference: exec.direction_reference,
       reason_code: exec.reason_code,
@@ -265,12 +303,16 @@ const mapGraphicalToLegacy = (v64: GraphicalAnalysisResult): GenesisAnalysisResu
       candidate_setup: (exec.candidate_setup as unknown as CandidateSetup) ?? emptyCandidateSetup,
       executable_setup: exec.executable_setup as unknown as CandidateSetup | null,
       planoB: exec.planoB as unknown as Record<string, unknown> | null,
+      // V6.5 (E08): campo novo do backend — vazio quando a resposta vier de uma decisão cacheada
+      // antes deste campo existir (a tela cai no fallback de candidate_setup/planoB nesse caso).
+      planos: (exec.planos as unknown as PlanoSetup[]) ?? [],
       zonaInteresse: exec.zonaInteresse,
       avisos: exec.avisos,
       stop_ancora: exec.stop_ancora,
     } : {
       status: 'INDISPONIVEL',
       executable: false,
+      recommended: false,
       action: null,
       direction_reference: v64.direction,
       reason_code: 'V6_4_EXECUCAO_INDISPONIVEL',
@@ -278,6 +320,7 @@ const mapGraphicalToLegacy = (v64: GraphicalAnalysisResult): GenesisAnalysisResu
       candidate_setup: emptyCandidateSetup,
       executable_setup: null,
       planoB: null,
+      planos: [],
       zonaInteresse: null,
       avisos: [],
       stop_ancora: null,

@@ -7,11 +7,14 @@ import {
 import { GenesisAnalysisResult, AnalysisDirection, ExecutionStatus } from '../types';
 import { selecionarZona, getMe } from '../services/api';
 import { formatPrice } from '../services/cryptoApi';
+import { rotularFonte } from '../utils/rotulos';
+import { faixaDeConviccao } from '../utils/conviccao';
+import AssetBadge from './AssetBadge';
+import BlocoConviccaoQualidade from './BlocoConviccaoQualidade';
 import ScoreBasisBars from './ScoreBasisBars';
 
 interface AnalysisResultProps {
   data: GenesisAnalysisResult;
-  currentPrice?: string;
   change24h?: string;
   isPositiveChange?: boolean;
   onSaveTrade?: () => void;
@@ -52,12 +55,7 @@ const directionLabel: Record<AnalysisDirection, string> = {
 const limparTexto = (t: string) =>
   t.replace(/[ \t]{2,}/g, ' ').replace(/[ \t]+\n/g, '\n').trim();
 
-const getLogoUrl = (pair: string) => {
-  const symbol = (pair || '').split('USDT')[0].toLowerCase();
-  return `https://cryptologos.cc/logos/${symbol}-${symbol}-logo.png`;
-};
-
-const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, currentPrice, change24h, isPositiveChange, onSaveTrade, onReset, analiseId }) => {
+const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, change24h, isPositiveChange, onSaveTrade, onReset, analiseId }) => {
   const [showIndicators, setShowIndicators] = useState(false);
   const [selectedZone, setSelectedZone] = useState<'A' | 'B' | null>(null);
   const [zoneSaveStatus, setZoneSaveStatus] = useState<'idle' | 'saving' | 'success' | 'error'>('idle');
@@ -160,11 +158,16 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, currentPrice, cha
   const { analysis, execution } = data;
   const setup = execution.candidate_setup;
   const score = analysis.conviccao_modelo;
-  const isCautela = analysis.leitura_fraca;
+  // V6.5 (G14): antes lido de analysis.leitura_fraca, que o adaptador sempre chumbava em false
+  // (nunca refletia a leitura real). Removido o campo falso — cautela agora deriva do próprio score,
+  // mesma faixa "Fraca/Parcial" (<=60) usada por faixaDeConviccao() (G06).
+  const isCautela = score != null && score <= 60;
 
-  // R3.2 — Seção 15.5: operável é definido exclusivamente por execution.executable
-  // e execution.action, nunca pela string de direção.
-  const isOperavel = execution.executable && execution.action !== null;
+  // V6.5 (E02): renomeado de isOperavel — antes, RR baixo ou convicção baixa também zeravam
+  // execution.executable (bloqueio total). Agora executable só significa "a matemática fechou";
+  // podeInteragir continua definido por execution.executable + execution.action, mas isso já não
+  // inclui mais RR/convicção baixos, que viram aviso (temAviso) em vez de bloqueio.
+  const podeInteragir = execution.executable && execution.action !== null;
 
   const direction = analysis.direction;
   const isLong = direction === 'LONG';
@@ -172,12 +175,56 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, currentPrice, cha
 
   const planoB = execution.planoB as { entrada?: number; descricao?: string; zona?: string } | null;
 
-  const activeEntrada = selectedZone === 'B' && planoB?.entrada ? planoB.entrada : setup?.entrada;
+  // V6.5 (E08): antes só a 'entrada' trocava ao selecionar o Plano B — stop/TP1-3/RR/alavancagem/
+  // liquidação/tamanho/invalidação continuavam mostrando os números do Plano A, mesmo com "Plano B"
+  // selecionado na tela. planoAtivo troca TODOS os 9 campos juntos, lendo de execution.planos[]
+  // (formato completo e independente pros dois planos) — cai em candidate_setup só se a resposta for
+  // de uma decisão cacheada antes deste campo existir (planos ausente/vazio).
+  const planos = execution.planos ?? [];
+  const planoAtivo = (selectedZone && planos.find((p) => p.plano === selectedZone))
+    || planos.find((p) => p.plano === 'A')
+    || planos[0]
+    || null;
+  const planoBDados = planos.find((p) => p.plano === 'B') ?? null;
+  // V6.5 (G02): zona_de/zona_ate chegam numéricos agora (antes vinham embutidos na frase de
+  // 'descricao', sem separador de milhar) — formatados aqui, junto do texto qualitativo do backend.
+  const planoBDescricaoCompleta = (() => {
+    const texto = planoBDados?.descricao || 'Entrada alternativa calculada pelo motor de execução.';
+    if (planoBDados?.zona_de != null && planoBDados?.zona_ate != null) {
+      return `Zona entre ${formatPrice(planoBDados.zona_de)} e ${formatPrice(planoBDados.zona_ate)}. ${texto}`;
+    }
+    return texto;
+  })();
+
+  const activeEntrada = planoAtivo?.entrada ?? (selectedZone === 'B' && planoB?.entrada ? planoB.entrada : setup?.entrada);
+
+  // V6.5 (E11): antes o backend montava a frase inteira, usando o par completo como se fosse a
+  // unidade da quantidade ("0.05 BTCUSDT" — errado, a unidade real é só o ativo base, BTC). Backend
+  // agora só devolve os números; a frase é montada aqui.
+  const tamanhoSugeridoTexto = (() => {
+    const nocional = planoAtivo?.nocional_estimado ?? setup?.nocional_estimado;
+    const quantidadeBase = planoAtivo?.quantidade_base_estimada ?? setup?.quantidade_base_estimada;
+    const ativoBase = planoAtivo?.ativo_base ?? setup?.ativo_base;
+    const riscoUsd = planoAtivo?.risco_usd_estimado ?? setup?.risco_usd_estimado;
+    const riscoMargemPct = planoAtivo?.risco_margem_pct ?? setup?.risco_margem_pct;
+    if (nocional == null || quantidadeBase == null || !ativoBase) return null;
+    const base = `$${nocional.toFixed(2)} de nocional, equivalente a ${quantidadeBase} ${ativoBase}`;
+    if (riscoUsd == null || riscoMargemPct == null) return `${base}.`;
+    return `${base}. Risco estimado até o stop: $${riscoUsd.toFixed(2)} (${riscoMargemPct}% da margem-base).`;
+  })();
 
   const badgeColor = isLong ? 'text-genesis-positive' : isShort ? 'text-genesis-negative' : 'text-yellow-500';
   const progressColor = isLong ? 'bg-genesis-positive' : isShort ? 'bg-genesis-negative' : 'bg-yellow-500/60';
 
-  const invalidacaoAtiva = execution.zonaInteresse?.invalidacao || analysis.invalidacao_tese || null;
+  // V6.5 (E08): antes vinha só de execution.zonaInteresse (sempre a invalidação do Plano A, mesmo com
+  // Plano B selecionado) — agora troca junto com o plano ativo.
+  // V6.5 (G02): backend para de montar a frase com o nível cru embutido (ex.: "$65370.9262", sem
+  // separador de milhar) — direção + nível chegam numéricos, o texto é montado aqui com formatPrice().
+  const invalidacaoDirecao = planoAtivo?.invalidacao_direcao ?? execution.zonaInteresse?.invalidacao_direcao ?? null;
+  const invalidacaoNivel = planoAtivo?.invalidacao_nivel ?? execution.zonaInteresse?.invalidacao_nivel ?? null;
+  const invalidacaoAtiva = invalidacaoDirecao && invalidacaoNivel != null
+    ? `A tese perde validade com fechamento ${invalidacaoDirecao} de ${formatPrice(invalidacaoNivel)}.`
+    : (analysis.invalidacao_tese || null);
 
   // R3.2 — Adendo Seção 32: contrato canônico em inglês primeiro, com
   // fallback ao português legado. `execution.motivo` nunca alimenta a
@@ -186,21 +233,17 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, currentPrice, cha
   const technicalAnalysis = analysis.technical_analysis ?? analysis.narrativa_tecnica ?? null;
   const scoreContext = analysis.score_context ?? null;
 
-  const naoOperavel = execution.status !== 'EXECUTAVEL';
+  // V6.5 (E02): renomeado de naoOperavel — antes bloqueava a tela sempre que status !== 'EXECUTAVEL',
+  // o que incluía RR baixo e convicção baixa. Agora só reflete "existe aviso a mostrar", sem desabilitar
+  // os botões por conta disso (podeInteragir é quem decide isso, e não depende mais de recommended).
+  const temAviso = !execution.recommended || execution.avisos.length > 0;
 
   return (
     <div className="space-y-4">
       {/* Action Bar */}
       <div className="flex justify-between items-center bg-transparent pb-4 border-b border-white/[0.02] ">
         <div className="flex items-center gap-3">
-          <img
-            src={getLogoUrl(data.pair)}
-            alt={data.pair}
-            className="w-8 h-8 rounded-full"
-            onError={(e) => {
-              (e.target as HTMLImageElement).src = 'https://cryptologos.cc/logos/tether-usdt-logo.png';
-            }}
-          />
+          <AssetBadge symbol={data.pair} size="md" mostrarNome={false} />
           <div>
             <h2 className="text-xl font-bold text-white tracking-tight">{data.pair}</h2>
             <span className="text-[10px] text-genesis-accent font-mono uppercase tracking-widest">{executionLabel[execution.status]}</span>
@@ -230,21 +273,24 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, currentPrice, cha
       <div id="analysis-capture" className="p-[16px] bg-black rounded-xl  relative">
         <div className="absolute top-[16px] right-4 flex items-center gap-2 opacity-30 -none z-10">
           <Share2 size={12} className="text-white" />
-          <span className="text-[8px] tracking-widest font-mono text-white uppercase">Genesis v3.0</span>
+          <span className="text-[8px] tracking-widest font-mono text-white uppercase">Gênesis {data.analysis_version ?? 'v6.5'}</span>
         </div>
 
         {/* CAMADA 1: DECISÃO RÁPIDA */}
         <div className={`bg-[#0a0a0f] rounded-3xl shadow-2xl border border-white/[0.03] p-[16px] mb-6 shadow-2xl relative overflow-hidden mt-8`}>
           <div className={`absolute top-0 right-0 w-64 h-64 ${isLong ? 'bg-genesis-positive/5' : 'bg-genesis-negative/5'} blur-[100px] pointer-events-none rounded-full`} />
 
-          {/* Header de Preço Dinâmico */}
-          {currentPrice && (
-            <div className="flex items-center gap-2 mb-4">
+          {/* V6.5 (G09): preço do snapshot — o mesmo sobre o qual o setup foi calculado — em vez do
+              preço vivo do polling (AppContext), que evitava 3 preços diferentes na mesma tela
+              (header, entrada do Plano A, TradingView no momento do print). O preço ao vivo continua
+              só no ticker geral da plataforma, fora do bloco de análise. */}
+          {data.market_price != null && (
+            <div className="flex items-center gap-2 mb-1">
                 <span className="text-[12px] font-bold text-genesis-text-secondary uppercase tracking-wider">
                   {data.pair?.replace('USDT', '').replace('/', '') || ''}
                 </span>
                 <span className="text-sm font-mono text-white tracking-wider">
-                  {currentPrice}
+                  {formatPrice(data.market_price)}
                 </span>
                 {change24h && (
                     <div className={`flex items-center gap-1 text-[11px] font-bold ${isPositiveChange ? 'text-genesis-positive' : 'text-genesis-negative'}`}>
@@ -253,6 +299,11 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, currentPrice, cha
                     </div>
                 )}
             </div>
+          )}
+          {data.snapshot_observed_at && (
+            <p className="text-[9px] text-gray-500 mb-4">
+              preço no momento da análise · {new Date(data.snapshot_observed_at).toLocaleTimeString('pt-BR')}
+            </p>
           )}
 
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 relative z-10">
@@ -263,9 +314,18 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, currentPrice, cha
                   <span className={`text-6xl font-bold ${badgeColor} tracking-tighter uppercase drop--[0_0_15px_rgba(0,0,0,0.5)]`}>
                     {directionLabel[direction] ?? direction}
                   </span>
-                  {isOperavel && setup?.alavancagem != null && (
-                    <span className={`px-3 py-1 rounded bg-white/5 text-xl font-bold font-mono ${badgeColor}`}>
-                      {setup.alavancagem}x
+                  {/* V6.5 (E09-E10): antes só aparecia com podeInteragir (RR/convicção baixos escondiam
+                      a alavancagem inteira da tela) — agora sempre visível quando há um valor calculado,
+                      com aviso quando o valor pedido foi reduzido por segurança (nunca mais silencioso). */}
+                  {(planoAtivo?.alavancagem ?? setup?.alavancagem) != null && (
+                    <span
+                      className={`px-3 py-1 rounded bg-white/5 text-xl font-bold font-mono ${badgeColor} inline-flex items-center gap-1.5`}
+                      title={(planoAtivo?.alavancagem_info ?? setup?.alavancagem_info)?.motivo ?? undefined}
+                    >
+                      {planoAtivo?.alavancagem ?? setup?.alavancagem}x
+                      {(planoAtivo?.alavancagem_info ?? setup?.alavancagem_info)?.ajustada && (
+                        <AlertTriangle size={14} className="text-yellow-500" />
+                      )}
                     </span>
                   )}
                 </div>
@@ -278,15 +338,21 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, currentPrice, cha
                 <div className="text-right">
                   <span className={`text-4xl font-bold font-mono ${isCautela ? 'text-yellow-500' : badgeColor}`}>
                     {score ?? '—'}
-                    {score != null && <span className="text-lg text-gray-600">/100</span>}
+                    {score != null && <span className="text-lg text-gray-600">/90</span>}
                   </span>
                 </div>
               </div>
               <span className={`text-xs font-bold uppercase tracking-widest mt-1 px-2 py-0.5 rounded ${isCautela ? 'bg-yellow-900/20 text-yellow-500 border-yellow-500/30' : 'bg-green-900/20 text-genesis-positive border-genesis-positive/30'}`}>
-                {isCautela ? 'Leitura com Cautela' : 'Leitura Confirmada'}
+                {faixaDeConviccao(score)}
               </span>
             </div>
           </div>
+
+          {/* V6.5 (G06): aviso permanente — convicção mede coerência entre dados, não é
+              probabilidade nem recomendação. Gênesis não é sala de sinal. */}
+          <p className="text-[9px] text-gray-500 mb-4 relative z-10">
+            Convicção mede a coerência entre os dados observados. Não é probabilidade nem recomendação. A decisão é sua.
+          </p>
 
           {score != null && (
             <div className="mb-5 relative z-10 w-full bg-gray-900 rounded-full h-2 overflow-hidden ">
@@ -301,6 +367,14 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, currentPrice, cha
             sentimentScore={sentimento?.score ?? null}
           />
 
+          {/* V6.5 (G14): cobertura_baixa é derivado de verdade (coverage_percent < 70), nunca
+              chumbado — antes a tela nem mostrava a cobertura de dados desta leitura. */}
+          {analysis.cobertura_baixa && (
+            <p className="mb-4 text-xs text-yellow-400 bg-yellow-500/5 border border-yellow-500/30 rounded-lg p-3 relative z-10">
+              Cobertura de dados em {analysis.coverage != null ? `${analysis.coverage.toFixed(0)}%` : 'nível reduzido'}. Parte dos indicadores não estava disponível no momento desta leitura.
+            </p>
+          )}
+
           {score != null && isCautela && scoreContext && (
             <div className="mb-4 rounded-lg border border-yellow-500/30 bg-yellow-500/5 p-3 relative z-10">
               <p className="text-xs font-semibold text-yellow-400">Leitura de baixa convicção</p>
@@ -312,6 +386,16 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, currentPrice, cha
               ))}
             </div>
           )}
+
+          {/* V6.5 (G15, Decisão 8 do PO): separa as 3 perguntas que a tela misturava — convicção
+              (direção), qualidade da entrada (localização do preço) e risco/retorno — em vez do
+              membro ler o número gigante do topo como "operação aprovada". */}
+          <BlocoConviccaoQualidade
+            score={score}
+            rr={planoAtivo?.rr_liquido_estimado ?? setup?.rr_liquido_estimado ?? null}
+            fatores={planoAtivo?.qualidade_entrada ?? setup?.qualidade_entrada ?? []}
+            direcao={direction === 'SHORT' ? 'SHORT' : 'LONG'}
+          />
 
           <div className="bg-white/5  rounded-lg p-[16px] relative z-10 flex items-start gap-3">
             <Target className={`${badgeColor} shrink-0 mt-0.5`} size={16} />
@@ -333,7 +417,7 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, currentPrice, cha
         {/* Esconde o aviso quando o motivo é "este motor não calcula execução" (V6.4) —
             isso não é um bloqueio, é o motor atual não tendo esse dado. Continua avisando
             para os demais motivos legítimos de não-executável. */}
-        {naoOperavel && execution.reason_code !== 'V6_4_SEM_EXECUCAO' && (
+        {temAviso && execution.reason_code !== 'V6_4_SEM_EXECUCAO' && (
           <div className="rounded-xl border border-amber-500/40 bg-amber-950/30 p-6 mb-6">
             <div className="text-amber-400 font-bold text-lg tracking-widest">{executionLabel[execution.status]}</div>
             <p className="text-amber-200/80 text-sm mt-2">
@@ -360,39 +444,47 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, currentPrice, cha
           <div className="bg-[#050505] rounded-[10px] p-[16px] flex flex-col justify-center items-center text-center cursor-help" title="Risco/retorno líquido estimado com base no primeiro alvo (TP1).">
             <span className="text-[10px] text-gray-500 font-bold uppercase tracking-widest mb-2">RISCO/RETORNO (TP1)</span>
             <span className="text-2xl font-mono text-white font-bold">
-              {setup.rr_liquido_estimado != null ? `1:${setup.rr_liquido_estimado}` : '—'}
+              {(planoAtivo?.rr_liquido_estimado ?? setup.rr_liquido_estimado) != null ? `1:${planoAtivo?.rr_liquido_estimado ?? setup.rr_liquido_estimado}` : '—'}
             </span>
           </div>
 
-          <div className="bg-[#050505]  rounded-[10px] p-[16px] flex flex-col justify-center items-center text-center relative overflow-hidden">
-            <span className="text-[10px] text-gray-500 font-bold uppercase tracking-widest mb-2">Risco Máximo</span>
-            <span className="text-2xl font-mono text-genesis-negative font-bold flex items-baseline gap-1">
-              {setup.risco_preco_pct != null ? `${setup.risco_preco_pct}%` : '—'}
-              {setup.risco_usd_estimado != null && <span className="text-[10px] text-gray-500"> (${setup.risco_usd_estimado})</span>}
+          {/* V6.5 (E13, resolve também G07): antes chamado "Risco Máximo", mostrando a distância até
+              o stop como se fosse o risco de capital — os dois são coisas diferentes (a distância em %
+              não diz quanto do saldo está em jogo; isso depende também do tamanho da posição). O risco
+              de capital real fica no card "Risco de Capital (real)", com o rótulo correto. */}
+          <div className="bg-[#050505]  rounded-[10px] p-[16px] flex flex-col justify-center items-center text-center relative overflow-hidden cursor-help" title="Distância percentual entre a entrada e o stop — não é quanto do seu saldo está em risco (ver Risco de Capital).">
+            <span className="text-[10px] text-gray-500 font-bold uppercase tracking-widest mb-2">Distância até o Stop</span>
+            <span className="text-2xl font-mono text-genesis-negative font-bold">
+              {(planoAtivo?.risco_preco_pct ?? setup.risco_preco_pct) != null ? `${planoAtivo?.risco_preco_pct ?? setup.risco_preco_pct}%` : '—'}
             </span>
           </div>
 
           <div className="bg-[#050505]  rounded-[10px] p-[16px] flex flex-col justify-center items-center text-center col-span-2 md:col-span-1">
             <span className="text-[10px] text-gray-500 font-bold uppercase tracking-widest mb-2">Liquidação (estimada)</span>
             <span className="text-xl font-mono text-orange-400 font-bold">
-              {setup.liquidacao != null ? `$${formatPrice(Number(setup.liquidacao))}` : '—'}
+              {(planoAtivo?.liquidacao ?? setup.liquidacao) != null ? formatPrice(Number(planoAtivo?.liquidacao ?? setup.liquidacao)) : '—'}
             </span>
           </div>
 
-          <div className="bg-[#050505]  rounded-[10px] p-[16px] flex flex-col justify-center col-span-2 md:col-span-1">
-            <span className="text-[9px] text-gray-500 font-bold uppercase tracking-widest mb-2 text-center md:text-left">Perfil da Operação</span>
+          {/* V6.5 (E13, resolve também G07): antes rotulado "Perfil da Operação" — este é o risco de
+              capital de verdade (% do saldo/margem-base efetivamente em jogo, não a distância geométrica
+              até o stop). Rótulo explícito pra não confundir com o card de Distância até o Stop. */}
+          <div className="bg-[#050505]  rounded-[10px] p-[16px] flex flex-col justify-center col-span-2 md:col-span-1" title="Percentual do seu saldo/margem-base efetivamente em risco nesta operação — depende do tamanho da posição, diferente da distância até o stop.">
+            <span className="text-[9px] text-gray-500 font-bold uppercase tracking-widest mb-2 text-center md:text-left">Risco de Capital (real)</span>
             <div className="w-full bg-gray-900 rounded-full h-1.5 mb-2 overflow-hidden">
               <div
                 className="h-full bg-orange-400 opacity-80"
-                style={{ width: `${Math.min((setup.risco_margem_pct ?? 0), 100)}%` }}
+                style={{ width: `${Math.min((planoAtivo?.risco_margem_pct ?? setup.risco_margem_pct ?? 0), 100)}%` }}
               />
             </div>
             <span className="text-[9px] font-mono text-gray-400 text-center md:text-left">
               {(() => {
-                const riscoMargemPct = setup.risco_margem_pct;
+                const riscoMargemPct = planoAtivo?.risco_margem_pct ?? setup.risco_margem_pct;
+                const riscoUsd = planoAtivo?.risco_usd_estimado ?? setup.risco_usd_estimado;
                 if (riscoMargemPct == null) return 'Exposição não calculada';
                 const label = riscoMargemPct > 50 ? 'Alta Exposição' : riscoMargemPct > 25 ? 'Exposição Moderada' : 'Baixa Exposição';
-                return `${label} (${riscoMargemPct > 100 ? '>' : ''}${Math.min(riscoMargemPct, 100).toFixed(1)}% da margem)`;
+                const usdSufixo = riscoUsd != null ? ` — $${riscoUsd}` : '';
+                return `${label} (${riscoMargemPct > 100 ? '>' : ''}${Math.min(riscoMargemPct, 100).toFixed(1)}% da margem${usdSufixo})`;
               })()}
             </span>
           </div>
@@ -431,9 +523,9 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, currentPrice, cha
                 <div className="space-y-3">
                   {/* Plano A */}
                   <button
-                    disabled={naoOperavel}
+                    disabled={!podeInteragir}
                     onClick={() => handleZoneSelect('A')}
-                    className={`w-full text-left p-2.5 rounded-lg border transition-all duration-200 ${naoOperavel ? 'opacity-40 cursor-not-allowed' : ''} ${
+                    className={`w-full text-left p-2.5 rounded-lg border transition-all duration-200 ${!podeInteragir ? 'opacity-40 cursor-not-allowed' : ''} ${
                       selectedZone === 'A'
                         ? 'bg-genesis-accent/10 border-genesis-accent ring-1 ring-genesis-accent'
                         : 'bg-black/20 border-white/5 hover:border-white/10 hover:bg-black/30'
@@ -451,9 +543,9 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, currentPrice, cha
                   {/* Plano B */}
                   {planoB?.entrada != null && (
                     <button
-                      disabled={naoOperavel}
+                      disabled={!podeInteragir}
                       onClick={() => handleZoneSelect('B')}
-                      className={`w-full text-left p-2.5 rounded-lg border transition-all duration-200 ${naoOperavel ? 'opacity-40 cursor-not-allowed' : ''} ${
+                      className={`w-full text-left p-2.5 rounded-lg border transition-all duration-200 ${!podeInteragir ? 'opacity-40 cursor-not-allowed' : ''} ${
                         selectedZone === 'B'
                           ? 'bg-genesis-accent/10 border-genesis-accent ring-1 ring-genesis-accent'
                           : 'bg-black/20 border-white/5 hover:border-white/10 hover:bg-black/30'
@@ -464,7 +556,7 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, currentPrice, cha
                         <span className="font-mono font-bold text-xs text-white">{formatPrice(Number(planoB.entrada))}</span>
                       </div>
                       <p className="text-[9px] text-gray-400 font-mono tracking-wide leading-tight mt-1">
-                        {planoB.descricao || 'Entrada alternativa calculada pelo motor de execução.'}
+                        {planoBDescricaoCompleta}
                       </p>
                     </button>
                   )}
@@ -474,18 +566,18 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, currentPrice, cha
               {/* Botão de Confirmação */}
               <div className="mt-4 pt-3 border-t border-white/5 relative group">
                 <button
-                  disabled={!isOperavel || !selectedZone}
+                  disabled={!podeInteragir || !selectedZone}
                   onClick={() => { if (onSaveTrade) onSaveTrade(); }}
                   className={`w-full flex items-center justify-center gap-2 py-2 px-3 rounded-md text-xs font-mono uppercase tracking-wider font-bold transition-all duration-[180ms] ${
-                    !selectedZone || !isOperavel
+                    !selectedZone || !podeInteragir
                       ? 'bg-white/5 text-gray-600 cursor-not-allowed'
                       : 'bg-genesis-accent text-black hover:bg-[#39ff14] hover:text-black hover:shadow-[0_4px_16px_rgba(57,255,20,0.25)] active:scale-[0.98]'
                   }`}
                 >
                   <Shield size={14} />
-                  {!isOperavel ? 'Execução não disponível' : selectedZone ? 'Confirmar Posição' : 'Selecione um Plano'}
+                  {!podeInteragir ? 'Execução não disponível' : selectedZone ? 'Confirmar Posição' : 'Selecione um Plano'}
                 </button>
-                {selectedZone && isOperavel && (
+                {selectedZone && podeInteragir && (
                   <div className="confirmar-alerta absolute bottom-full left-0 z-[9999] flex gap-2 items-start mb-2 max-w-[300px] p-2.5 bg-[#2a2103] border border-[#b45309] rounded-[10px] text-[#fde68a] text-[12.5px] leading-relaxed opacity-0 invisible transition-opacity duration-150 pointer-events-none group-hover:opacity-100 group-hover:visible">
                     <span className="flex-shrink-0 mt-px">⚠️</span>
                     <span>Espera um segundo. Cheque o macro, o geopolítico e o sentimento da moeda no rodapé antes de entrar. O contexto pode reforçar ou enfraquecer esse setup.</span>
@@ -508,23 +600,23 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, currentPrice, cha
                 <div className="flex justify-between items-center group">
                     <span className="text-gray-500 text-[10px] font-bold">TP1</span>
                     <div className="text-right">
-                      <span className="text-genesis-positive font-mono font-bold text-sm bg-genesis-positive/10 px-2 py-0.5 rounded">{setup.tp1 != null ? formatPrice(Number(setup.tp1)) : '—'}</span>
-                      {setup.tp1_fonte && <div className="text-[8px] text-gray-500 mt-0.5">{setup.tp1_fonte}</div>}
+                      <span className="text-genesis-positive font-mono font-bold text-sm bg-genesis-positive/10 px-2 py-0.5 rounded">{(planoAtivo?.tp1 ?? setup.tp1) != null ? formatPrice(Number(planoAtivo?.tp1 ?? setup.tp1)) : '—'}</span>
+                      {(planoAtivo?.tp1_fonte ?? setup.tp1_fonte) && <div className="text-[8px] text-gray-500 mt-0.5">{rotularFonte(planoAtivo?.tp1_fonte ?? setup.tp1_fonte)}</div>}
                     </div>
                 </div>
                 <div className="flex justify-between items-center group">
                     <span className="text-gray-500 text-[10px] font-bold">TP2</span>
                     <div className="text-right">
-                      <span className="text-genesis-positive font-mono font-bold text-sm bg-genesis-positive/10 px-2 py-0.5 rounded">{setup.tp2 != null ? formatPrice(Number(setup.tp2)) : '—'}</span>
-                      {setup.tp2_fonte && <div className="text-[8px] text-gray-500 mt-0.5">{setup.tp2_fonte}</div>}
+                      <span className="text-genesis-positive font-mono font-bold text-sm bg-genesis-positive/10 px-2 py-0.5 rounded">{(planoAtivo?.tp2 ?? setup.tp2) != null ? formatPrice(Number(planoAtivo?.tp2 ?? setup.tp2)) : '—'}</span>
+                      {(planoAtivo?.tp2_fonte ?? setup.tp2_fonte) && <div className="text-[8px] text-gray-500 mt-0.5">{rotularFonte(planoAtivo?.tp2_fonte ?? setup.tp2_fonte)}</div>}
                     </div>
                 </div>
-                {setup.tp3 != null && (
+                {(planoAtivo?.tp3 ?? setup.tp3) != null && (
                 <div className="flex justify-between items-center group">
                     <span className="text-gray-500 text-[10px] font-bold">TP3</span>
                     <div className="text-right">
-                      <span className="text-genesis-positive font-mono font-bold text-sm bg-genesis-positive/10 px-2 py-0.5 rounded">{formatPrice(Number(setup.tp3))}</span>
-                      {setup.tp3_fonte && <div className="text-[8px] text-gray-500 mt-0.5">{setup.tp3_fonte}</div>}
+                      <span className="text-genesis-positive font-mono font-bold text-sm bg-genesis-positive/10 px-2 py-0.5 rounded">{formatPrice(Number(planoAtivo?.tp3 ?? setup.tp3))}</span>
+                      {(planoAtivo?.tp3_fonte ?? setup.tp3_fonte) && <div className="text-[8px] text-gray-500 mt-0.5">{rotularFonte(planoAtivo?.tp3_fonte ?? setup.tp3_fonte)}</div>}
                     </div>
                 </div>
                 )}
@@ -542,7 +634,7 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, currentPrice, cha
             <div className="w-full lg:w-1/3 bg-white/[0.02]  rounded-lg p-5 border-l-genesis-negative hover:bg-red-950/20 transition-colors relative h-full min-h-[140px]">
               <span className="text-[10px] font-bold text-genesis-negative uppercase tracking-widest block mb-3">Defesa (Stop Loss)</span>
               <div className="mb-4 mt-2">
-                <span className="text-2xl font-mono text-genesis-negative font-bold drop--[0_0_8px_rgba(239,68,68,0.4)]">{setup.stop != null ? `$${formatPrice(Number(setup.stop))}` : '—'}</span>
+                <span className="text-2xl font-mono text-genesis-negative font-bold drop--[0_0_8px_rgba(239,68,68,0.4)]">{(planoAtivo?.stop ?? setup.stop) != null ? formatPrice(Number(planoAtivo?.stop ?? setup.stop)) : '—'}</span>
               </div>
 
               {/* BLOCO 2 - INVALIDAÇÃO DA TESE */}
@@ -571,8 +663,8 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, currentPrice, cha
                 TAMANHO SUGERIDO
               </span>
 
-              {setup.tamanho_sugerido_texto ? (
-                <span className="text-[10px] text-white font-mono">{setup.tamanho_sugerido_texto}</span>
+              {tamanhoSugeridoTexto ? (
+                <span className="text-[10px] text-white font-mono">{tamanhoSugeridoTexto}</span>
               ) : (
                 <span className="text-[10px] text-gray-500 italic">Informe o valor de entrada no formulário para calcular o tamanho da posição</span>
               )}
@@ -580,13 +672,13 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, currentPrice, cha
           </div>
 
           {/* ALERTA VISUAL DE RISCO RETORNO — vem do backend, nao e recalculado no cliente */}
-          {setup.rr_aviso && (
+          {(planoAtivo?.rr_aviso ?? setup.rr_aviso) && (
             <div className="mt-6 border border-yellow-500/30 bg-yellow-500/10 p-4 rounded-lg flex items-start gap-4 animate-in fade-in slide-in-from-bottom-2">
               <ShieldAlert className="text-yellow-500 shrink-0 mt-0.5" size={20} />
               <div>
                 <h4 className="text-yellow-500 font-bold text-sm mb-1">Risco Retorno abaixo do recomendado.</h4>
                 <p className="text-yellow-500/80 text-xs">
-                  {setup.rr_aviso}
+                  {planoAtivo?.rr_aviso ?? setup.rr_aviso}
                 </p>
               </div>
             </div>

@@ -1,0 +1,11 @@
+=== G12-G13: AssetBadge.tsx aplicado (6 de 8 telas do documento) ===
+Corrigidas: AnalysisResult, FundingMonitor (dedup getLogoUrl), AnalysisHistoryDashboard,
+OpportunityScanner, CarteiraCripto, MarketTicker (só itens cripto).
+
+Fora do escopo — decisão FINAL do usuário (31/07/2026), não serão feitas:
+- ManagementPanel.tsx: stub 'funcionalidade desativada', não mostra par nenhum.
+- Timeline.tsx: feed geopolítico (market_impact.asset pode ser 'Ouro'/'Petróleo', não só cripto).
+- MarketWidget.tsx: recebe selectedPair mas nunca o renderiza como texto hoje.
+
+getLogoUrl duplicado — verificação (esperado vazio, só comentário em AssetBadge.tsx):
+./components/AssetBadge.tsx:20:// criptomoeda ao lado do nome. getLogoUrl estava duplicado (AnalysisResult.tsx, FundingMonitor.tsx)

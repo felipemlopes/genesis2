@@ -7,6 +7,7 @@ import Papa from 'papaparse';
 import { format } from 'date-fns';
 import { useMonitoramentoCarteira } from '../hooks/useMonitoramentoCarteira';
 import { useAppContext } from '../contexts/AppContext';
+import AssetBadge from './AssetBadge';
 import {
   fetchCarteiraMembro, storeCarteiraMembro, updateCarteiraMembro, deleteCarteiraMembro,
   fetchCarteiraMae, storeCarteiraMae, updateCarteiraMae, deleteCarteiraMae,
@@ -699,7 +700,10 @@ const CarteiraCripto = () => {
                                   <span className={`px-1.5 py-0.5 rounded text-[8px] font-bold ${item.tipo === 'GEMA' ? 'bg-genesis-accent/20 text-genesis-accent' : 'bg-green-500/20 text-green-400'}`}>
                                       {item.tipo}
                                   </span>
-                                  <span className="text-white font-bold text-xs">{item.ativo}</span>
+                                  <span className="text-white font-bold text-xs inline-flex items-center gap-1.5">
+                                    <AssetBadge symbol={item.ativo} size="sm" mostrarNome={false} />
+                                    {item.ativo}
+                                  </span>
                                 </div>
                              </td>
                              <td className="py-4 text-xs font-mono text-genesis-text-secondary">{item.corretora}</td>

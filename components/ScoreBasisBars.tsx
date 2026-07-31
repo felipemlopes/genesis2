@@ -1,5 +1,4 @@
 import React from 'react';
-import { CheckCircle2, XCircle } from 'lucide-react';
 
 /**
  * Restauração pós-entrega (2026-07-27): recria o layout de 4 blocos (Técnico/Derivativos/Macro/
@@ -7,10 +6,18 @@ import { CheckCircle2, XCircle } from 'lucide-react';
  * cada barra lê um dado que o Gemini (ou a chamada auxiliar de narrativa, já separada do decisor)
  * já devolve pronto:
  *   - Técnico: score_basis.technical_coherence (nível de confiança do próprio decisor na leitura
- *     técnica), colorido pela direção já decidida — nunca pode contradizer o resultado.
+ *     técnica) — mede coerência, não direção, por isso nunca muda de cor com LONG/SHORT.
  *   - Derivativos: score_basis.derivatives_confirmation, que já tem polaridade própria
- *     (OPOE/apoia a direção escolhida).
+ *     (apoia/contraria a direção escolhida).
  *   - Macro / Sentimento: score 0-100 da chamada de narrativa (InformativeNarrativeService).
+ *
+ * V6.5 (G08): antes cada barra usava uma gramática de cor diferente — Técnico pela direção (vermelho
+ * só por ser SHORT, não por ser ruim), Derivativos pela polaridade real, Macro/Sentimento pelo valor
+ * bruto (verde se >55, independente da direção escolhida). Um SHORT com macro altista aparecia com 1
+ * barra vermelha e 3 verdes, como se 3 dados confirmassem a operação — a tela afirmava visualmente o
+ * oposto do que os dados diziam. Agora existe UMA gramática só: a cor sempre responde "isto apoia a
+ * direção já decidida?" (nunca "isto é bullish/bearish em si"), com legenda explícita embaixo de cada
+ * barra. Não recalcula nada: os mesmos dados, na mesma fonte — só cor e legenda mudam.
  */
 
 type TechnicalCoherence = 'VERY_LOW' | 'LOW' | 'MODERATE' | 'HIGH' | 'VERY_HIGH' | undefined;
@@ -24,6 +31,14 @@ const CONFIRMATION_PCT: Record<string, number> = {
   OPPOSES: 25, NEUTRAL: 50, SUPPORTS: 75, STRONGLY_SUPPORTS: 100, UNAVAILABLE: 0,
 };
 
+type Apoio = 'apoia' | 'contraria' | 'neutro';
+
+const COR: Record<Apoio, string> = {
+  apoia: 'bg-genesis-positive',
+  contraria: 'bg-genesis-negative',
+  neutro: 'bg-purple-500',
+};
+
 interface Props {
   scoreBasis?: { technical_coherence?: string; derivatives_confirmation?: string } | null;
   direction: 'LONG' | 'SHORT' | 'INDISPONIVEL';
@@ -31,50 +46,62 @@ interface Props {
   sentimentScore: number | null;
 }
 
-const scoreColor = (score: number | null) => {
-  if (score == null) return 'bg-gray-600';
-  if (score >= 55) return 'bg-genesis-positive';
-  if (score <= 45) return 'bg-genesis-negative';
-  return 'bg-yellow-500';
+// A cor sempre responde "isto apoia a leitura já decidida?" — nunca "isto é bullish/bearish em si".
+const apoiaSe = (direcao: Props['direction'], ehAltista: boolean | null): Apoio => {
+  if (ehAltista === null || direcao === 'INDISPONIVEL') return 'neutro';
+  const apoia = direcao === 'LONG' ? ehAltista : !ehAltista;
+  return apoia ? 'apoia' : 'contraria';
 };
 
-const Bloco: React.FC<{ nome: string; pct: number; cor: string; icone?: 'check' | 'x' | null }> = ({ nome, pct, cor, icone }) => (
+const Bloco: React.FC<{ nome: string; pct: number; cor: string; legenda: string }> = ({ nome, pct, cor, legenda }) => (
   <div className="bg-black/40 rounded p-3 border border-white/[0.05]">
     <div className="flex justify-between items-center mb-2">
       <span className="text-[9px] font-bold text-gray-500 uppercase tracking-wider">{nome}</span>
-      {icone === 'check' && <CheckCircle2 size={12} className="text-genesis-positive" />}
-      {icone === 'x' && <XCircle size={12} className="text-genesis-negative" />}
     </div>
     <div className="relative w-full bg-gray-900 rounded-full h-1.5 overflow-hidden">
       <div className={`h-full ${cor}`} style={{ width: `${Math.max(0, Math.min(pct, 100))}%` }} />
     </div>
+    <p className="text-[8px] text-gray-500 mt-1">{legenda}</p>
   </div>
 );
 
 const ScoreBasisBars: React.FC<Props> = ({ scoreBasis, direction, macroScore, sentimentScore }) => {
   if (!scoreBasis && macroScore == null && sentimentScore == null) return null;
 
-  const isLong = direction === 'LONG';
-  const directionColor = isLong ? 'bg-genesis-positive' : 'bg-genesis-negative';
-
   const coherence = scoreBasis?.technical_coherence as TechnicalCoherence;
   const tecnicoPct = coherence ? (COHERENCE_PCT[coherence] ?? 0) : 0;
 
   const confirmation = scoreBasis?.derivatives_confirmation as DerivativesConfirmation;
   const derivativosPct = confirmation ? (CONFIRMATION_PCT[confirmation] ?? 0) : 0;
-  const derivativosCor = confirmation === 'OPPOSES' ? 'bg-genesis-negative'
-    : confirmation === 'SUPPORTS' || confirmation === 'STRONGLY_SUPPORTS' ? 'bg-genesis-positive'
-    : 'bg-yellow-500';
-  const derivativosIcone = confirmation === 'OPPOSES' ? 'x' : confirmation === 'SUPPORTS' || confirmation === 'STRONGLY_SUPPORTS' ? 'check' : null;
+  const derivativosApoio: Apoio = confirmation === 'OPPOSES' ? 'contraria'
+    : confirmation === 'SUPPORTS' || confirmation === 'STRONGLY_SUPPORTS' ? 'apoia'
+    : 'neutro';
+  const derivativosLegenda = confirmation === 'OPPOSES' ? 'Contraria a leitura'
+    : confirmation === 'SUPPORTS' || confirmation === 'STRONGLY_SUPPORTS' ? 'Apoia a leitura'
+    : 'Neutro em relação à leitura';
+
+  const macroApoio = macroScore != null ? apoiaSe(direction, macroScore > 55) : 'neutro';
+  const macroLegenda = macroApoio === 'apoia' ? 'Contexto favorece a leitura'
+    : macroApoio === 'contraria' ? 'Contexto contraria a leitura'
+    : 'Contexto neutro em relação à leitura';
+
+  const sentimentoApoio = sentimentScore != null ? apoiaSe(direction, sentimentScore > 55) : 'neutro';
+  const sentimentoLegenda = sentimentoApoio === 'apoia' ? 'Sentimento favorece a leitura'
+    : sentimentoApoio === 'contraria' ? 'Sentimento contraria a leitura'
+    : 'Sentimento neutro em relação à leitura';
 
   return (
     <div className="mb-5 relative z-10 grid grid-cols-2 lg:grid-cols-4 gap-4 mt-6">
-      {coherence && <Bloco nome="Técnico" pct={tecnicoPct} cor={directionColor} />}
-      {confirmation && confirmation !== 'UNAVAILABLE' && (
-        <Bloco nome="Derivativos" pct={derivativosPct} cor={derivativosCor} icone={derivativosIcone} />
+      {coherence && (
+        <Bloco nome="Técnico" pct={tecnicoPct} cor={COR.neutro} legenda="Coerência dos indicadores com a leitura" />
       )}
-      {macroScore != null && <Bloco nome="Macro" pct={macroScore} cor={scoreColor(macroScore)} />}
-      {sentimentScore != null && <Bloco nome="Sentimento" pct={sentimentScore} cor={scoreColor(sentimentScore)} />}
+      {confirmation && confirmation !== 'UNAVAILABLE' && (
+        <Bloco nome="Derivativos" pct={derivativosPct} cor={COR[derivativosApoio]} legenda={derivativosLegenda} />
+      )}
+      {macroScore != null && <Bloco nome="Macro" pct={macroScore} cor={COR[macroApoio]} legenda={macroLegenda} />}
+      {sentimentScore != null && (
+        <Bloco nome="Sentimento" pct={sentimentScore} cor={COR[sentimentoApoio]} legenda={sentimentoLegenda} />
+      )}
     </div>
   );
 };

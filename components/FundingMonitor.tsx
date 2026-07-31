@@ -2,6 +2,7 @@
 import React, { useEffect, useState } from 'react';
 import { Percent, TrendingUp, TrendingDown, Minus, Info, Clock, HelpCircle } from 'lucide-react';
 import { fetchFundingMonitorData, FundingData } from '../services/fundingMonitorService';
+import AssetBadge from './AssetBadge';
 
 const FundingMonitor: React.FC = () => {
   const [data, setData] = useState<FundingData[]>([]);
@@ -24,11 +25,6 @@ const FundingMonitor: React.FC = () => {
     const interval = setInterval(loadData, 30000); // 30s refresh
     return () => clearInterval(interval);
   }, []);
-
-  const getLogoUrl = (sym: string) => {
-      const clean = sym.replace('USDT', '').toLowerCase();
-      return `https://cryptologos.cc/logos/${clean === 'sol' ? 'solana-sol' : (clean === 'eth' ? 'ethereum-eth' : 'bitcoin-btc')}-logo.png?v=025`;
-  };
 
   const formatRate = (val: number) => `${(val * 100).toFixed(4)}%`;
 
@@ -90,7 +86,7 @@ const FundingMonitor: React.FC = () => {
                             
                             {/* Card Header */}
                             <div className="flex items-center gap-3 mb-6">
-                                <img src={getLogoUrl(item.symbol)} alt={item.symbol} className="w-8 h-8 rounded-full bg-white/5 p-1" />
+                                <AssetBadge symbol={item.symbol} size="md" mostrarNome={false} />
                                 <div>
                                     <h3 className="text-sm font-bold text-white tracking-wide">{item.symbol.replace('USDT', '/USDT')}</h3>
                                     <span className="text-[9px] text-gray-500 font-mono uppercase">Perpetual Futures</span>

@@ -2,6 +2,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { Radar, Zap, Activity, ChevronDown, Sparkles, BarChart2, Layers, ShieldCheck, Search } from 'lucide-react';
 import { RSI, MACD, EMA, BollingerBands } from 'technicalindicators';
+import AssetBadge from './AssetBadge';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
 
@@ -651,7 +652,10 @@ const OpportunityScanner: React.FC<OpportunityScannerProps> = ({ onAnalyze, save
                  
                  {/* 1. Asset & Liquidity */}
                  <div className="flex flex-col w-[15%]">
-                    <span className="text-lg font-bold text-white font-mono tracking-tight">{opp.pair}</span>
+                    <span className="text-lg font-bold text-white font-mono tracking-tight inline-flex items-center gap-2">
+                       <AssetBadge symbol={opp.pair} size="sm" mostrarNome={false} />
+                       {opp.pair}
+                    </span>
                     <span className="text-[10px] text-gray-500 mt-1">Vol 24h: {opp.volume24h}</span>
                     <div className="flex items-center gap-2 mt-3">
                         {opp.exchanges.includes('Binance') && <div className="w-3.5 h-3.5 grayscale group-hover:grayscale-0 transition-all" title="Binance"><BinanceLogo /></div>}

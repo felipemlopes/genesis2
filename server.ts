@@ -5,6 +5,7 @@ import { createServer as createViteServer } from "vite";
 import 'dotenv/config';
 import crypto from "crypto";
 import jwt from "jsonwebtoken";
+import rateLimit from "express-rate-limit";
 
 if (process.env.NODE_ENV === 'production') {
   console.log = function() {};
@@ -65,11 +66,38 @@ async function startServer() {
   const app = express();
   const PORT = 3001;
 
-  app.use(cors());
-  app.use(express.json({ limit: '50mb' }));
+  // V6.5 (A05): cors() sem lista de origens respondia Access-Control-Allow-Origin: * para qualquer site.
+  const ORIGENS_PERMITIDAS = (process.env.CORS_ORIGINS ?? '')
+    .split(',')
+    .map(o => o.trim())
+    .filter(Boolean);
+
+  app.use(cors({
+    origin: (origin, callback) => {
+      if (!origin) return callback(null, true); // curl, health check, same-origin
+      if (ORIGENS_PERMITIDAS.includes(origin)) return callback(null, true);
+      return callback(new Error('Origem nao permitida'));
+    },
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    maxAge: 86400,
+  }));
+
+  // V6.5 (A06): 50mb sem limite de taxa permitia derrubar o processo com poucas requisições simultâneas
+  // grandes. Nenhum endpoint deste servidor recebe JSON grande de verdade (ele faz login e proxy).
+  app.use(express.json({ limit: '256kb' }));
+  app.use(express.urlencoded({ extended: true, limit: '256kb' }));
+
+  const loginLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    max: 10,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { success: false, message: 'Muitas tentativas. Aguarde um minuto.' },
+  });
 
   // Login Route
-  app.post("/api/auth/login", async (req, res) => {
+  app.post("/api/auth/login", loginLimiter, async (req, res) => {
     const { lastlinkToken } = req.body;
 
     if (!lastlinkToken) {
@@ -91,11 +119,14 @@ async function startServer() {
     res.json({ success: true, token });
   });
 
+  // V6.5 (A06, alerta adicional): antes só emitia console.warn e o servidor subia sem essas rotas, em
+  // silêncio. Falha explícita — se o import quebrar, ninguém vai notar sozinho que metade da API sumiu.
   try {
     const apiRoutes = (await import("./routes/api.js")).default;
     app.use("/api", apiRoutes);
   } catch (err: any) {
-    console.warn("Skipping API mount due to missing modules", err.message);
+    console.error("FALHA CRITICA ao montar rotas da API:", err.message);
+    process.exit(1);
   }
 
   // API route to proxy Bybit public requests ONLY

@@ -1,0 +1,7 @@
+=== G08: ScoreBasisBars com gramática única de cor ===
+Antes: Técnico por direção, Derivativos por polaridade real, Macro/Sentimento por valor bruto (3 gramáticas).
+Depois: 1 gramática só — cor sempre responde 'isto apoia a direção já decidida?'
+36:const COR: Record<Apoio, string> = {
+50:const apoiaSe = (direcao: Props['direction'], ehAltista: boolean | null): Apoio => {
+83:  const macroApoio = macroScore != null ? apoiaSe(direction, macroScore > 55) : 'neutro';
+88:  const sentimentoApoio = sentimentScore != null ? apoiaSe(direction, sentimentScore > 55) : 'neutro';

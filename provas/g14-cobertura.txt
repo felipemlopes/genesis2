@@ -1,0 +1,16 @@
+=== G14: campos falsificados removidos do adaptador ===
+Removidos: leitura_fraca (sempre chumbado false), base_conviction (reintroduzia score final com outro nome).
+Adicionado: cobertura_baixa (derivado de coverage_percent < 70, nunca chumbado) + aviso na tela.
+
+services/geminiService.ts:286:      coverage: v64.coverage_percent ?? undefined,
+services/geminiService.ts:288:      // score final com outro nome — nenhum dos dois refletia dado real. cobertura_baixa é derivado
+services/geminiService.ts:290:      cobertura_baixa: v64.coverage_percent != null ? v64.coverage_percent < 70 : undefined,
+types.ts:77:  coverage: number;
+types.ts:194:    // novo). cobertura_baixa é derivado de verdade a partir de coverage_percent — nunca chumbado.
+types.ts:195:    cobertura_baixa?: boolean;
+
+Verificação (esperado: só comentários, nenhum uso real):
+./components/AnalysisResult.tsx:161:  // V6.5 (G14): antes lido de analysis.leitura_fraca, que o adaptador sempre chumbava em false
+./services/geminiService.ts:287:      // V6.5 (G14): antes leitura_fraca vinha chumbado em false e base_conviction reintroduzia o
+./types.ts:75:  base_conviction: number;
+./types.ts:192:    // V6.5 (G14): antes leitura_fraca vinha chumbado em false do adaptador e base_conviction

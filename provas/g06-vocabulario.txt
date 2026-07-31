@@ -1,0 +1,36 @@
+=== G06: faixaDeConviccao() + aviso permanente ===
+'Leitura Confirmada' removido; substituído por faixaDeConviccao(score) (Fraca/Parcial/Consistente/Forte).
+components/AnalysisResult.tsx:11:import { faixaDeConviccao } from '../utils/conviccao';
+components/AnalysisResult.tsx:163:  // mesma faixa "Fraca/Parcial" (<=60) usada por faixaDeConviccao() (G06).
+components/AnalysisResult.tsx:346:                {faixaDeConviccao(score)}
+components/AnalysisResult.tsx:354:            Convicção mede a coerência entre os dados observados. Não é probabilidade nem recomendação. A decisão é sua.
+utils/conviccao.ts:2:// podia ser lido como recomendação. faixaDeConviccao() troca o rótulo binário confirmado/cautela
+utils/conviccao.ts:4:export const faixaDeConviccao = (score: number | null | undefined): string => {
+
+ESCOPO: varredura completa do vocabulário confirmatório NÃO aplicada por decisão explícita do
+usuário nesta sessão (2026-07-31) — outras ocorrências de 'confirmad/recomendad/sinal de/alta
+probabilidade' ficam de fora (LearnFutures.tsx educacional, LandingPage.tsx marketing,
+liquidationService.ts, NAO_RECOMENDADA_* em AnalysisResult.tsx). Grep completo abaixo, sem
+alteração:
+components/AnalysisResult.tsx:41:  NAO_RECOMENDADA_RR: 'Execução não recomendada: RR líquido abaixo do mínimo',
+components/AnalysisResult.tsx:42:  NAO_RECOMENDADA_ALVO: 'Execução não recomendada: alvo sem barreira real',
+components/AnalysisResult.tsx:43:  NAO_RECOMENDADA_CONVICCAO: 'Execução não recomendada: convicção limitada',
+components/AnalysisResult.tsx:44:  NAO_RECOMENDADA_CONFIGURACAO: 'Execução não recomendada: configuração de risco ausente',
+components/AnalysisResult.tsx:679:                <h4 className="text-yellow-500 font-bold text-sm mb-1">Risco Retorno abaixo do recomendado.</h4>
+components/LandingPage.tsx:278:                    extra: "Algoritmos desenhados para filtrar ruído e destacar estruturas de alta probabilidade técnica.",
+components/LearnFutures.tsx:848:          explanation: "O contexto (Suporte/Resistência) é o filtro principal. Um sinal de compra só é válido se ocorrer sobre um suporte ou estrutura de alta."
+components/LearnFutures.tsx:899:          options: ["Pontos exatos de entrada.", "Reversões garantidas.", "Força e velocidade do movimento.", "Direção futura do mercado."],
+components/LearnFutures.tsx:926:            <p className="text-genesis-negative font-bold mt-2">️ Isso NÃO é sinal de venda. É um alerta.</p>
+components/LearnFutures.tsx:935:            <p className="text-genesis-positive font-bold mt-2">️ Isso NÃO é sinal de compra. É um alerta.</p>
+components/LearnFutures.tsx:1000:          options: ["Reversão obrigatória do preço", "Erro de cálculo do indicador", "Absorção ou enfraquecimento do fluxo comprador", "Continuação garantida da tendência"],
+components/LearnFutures.tsx:1178:            explanation: "O padrão é confirmado quando o preço supera a zona de resistência lateral onde estava 'preso', retomando a alta."
+components/LearnFutures.tsx:1374:            "Rompimento confirmado com sucesso.",
+components/LearnFutures.tsx:1559:  { id: 1, visualId: 'desc-triangle', difficulty: 'Basic', question: "O gráfico mostra um Triângulo Descendente (topo descendente e fundo plano). Qual a estatística de rompimento?", options: ["Alta probabilidade de rompimento para cima (Reversão)", "Alta probabilidade de rompimento para baixo (Continuação)", "Indecisão total, 50/50", "Sinal de compra imediata no suporte"], correctIndex: 1, explanation: "Triângulos Descendentes indicam pressão vendedora constante contra um suporte fixo. A probabilidade estatística é o rompimento do suporte." },
+components/LearnFutures.tsx:1560:  { id: 2, visualId: 'fakeout-up', difficulty: 'Intermediate', question: "O preço rompeu a resistência mas deixou um longo pavio superior e fechou abaixo da linha. Qual a leitura?", options: ["Rompimento Confirmado (Pullback)", "Bull Trap (Armadilha de Touros)", "Bandeira de Alta", "Sinal de força compradora"], correctIndex: 1, explanation: "Rompimento seguido de rejeição imediata (pavio longo) e fechamento abaixo da zona rompida configura uma Bull Trap (Falso Rompimento)." },
+components/LearnFutures.tsx:1562:  { id: 4, visualId: 'middle-entry', difficulty: 'Basic', question: "O preço está exatamente no meio de um canal lateral. Qual a ação recomendada?", options: ["Comprar buscando o topo", "Vender buscando o fundo", "Não operar (Terra de Ninguém)", "Aumentar a alavancagem para compensar o range"], correctIndex: 2, explanation: "Operar no meio do range é matematicamente desfavorável. O stop técnico fica longe e o alvo curto (R:R < 1:1)." },
+components/LearnFutures.tsx:1564:  { id: 6, visualId: 'head-shoulders', difficulty: 'Intermediate', question: "Em um OCO (Ombro-Cabeça-Ombro), quando o padrão é confirmado?", options: ["Na formação do segundo ombro", "No topo da cabeça", "Apenas no rompimento da Neckline (Linha de Pescoço)", "Quando o RSI fica sobrevendido"], correctIndex: 2, explanation: "O padrão OCO só é validado quando o preço perde a linha de pescoço. Antecipar a entrada no ombro direito é um erro comum." },
+components/LearnFutures.tsx:1568:  { id: 10, visualId: 'fakeout-down', difficulty: 'Advanced', question: "Bear Trap: Preço perde suporte, captura liquidez e volta forte. Qual a psicologia por trás?", options: ["Vendedores desistiram", "Stop hunting dos Longs para impulsionar a alta", "Erro da corretora", "Tendência de baixa confirmada"], correctIndex: 1, explanation: "Bear Traps são criadas para estopar posições compradas (gerando venda a mercado) e capturar essa liquidez para montar posições grandes de compra." },
+components/LearnFutures.tsx:1575:  { id: 17, visualId: 'retest-long', difficulty: 'Intermediate', question: "O reteste no suporte falhou e o preço voltou para baixo da linha. O que isso significa?", options: ["Foi apenas um ruído", "Fakeout confirmado (Bull Trap)", "Oportunidade de compra mais barata", "Tendência de alta forte"], correctIndex: 1, explanation: "Se o suporte não segura o reteste e o preço afunda novamente, o rompimento anterior era falso. O cenário vira baixista." },
+services/adaptedDataFetcher.ts:612:        contextoGemini += `\nINSTRUÇÃO OBRIGATÓRIA PARA SETUP: O mercado está em compressão de volatilidade (acumulando energia). O setup recomendado deve considerar entrada agressiva na direção do rompimento (breakout), com stop-loss curto posicionado dentro da zona de compressão. Como rompimentos após compressões severas tendem a gerar movimentos de grande amplitude, projete alvos amplos e esticados (elevado R:R).`;
+services/geminiService.ts:296:      // executable já implicava recomendado) só quando a resposta vier de uma decisão cacheada antes
+services/liquidationService.ts:106:                summary = `Detectada muralha institucional de ${shortVolB}B USD em Shorts na região de $${topShortCluster.priceLevel.toLocaleString()}. O mercado apresenta alta probabilidade de 'Magnet Move' para capturar essa liquidez massiva acima do preço.`;

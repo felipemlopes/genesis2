@@ -1,0 +1,20 @@
+=== a05-cors.txt — evidência V6.5 item A05 (server.ts, 30/07/2026) ===
+
+Mudança: cors() sem lista -> whitelist via CORS_ORIGINS (.env), credentials:true, methods explícitos.
+
+Teste real (servidor rodando em localhost:3001):
+
+--- ANTES da correção: qualquer Origin era aceita (comportamento default do cors()) ---
+(não reproduzido isoladamente — a mudança já estava aplicada antes do primeiro teste; ver diff em server.ts)
+
+--- DEPOIS: origem NAO cadastrada em CORS_ORIGINS ---
+$ curl -i -H "Origin: https://site-qualquer.com" -X OPTIONS -H "Access-Control-Request-Method: POST" http://localhost:3001/api/auth/login
+HTTP/1.1 500 Internal Server Error
+(sem header Access-Control-Allow-Origin — callback de erro do cors() rejeitou a origem)
+
+--- DEPOIS: origem cadastrada (CORS_ORIGINS=http://localhost:3000,http://localhost:5173) ---
+$ curl -i -H "Origin: http://localhost:3000" -X OPTIONS -H "Access-Control-Request-Method: POST" http://localhost:3001/api/auth/login
+HTTP/1.1 204 No Content
+Access-Control-Allow-Origin: http://localhost:3000
+
+Conclusão: origem fora da whitelist falha (sem header CORS liberado); origem na whitelist passa normalmente.

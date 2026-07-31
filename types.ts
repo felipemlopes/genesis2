@@ -82,6 +82,16 @@ export interface GraphicalAnalysis {
   thesis_invalidation: string;
 }
 
+// V6.5 (E09-E10): antes alavancagemSegura() só devolvia o número já reduzido, sem indicar que houve
+// redução — o membro pedia 20x, o sistema aplicava 8x em silêncio.
+export interface AlavancagemInfo {
+  escolhida: number;
+  aplicada: number;
+  maxima_segura: number;
+  ajustada: boolean;
+  motivo: string | null;
+}
+
 export interface CandidateSetup {
   entrada: number | null;
   stop: number | null;
@@ -92,28 +102,83 @@ export interface CandidateSetup {
   tp3: number | null;
   tp3_fonte: string | null;
   alavancagem: number | null;
+  alavancagem_info: AlavancagemInfo | null;
   liquidacao: number | null;
   liquidacao_rotulo: 'estimada' | null;
   risco_preco_pct: number | null;
   risco_margem_pct: number | null;
   risco_usd_estimado: number | null;
   nocional_estimado: number | null;
-  tamanho_sugerido_texto: string | null;
+  // V6.5 (E11): substituem tamanho_sugerido_texto — o texto ("0.05 BTCUSDT") usava o par inteiro como
+  // se fosse a unidade da quantidade; a unidade real é só o ativo base (BTC). Backend para de montar
+  // frase, frontend formata a partir destes dois campos.
+  quantidade_base_estimada: number | null;
+  ativo_base: string | null;
   rr_bruto: number | null;
   rr_liquido_estimado: number | null;
   rr_aviso: string | null;
   custos_bps: Record<string, number>;
   entrada_ts: string | null;
+  // V6.5 (G15, Decisão 8 do PO): 4 fatores de LOCALIZAÇÃO de QualidadeEntradaService.
+  qualidade_entrada: { fator: string; avaliacao: 'BOM' | 'MEDIO' | 'RUIM'; detalhe: string }[] | null;
+}
+
+// V6.5 (E08): Plano A e Plano B chegavam com formatos diferentes — CandidateSetup completo para A,
+// um Record<string, unknown> solto para B (planoB) sem tamanho sugerido/risco em dólar/RR líquido
+// calculados. PlanoSetup é o formato único que os dois agora compartilham em execution.planos[],
+// permitindo a tela trocar TODOS os campos (não só a entrada) ao alternar de plano.
+export interface PlanoSetup {
+  plano: 'A' | 'B';
+  entrada: number | null;
+  stop: number | null;
+  tp1: number | null;
+  tp1_fonte: string | null;
+  tp2: number | null;
+  tp2_fonte: string | null;
+  tp3: number | null;
+  tp3_fonte: string | null;
+  alavancagem: number | null;
+  alavancagem_info: AlavancagemInfo | null;
+  liquidacao: number | null;
+  liquidacao_rotulo: string | null;
+  risco_preco_pct: number | null;
+  risco_margem_pct: number | null;
+  risco_usd_estimado: number | null;
+  nocional_estimado: number | null;
+  quantidade_base_estimada: number | null;
+  ativo_base: string | null;
+  rr_bruto: number | null;
+  rr_liquido_estimado: number | null;
+  rr_aviso: string | null;
+  // V6.5 (G02): substituem 'invalidacao' (string) — o backend montava a frase com o nível cru embutido
+  // (ex.: "$65370.9262", sem separador de milhar); agora devolve direção + nível numéricos, o frontend
+  // formata e monta o texto.
+  invalidacao_direcao: 'acima' | 'abaixo' | null;
+  invalidacao_nivel: number | null;
+  // Só preenchidos no Plano B (zona de entrada calculada) — null no Plano A.
+  zona_de: number | null;
+  zona_ate: number | null;
+  fonte: string | null;
+  descricao: string | null;
+  custos_bps: Record<string, number>;
+  entrada_ts: string | null;
+  // V6.5 (G15, Decisão 8 do PO): 4 fatores de LOCALIZAÇÃO (não repetem os 67 indicadores do score),
+  // calculados por QualidadeEntradaService a partir da entrada específica deste plano — texto aberto,
+  // sem nota composta nem porcentagem inventada. null quando os insumos (EMA21/ATR/barreira) não
+  // estavam disponíveis.
+  qualidade_entrada: { fator: string; avaliacao: 'BOM' | 'MEDIO' | 'RUIM'; detalhe: string }[] | null;
 }
 
 export interface GenesisAnalysisResult {
   analysis_id: string;
   pair: string;
+  analysis_version?: string | null;
+  market_price?: number | null;
+  snapshot_observed_at?: string | null;
   analysis: {
     direction: AnalysisDirection;
     status: AnalysisStatus;
     conviccao_modelo: number | null;
-    leitura_fraca: boolean;
     reason_code: string | null;
     score_familias?: ScoreFamilias;
     justificativa_score?: string;
@@ -122,9 +187,12 @@ export interface GenesisAnalysisResult {
     invalidacao_tese?: string;
     // Contrato canônico em inglês (Adendo Seção 33), publicado ao lado do
     // português acima — mesmo valor, nunca recalculado (Seção 14.4/31.1).
-    base_conviction?: number;
     conviction?: number;
     coverage?: number;
+    // V6.5 (G14): antes leitura_fraca vinha chumbado em false do adaptador e base_conviction
+    // reintroduzia o conceito de convicção-base separada (a V6 aboliu isso, é só o score final de
+    // novo). cobertura_baixa é derivado de verdade a partir de coverage_percent — nunca chumbado.
+    cobertura_baixa?: boolean;
     family_scores?: GraphicalFamilyScores;
     score_justification?: string;
     technical_analysis?: string;
@@ -134,6 +202,10 @@ export interface GenesisAnalysisResult {
   execution: {
     status: ExecutionStatus;
     executable: boolean;
+    // V6.5 (E02): separado de 'executable' — 'executable' agora só diz que a matemática fechou
+    // (stop válido, TP1 real, risco configurado); 'recommended' diz se, além disso, passou nos
+    // limiares de RR e convicção. RR baixo/convicção baixa não bloqueiam mais a interação.
+    recommended: boolean;
     action: 'LONG' | 'SHORT' | null;
     direction_reference: 'LONG' | 'SHORT' | null;
     reason_code: string | null;
@@ -141,10 +213,15 @@ export interface GenesisAnalysisResult {
     candidate_setup: CandidateSetup | null;
     executable_setup: CandidateSetup | null;
     planoB: Record<string, unknown> | null;
+    // V6.5 (E08): 1 item (só Plano A) ou 2 (A e B), mesmo formato completo pros dois — ver PlanoSetup.
+    planos: PlanoSetup[];
+    // V6.5 (G02): invalidacao (string) substituída por direção + nível numéricos — campo legado,
+    // relevante só pra decisões cacheadas antes de execution.planos[] existir (E08).
     zonaInteresse: {
       tipo: string;
       zona: string;
-      invalidacao: string | null;
+      invalidacao_direcao: 'acima' | 'abaixo' | null;
+      invalidacao_nivel: number | null;
     } | null;
     avisos: string[];
     stop_ancora: Record<string, unknown> | null;

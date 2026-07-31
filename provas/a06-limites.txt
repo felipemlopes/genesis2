@@ -1,0 +1,33 @@
+=== a06-limites.txt — evidência V6.5 item A06 (server.ts, 30/07/2026) ===
+
+Mudança: express.json({limit:'50mb'}) sem rate limit -> limit:'256kb' + express-rate-limit (10 req/min) no
+login + falha explícita (process.exit(1)) se o import de routes/api.js quebrar.
+
+--- Corpo de ~1MB (acima do novo limite de 256kb) ---
+$ curl -o /dev/null -w "HTTP %{http_code}\n" -H "Content-Type: application/json" --data-binary @bigbody.json http://localhost:3001/api/auth/login
+HTTP 413
+
+Conclusão: corpo acima de 256kb é rejeitado com 413 Payload Too Large, como esperado.
+
+--- Rate limit em /api/auth/login (limite configurado: 10 requisições/minuto) ---
+$ for i in $(seq 1 12); do curl -s -o /dev/null -w "req $i: HTTP %{http_code}\n" -X POST -H "Content-Type: application/json" -d '{}' http://localhost:3001/api/auth/login; done
+req 1: HTTP 401
+req 2: HTTP 401
+req 3: HTTP 401
+req 4: HTTP 401
+req 5: HTTP 401
+req 6: HTTP 401
+req 7: HTTP 401
+req 8: HTTP 401
+req 9: HTTP 401
+req 10: HTTP 401
+req 11: HTTP 429
+req 12: HTTP 429
+
+Conclusão: as 10 primeiras requisições passam pelo rate limiter (401 = token ausente, esperado sem
+credencial real); a 11ª e a 12ª retornam 429 (Too Many Requests), confirmando o limite de 10/min funcionando
+de verdade, não só presente no código.
+
+Falha explícita no mount de routes/api.js (process.exit(1) em vez de console.warn) não foi estressada
+provocando a falha de propósito neste teste — confirmada por leitura de código (server.ts), não reproduzida
+como falha real induzida.

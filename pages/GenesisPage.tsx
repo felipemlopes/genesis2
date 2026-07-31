@@ -20,12 +20,11 @@ import OrderBookImbalance from '../components/OrderBookImbalance';
 import TrendQuality from '../components/TrendQuality';
 import LiquidationHeatmap from '../components/LiquidationHeatmap';
 import SectorSentiment from '../components/SectorSentiment';
-import { analyzeChart, scanChartMetadata } from '../services/geminiService';
+import { analyzeChart, scanChartMetadata, ChartMetadataBlockedError } from '../services/geminiService';
 import { normalizarPar } from '../services/normalizarPar';
-import { GenesisAnalysisResult, ChartMetadata, SavedAnalysis, UnifiedChartResult } from '../types';
+import { GenesisAnalysisResult, ChartMetadata, UnifiedChartResult } from '../types';
 import { fetchBinanceData, fetchBybitData, fetchBitgetData, fetchOkxData, formatPrice, ExchangeData } from '../services/cryptoApi';
 import { calculateLiquidationPrice } from '../services/futuresCalculations';
-import { saveAnalysisToHistory } from '../components/AnalysisHistoryDashboard';
 
 const TRADING_QUOTES = [
   "Lucro bom é lucro no bolso.",
@@ -115,6 +114,11 @@ const GenesisPage: React.FC = () => {
 
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [chartMetadata, setChartMetadata] = useState<ChartMetadata | null>(null);
+  // V6.5 (D01): quando o OCR de metadados recusa o gráfico por não ser FUTURES (SPOT ou mercado não
+  // identificado), guarda a mensagem aqui — handleAnalyze bloqueia nesse estado, mesmo se o usuário
+  // digitar o par manualmente e clicar em Analisar de qualquer forma (antes disso não havia bloqueio
+  // nenhum: o scan falhava, mas nada impedia o clique seguinte de gastar crédito de qualquer jeito).
+  const [marketBlockedMessage, setMarketBlockedMessage] = useState<string | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [hoverAnalyze, setHoverAnalyze] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
@@ -207,6 +211,12 @@ const GenesisPage: React.FC = () => {
       alert("Por favor, digite o nome do par (ex: SUIUSDT) no campo Par antes de analisar.");
       return;
     }
+    // V6.5 (D01): bloqueia antes de gastar crédito — o OCR de metadados já recusou este gráfico por
+    // não ser FUTURES (SPOT ou mercado não identificado com segurança).
+    if (marketBlockedMessage) {
+      alert(marketBlockedMessage);
+      return;
+    }
 
     setIsAnalyzing(true);
     setResult(null);
@@ -234,45 +244,13 @@ const GenesisPage: React.FC = () => {
           setSelectedPair(data.pair.toUpperCase().replace('/', ''));
         }
 
-        const setup = data.execution?.candidate_setup ?? null;
-        const planoB = (data.execution?.planoB ?? null) as { entrada?: number } | null;
-
-        const savedAnalysis: SavedAnalysis = {
-          id: Date.now().toString(),
-          analysis_id: data.analysis_id,
-          analysis_status: data.analysis.status,
-          execution_status: data.execution.status,
-          executable: data.execution.executable,
-          rr_liquido_estimado: toNullableNumber(setup?.rr_liquido_estimado),
-          timestamp: new Date().toISOString(),
-          symbol: data.pair || pairToUse,
-          interval: analysisMetadata.timeframe || timeframe,
-          direction: data.analysis.direction,
-          score: data.analysis.conviccao_modelo,
-          rsi: toNullableNumber(data.indicadores?.rsi),
-          ema200: toNullableNumber(data.indicadores?.ema200),
-          adx: toNullableNumber(data.indicadores?.adx),
-          entry_price: toNullableNumber(setup?.entrada),
-          target_price: toNullableNumber(setup?.tp1),
-          target_price2: toNullableNumber(setup?.tp2),
-          target_price3: toNullableNumber(setup?.tp3),
-          stop_loss: toNullableNumber(setup?.stop),
-          status: data.execution.executable ? 'PENDENTE' : 'NAO_EXECUTAVEL',
-        };
-        const savedId = await saveAnalysisToHistory(savedAnalysis, {
-          corretora: exchange || 'BINANCE',
-          vies: data.analysis.direction ?? '',
-          alavancagem: setup?.alavancagem ?? '',
-          resumo_analise: (data.analysis.narrativa_tecnica || '').substring(0, 500),
-          setup_entrada: JSON.stringify(setup || {}).substring(0, 500),
-          entrada: toNullableNumber(setup?.entrada),
-          plano_a: toNullableNumber(setup?.entrada),
-          plano_b: toNullableNumber(planoB?.entrada),
-          take_profit_2: toNullableNumber(setup?.tp2),
-          take_profit_3: toNullableNumber(setup?.tp3),
-          risco_retorno: setup?.rr_liquido_estimado ?? setup?.rr_bruto ?? '',
-        });
-        setCurrentAnaliseId(savedId);
+        // V6.5 (F03-F04): antes daqui, uma segunda chamada (saveAnalysisToHistory -> POST /v1/analises)
+        // criava uma linha DUPLICADA em genesis_analises só pra guardar plano_a/plano_b/setup_entrada —
+        // a linha real (esta, com os 2 planos completos em genesis_analise_planos) já existe desde que
+        // analyzeChart() retornou, com o UUID em data.analysis_id. selecionarZona()/updateResultado()
+        // (chamados via currentAnaliseId) agora resolvem por esse UUID direto, sem precisar de uma
+        // segunda linha nem de um ID numérico separado.
+        setCurrentAnaliseId(data.analysis_id ?? null);
       }
 
       setResult(data);
@@ -290,6 +268,7 @@ const GenesisPage: React.FC = () => {
       setSelectedFile(file);
       setChartMetadata(null);
       setResult(null);
+      setMarketBlockedMessage(null);
 
       setIsScanning(true);
       try {
@@ -368,7 +347,15 @@ const GenesisPage: React.FC = () => {
         }
       } catch (err: any) {
         console.error('Auto-scan failed', err);
-        alert('Não foi possível detectar automaticamente a moeda do gráfico. Por favor, digite manualmente no campo Par.');
+        // V6.5 (D01): gráfico SPOT ou mercado não identificado — mensagem específica, e a flag que
+        // handleAnalyze checa antes de gastar crédito (ver comentário lá). Qualquer outra falha de OCR
+        // continua com o alerta genérico de sempre, só pede pra digitar manualmente.
+        if (err instanceof ChartMetadataBlockedError) {
+          setMarketBlockedMessage(err.message);
+          alert(err.message);
+        } else {
+          alert('Não foi possível detectar automaticamente a moeda do gráfico. Por favor, digite manualmente no campo Par.');
+        }
       } finally {
         setIsScanning(false);
       }
@@ -683,7 +670,6 @@ const GenesisPage: React.FC = () => {
             ) : result ? (
               <AnalysisResult
                 data={result}
-                currentPrice={currentPrice}
                 change24h={change24h}
                 isPositiveChange={!!isPositiveChange}
                 onSaveTrade={handleSaveTrade}

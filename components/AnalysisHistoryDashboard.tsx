@@ -2,6 +2,7 @@
 import { SavedAnalysis } from '../types';
 import { Trash2, TrendingUp, TrendingDown, Target, Clock, Filter, Activity, CheckCircle, XCircle, AlertCircle } from 'lucide-react';
 import { fetchHistoricoAnalises, storeAnalise, updateResultadoAnalise, deleteAllAnalises, fetchEstatisticas, fetchPrice } from '../services/api';
+import AssetBadge from './AssetBadge';
 
 // Salva análise via API — sem localStorage
 // Aceita dados extras opcionais para enviar campos completos ao servidor
@@ -572,7 +573,12 @@ const AnalysisHistoryDashboard: React.FC = () => {
                         return (
                            <tr key={item.id} className="hover:bg-white/[0.02] transition-colors group">
                               <td className="py-4 px-2 text-xs text-gray-500 font-mono whitespace-nowrap">{dateStr}</td>
-                              <td className="py-4 px-2 text-xs font-bold text-white text-center tracking-wider">{item.symbol.replace('USDT', '')}</td>
+                              <td className="py-4 px-2 text-xs font-bold text-white text-center tracking-wider">
+                                 <span className="inline-flex items-center justify-center gap-1.5">
+                                    <AssetBadge symbol={item.symbol} size="sm" mostrarNome={false} />
+                                    {item.symbol.replace('USDT', '')}
+                                 </span>
+                              </td>
                               <td className="py-4 px-2 text-xs text-gray-400 font-mono text-center bg-black/40 rounded">{item.interval}</td>
                               <td className="py-4 px-2 text-center flex justify-center mt-[10px]">
                                  <span className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-wide flex items-center justify-center gap-1 w-fit ${item.direction === 'LONG' ? 'border-green-500/30 text-green-400 bg-green-500/5' : 'border-red-500/30 text-red-400 bg-red-500/5'}`}>

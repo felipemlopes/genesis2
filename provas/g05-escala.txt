@@ -1,0 +1,6 @@
+=== G05: escala do score de convicção /100 -> /90 ===
+341:                    {score != null && <span className="text-lg text-gray-600">/90</span>}
+832:                <span className={`text-[10px] font-bold font-mono px-2 rounded bg-white/5 ${sentimento?.score == null ? 'text-gray-500' : sentimento.score > 60 ? 'text-genesis-positive' : 'text-genesis-negative'}`}>{sentimento?.score == null ? 'Sem dado' : `${sentimento.score}/100`}</span>
+
+Confirmado no backend: GenesisPrompt.php instrui 'multiplos de 5 entre 0 e 90, nunca emita 95 ou 100'.
+Bloco de Sentimento (linha ~807, /100) NÃO tocado — escala real 0-100, fora de escopo.

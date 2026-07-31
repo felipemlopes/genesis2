@@ -1,0 +1,6 @@
+=== G01: cifrão duplicado — grep antes/depois ===
+Bug original: linhas com `$${formatPrice(...)}` — formatPrice() já devolve '$ valor'.
+Locais corrigidos: liquidação e stop em AnalysisResult.tsx.
+
+=== Verificação: nenhum $${formatPrice em todo o repo ===
+(saída vazia = limpo)

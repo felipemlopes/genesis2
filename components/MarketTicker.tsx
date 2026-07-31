@@ -2,6 +2,7 @@
 import React, { useEffect, useState, memo } from 'react';
 import { ArrowUp, ArrowDown } from 'lucide-react';
 import { formatPrice, fetchWithProxy } from '../services/cryptoApi';
+import AssetBadge from './AssetBadge';
 
 interface TickerData {
   s: string; // symbol
@@ -189,6 +190,7 @@ const MarketTicker: React.FC = () => {
 
         return (
           <div key={`crypto-${t.s}-${suffix}`} className="flex items-center gap-2 text-[14px] font-mono tabular-nums min-w-max">
+            <AssetBadge symbol={t.s} size="sm" mostrarNome={false} />
             <span className="font-bold text-gray-400">{displayName}</span>
             <span className="text-white font-bold">{formatPrice(currentPrice)}</span>
             <span className={`flex items-center ${isPos ? 'text-genesis-positive' : 'text-genesis-negative'} font-medium`}>

@@ -1,0 +1,4 @@
+=== G03: rotularFonte() aplicado a tp1/tp2/tp3_fonte ===
+604:                      {(planoAtivo?.tp1_fonte ?? setup.tp1_fonte) && <div className="text-[8px] text-gray-500 mt-0.5">{rotularFonte(planoAtivo?.tp1_fonte ?? setup.tp1_fonte)}</div>}
+611:                      {(planoAtivo?.tp2_fonte ?? setup.tp2_fonte) && <div className="text-[8px] text-gray-500 mt-0.5">{rotularFonte(planoAtivo?.tp2_fonte ?? setup.tp2_fonte)}</div>}
+619:                      {(planoAtivo?.tp3_fonte ?? setup.tp3_fonte) && <div className="text-[8px] text-gray-500 mt-0.5">{rotularFonte(planoAtivo?.tp3_fonte ?? setup.tp3_fonte)}</div>}

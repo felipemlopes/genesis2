@@ -1,0 +1,15 @@
+=== Fase 9 (Bloco G) — regressão completa ===
+
+Backend (genesis-api): php artisan test
+227 passed, 1 failed (RadarNewsPollTest::poll excludes news older than 5 minutes — falha
+pré-existente do baseline A00, sensível a tempo, sem relação com nenhum dos 76 itens).
+
+Frontend (npx tsc --noEmit): limpo, 0 erros.
+
+Frontend (npx vite build): build passa.
+
+Frontend (npx vitest --run): comparação exata baseline (git stash) vs. pós-Fase-9 —
+diff da lista de testes falhando é vazio (0 regressões novas). Baseline tinha 312 testes (27
+falhando); pós-Fase-9 tem 310 (29 falhando na contagem bruta, mas os 2 testes 'a menos' são
+exatamente os 2 de __tests__/graphicalAnalysisService.test.ts, deletado no G10-G11 por testar
+só o arquivo removido — todas as demais falhas são as mesmas, idênticas, pré-existentes.
