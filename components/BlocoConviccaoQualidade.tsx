@@ -24,6 +24,11 @@ export interface FatorQualidadeEntrada {
 interface Props {
   score: number | null;
   rr: number | null;
+  // V6.6 (F01, DF-02): risco e retorno passa a existir só aqui — dentro do mínimo, mostra só o
+  // número; abaixo do mínimo, o número ganha a observação entre parênteses. rrMinimo/rrAbaixoDoMinimo
+  // vêm prontos do backend (rr_minimo_referencia/rr_abaixo_do_minimo, ver E04) — nunca recalculados.
+  rrMinimo?: number | null;
+  rrAbaixoDoMinimo?: boolean;
   fatores: FatorQualidadeEntrada[];
   direcao: 'LONG' | 'SHORT';
 }
@@ -40,41 +45,56 @@ const COR: Record<AvaliacaoFator, string> = {
   RUIM: 'text-genesis-negative',
 };
 
-// Descreve a mistura de fatores sem sintetizar nota nova nenhuma — só contagem e o R:R já calculado.
+// V6.6 (F09): antes a conclusão alternava entre duas gramáticas ("pesam contra" quando 2+ fatores
+// eram ruins, "são favoráveis" nos outros casos) e o bloco vazio citava "os quatro fatores" mesmo
+// quando só existiam três (contagem sempre dinâmica em produção, nunca fixa em quatro). Gramática
+// única e contagem dinâmica, mesmo texto para qualquer combinação de fatores.
 const montarConclusao = (rr: number | null, fatores: FatorQualidadeEntrada[]): string => {
-  const rrTexto = rr != null ? `R:R de 1:${rr.toFixed(2)}` : 'R:R indisponível';
+  const total = fatores.length;
 
-  if (fatores.length === 0) {
-    return `Sem dados de localização suficientes para avaliar a qualidade da entrada. ${rrTexto}. A decisão é sua.`;
+  if (total === 0) {
+    return 'Sem dados suficientes para avaliar a localização desta entrada. A decisão é sua.';
   }
 
-  const bons = fatores.filter((f) => f.avaliacao === 'BOM').length;
-  const ruins = fatores.filter((f) => f.avaliacao === 'RUIM').length;
+  const favoraveis = fatores.filter((f) => f.avaliacao === 'BOM').length;
+  const plural = total === 1 ? 'fator' : 'fatores';
+  const verbo = favoraveis === 1 ? 'é favorável' : 'são favoráveis';
 
-  if (bons === fatores.length) {
-    return `Todos os ${fatores.length} fatores de localização são favoráveis a este preço de entrada, com ${rrTexto}. A decisão é sua.`;
-  }
-  if (ruins >= 2) {
-    return `${ruins} de ${fatores.length} fatores de localização pesam contra este preço de entrada, com ${rrTexto}. A decisão é sua.`;
-  }
-  return `${bons} de ${fatores.length} fatores de localização são favoráveis a este preço de entrada, com ${rrTexto}. A decisão é sua.`;
+  const base = `${favoraveis} de ${total} ${plural} de localização ${verbo} a este preço de entrada`;
+  const comRr = rr !== null ? `${base}, com R:R de 1:${rr.toFixed(2)}` : base;
+
+  return `${comRr}. A decisão é sua.`;
 };
 
-export const BlocoConviccaoQualidade: React.FC<Props> = ({ score, rr, fatores, direcao }) => (
+export const BlocoConviccaoQualidade: React.FC<Props> = ({ score, rr, rrMinimo, rrAbaixoDoMinimo, fatores, direcao }) => (
   <section className="bg-black/40 rounded-lg p-[16px] border border-white/[0.05] relative z-10 mb-5">
     <div className="grid grid-cols-2 gap-4 mb-4">
       <div>
         <span className="text-[9px] font-bold text-gray-500 uppercase tracking-wider">Convicção</span>
         <div className="flex items-baseline gap-1.5 mt-0.5">
           <strong className="text-lg font-mono text-white">{score ?? '—'}</strong>
-          {score != null && <small className="text-gray-600 text-xs">/90</small>}
+          {/* V6.6 (F03, DP-02): mesma correção de escala do rótulo em AnalysisResult.tsx — este
+              componente tinha a mesma ocorrência de /90, não citada no documento, mas é a mesma
+              regra (score na escala de 100, teto real 90). */}
+          {score != null && <small className="text-gray-600 text-xs">/100</small>}
           <em className="text-[10px] text-gray-400 not-italic ml-1">{faixaDeConviccao(score)}</em>
         </div>
       </div>
       <div>
         <span className="text-[9px] font-bold text-gray-500 uppercase tracking-wider">Risco e retorno</span>
         <div className="mt-0.5">
-          <strong className="text-lg font-mono text-white">1:{rr?.toFixed(2) ?? '—'}</strong>
+          {rr == null ? (
+            <span className="text-sm text-gray-500">sem alvo ancorado em barreira real</span>
+          ) : (
+            <div className="flex items-baseline gap-2 flex-wrap">
+              <strong className="text-lg font-mono text-white">1:{rr.toFixed(2)}</strong>
+              {rrAbaixoDoMinimo && (
+                <span className="text-[10px] text-amber-500">
+                  (cuidado, risco retorno abaixo do recomendado, 1:{(rrMinimo ?? 0).toFixed(2)})
+                </span>
+              )}
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -84,7 +104,7 @@ export const BlocoConviccaoQualidade: React.FC<Props> = ({ score, rr, fatores, d
         Qualidade da entrada {direcao === 'SHORT' ? '(SHORT)' : '(LONG)'}
       </h4>
       {fatores.length === 0 ? (
-        <p className="text-xs text-gray-500">Sem dados de localização suficientes para os quatro fatores.</p>
+        <p className="text-xs text-gray-500">Sem dados de localização suficientes para avaliar esta entrada.</p>
       ) : (
         <ul className="space-y-1.5">
           {fatores.map((f) => (

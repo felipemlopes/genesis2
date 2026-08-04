@@ -9,15 +9,25 @@ import React from 'react';
  *     técnica) — mede coerência, não direção, por isso nunca muda de cor com LONG/SHORT.
  *   - Derivativos: score_basis.derivatives_confirmation, que já tem polaridade própria
  *     (apoia/contraria a direção escolhida).
- *   - Macro / Sentimento: score 0-100 da chamada de narrativa (InformativeNarrativeService).
+ *   - Macro / Sentimento: score 0-100 da chamada de narrativa (InformativeNarrativeService),
+ *     puramente informativo (ver V6.6 F06 abaixo) — nunca comparado com a direção escolhida.
  *
  * V6.5 (G08): antes cada barra usava uma gramática de cor diferente — Técnico pela direção (vermelho
  * só por ser SHORT, não por ser ruim), Derivativos pela polaridade real, Macro/Sentimento pelo valor
  * bruto (verde se >55, independente da direção escolhida). Um SHORT com macro altista aparecia com 1
  * barra vermelha e 3 verdes, como se 3 dados confirmassem a operação — a tela afirmava visualmente o
- * oposto do que os dados diziam. Agora existe UMA gramática só: a cor sempre responde "isto apoia a
- * direção já decidida?" (nunca "isto é bullish/bearish em si"), com legenda explícita embaixo de cada
- * barra. Não recalcula nada: os mesmos dados, na mesma fonte — só cor e legenda mudam.
+ * oposto do que os dados diziam.
+ *
+ * V6.6 (F06): a correção G08 acima tinha resolvido só metade do problema — trocou a cor de Macro/
+ * Sentimento de "valor bruto" pra "apoia a direção escolhida" (apoiaSe/COR[macroApoio] antigos),
+ * mas pela DP-06 macro e sentimento são informativos e NUNCA interferem na decisão, então nem
+ * deveriam ter polaridade em relação à direção nenhuma. Caso real, BTCUSDT 01/08/2026: barra de
+ * Macro em verde, "Contexto favorece a leitura", numa operação SHORT, em cima de texto macro de
+ * viés altista — contradição visual direta com o próprio texto logo abaixo. Macro e Sentimento
+ * agora usam a mesma cor neutra do bloco Técnico (mede algo, não julga direção) e legenda sem
+ * nenhuma comparação com LONG/SHORT. Restrição (DP-06): os blocos de sentimento do ativo e de
+ * macro/geopolítico (texto completo, em outro componente) não mudam em conteúdo — só esta barra de
+ * resumo.
  */
 
 type TechnicalCoherence = 'VERY_LOW' | 'LOW' | 'MODERATE' | 'HIGH' | 'VERY_HIGH' | undefined;
@@ -46,13 +56,6 @@ interface Props {
   sentimentScore: number | null;
 }
 
-// A cor sempre responde "isto apoia a leitura já decidida?" — nunca "isto é bullish/bearish em si".
-const apoiaSe = (direcao: Props['direction'], ehAltista: boolean | null): Apoio => {
-  if (ehAltista === null || direcao === 'INDISPONIVEL') return 'neutro';
-  const apoia = direcao === 'LONG' ? ehAltista : !ehAltista;
-  return apoia ? 'apoia' : 'contraria';
-};
-
 const Bloco: React.FC<{ nome: string; pct: number; cor: string; legenda: string }> = ({ nome, pct, cor, legenda }) => (
   <div className="bg-black/40 rounded p-3 border border-white/[0.05]">
     <div className="flex justify-between items-center mb-2">
@@ -65,7 +68,7 @@ const Bloco: React.FC<{ nome: string; pct: number; cor: string; legenda: string 
   </div>
 );
 
-const ScoreBasisBars: React.FC<Props> = ({ scoreBasis, direction, macroScore, sentimentScore }) => {
+const ScoreBasisBars: React.FC<Props> = ({ scoreBasis, macroScore, sentimentScore }) => {
   if (!scoreBasis && macroScore == null && sentimentScore == null) return null;
 
   const coherence = scoreBasis?.technical_coherence as TechnicalCoherence;
@@ -80,16 +83,8 @@ const ScoreBasisBars: React.FC<Props> = ({ scoreBasis, direction, macroScore, se
     : confirmation === 'SUPPORTS' || confirmation === 'STRONGLY_SUPPORTS' ? 'Apoia a leitura'
     : 'Neutro em relação à leitura';
 
-  const macroApoio = macroScore != null ? apoiaSe(direction, macroScore > 55) : 'neutro';
-  const macroLegenda = macroApoio === 'apoia' ? 'Contexto favorece a leitura'
-    : macroApoio === 'contraria' ? 'Contexto contraria a leitura'
-    : 'Contexto neutro em relação à leitura';
-
-  const sentimentoApoio = sentimentScore != null ? apoiaSe(direction, sentimentScore > 55) : 'neutro';
-  const sentimentoLegenda = sentimentoApoio === 'apoia' ? 'Sentimento favorece a leitura'
-    : sentimentoApoio === 'contraria' ? 'Sentimento contraria a leitura'
-    : 'Sentimento neutro em relação à leitura';
-
+  // V6.6 (F06, DP-06): Macro e Sentimento são informativos — nunca comparados com a direção
+  // escolhida (LONG/SHORT). Mesma cor neutra do bloco Técnico, legenda sem "favorece"/"contraria".
   return (
     <div className="mb-5 relative z-10 grid grid-cols-2 lg:grid-cols-4 gap-4 mt-6">
       {coherence && (
@@ -98,9 +93,11 @@ const ScoreBasisBars: React.FC<Props> = ({ scoreBasis, direction, macroScore, se
       {confirmation && confirmation !== 'UNAVAILABLE' && (
         <Bloco nome="Derivativos" pct={derivativosPct} cor={COR[derivativosApoio]} legenda={derivativosLegenda} />
       )}
-      {macroScore != null && <Bloco nome="Macro" pct={macroScore} cor={COR[macroApoio]} legenda={macroLegenda} />}
+      {macroScore != null && (
+        <Bloco nome="Macro" pct={macroScore} cor={COR.neutro} legenda="Contexto macro/geopolítico — informativo" />
+      )}
       {sentimentScore != null && (
-        <Bloco nome="Sentimento" pct={sentimentScore} cor={COR[sentimentoApoio]} legenda={sentimentoLegenda} />
+        <Bloco nome="Sentimento" pct={sentimentScore} cor={COR.neutro} legenda="Sentimento do ativo — informativo" />
       )}
     </div>
   );

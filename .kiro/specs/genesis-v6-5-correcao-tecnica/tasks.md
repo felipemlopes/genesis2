@@ -593,6 +593,21 @@ anteriores). Fase 4 concluída — reviso com você antes da Fase 5.
   - Depende de: **não** de D02 (ao contrário do que o documento presumia) — D02 não foi aplicado nesta sessão
     e D03 funciona de forma completamente independente, comparando preço, não o enum de mercado.
   - Prova: `d03-verificacao.txt`.
+  - ⚠️ **Revertido como bloqueio em 31/07/2026, a pedido explícito do usuário, após achado em teste real
+    ao vivo em produção**: `BinanceService::getCurrentPrice()` usa o cache padrão do serviço
+    (`BINANCE_CACHE_TTL`, 180-300s) — comparado contra uma tolerância de 0,15%, isso rejeitava análises
+    legítimas em produção por defasagem do **nosso próprio cache**, não por erro no gráfico do usuário
+    (confirmado via `storage/logs/laravel.log` real: `CHART_VISIBLE_PRICE_DEVIATION` recorrente em
+    múltiplas sessões de teste reais no mesmo dia, 31/07). Correção mínima proposta (buscar preço sem
+    cache só neste ponto) foi apresentada ao usuário, que preferiu remover o bloqueio em vez de corrigir
+    a defasagem. `DecisionResponseValidator.php` não adiciona mais `CHART_VISIBLE_PRICE_DEVIATION` a
+    `$errors` — o resultado de `ChartMarketVerifier::isConsistent()` agora só gera um log informativo
+    (`GENESIS_V65_CHART_VISIBLE_PRICE_DEVIATION_NAO_BLOQUEANTE`), nunca reprova a análise.
+    `ChartMarketVerifier`/`BinanceService` não foram alterados. Novo teste:
+    `test_d03_desvio_de_preco_visivel_nao_bloqueia_mais` em `DecisionResponseValidatorTest.php`. Suíte
+    completa rodada após a mudança: 238 passando / 1 falha pré-existente não relacionada
+    (`RadarNewsPollTest`), zero regressões novas.
+  - Prova adicional: `d03-remocao-trava-31-07.txt`.
 
 - [x] **D04 (P0)** `visual_observations` sai do schema enviado ao Gemini sem `patterns`/`objects`/`fibonacci`
       (implementado em 30/07/2026)

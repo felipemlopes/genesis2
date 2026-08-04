@@ -1,3 +1,4 @@
+import type { VisualPattern } from './types/graphicalAnalysis';
 
 export enum TradeDirection {
   LONG = 'LONG',
@@ -99,8 +100,12 @@ export interface CandidateSetup {
   tp1_fonte: string | null;
   tp2: number | null;
   tp2_fonte: string | null;
+  // V6.6 (C06): motivo da ausência quando tp2/tp3 vem null — sem barreira dentro do horizonte do
+  // timeframe. Permite a tela explicar em vez de só mostrar traço/sumir o campo.
+  tp2_motivo: string | null;
   tp3: number | null;
   tp3_fonte: string | null;
+  tp3_motivo: string | null;
   alavancagem: number | null;
   alavancagem_info: AlavancagemInfo | null;
   liquidacao: number | null;
@@ -117,6 +122,10 @@ export interface CandidateSetup {
   rr_bruto: number | null;
   rr_liquido_estimado: number | null;
   rr_aviso: string | null;
+  // V6.6 (E04/F01): número puro de referência — o bloco de convicção (único lugar onde RR aparece
+  // agora, DF-02) monta a observação "abaixo do recomendado" a partir destes dois campos.
+  rr_minimo_referencia: number | null;
+  rr_abaixo_do_minimo: boolean;
   custos_bps: Record<string, number>;
   entrada_ts: string | null;
   // V6.5 (G15, Decisão 8 do PO): 4 fatores de LOCALIZAÇÃO de QualidadeEntradaService.
@@ -135,8 +144,10 @@ export interface PlanoSetup {
   tp1_fonte: string | null;
   tp2: number | null;
   tp2_fonte: string | null;
+  tp2_motivo: string | null;
   tp3: number | null;
   tp3_fonte: string | null;
+  tp3_motivo: string | null;
   alavancagem: number | null;
   alavancagem_info: AlavancagemInfo | null;
   liquidacao: number | null;
@@ -150,6 +161,10 @@ export interface PlanoSetup {
   rr_bruto: number | null;
   rr_liquido_estimado: number | null;
   rr_aviso: string | null;
+  // V6.6 (E04/F01): número puro de referência — o bloco de convicção (único lugar onde RR aparece
+  // agora, DF-02) monta a observação "abaixo do recomendado" a partir destes dois campos.
+  rr_minimo_referencia: number | null;
+  rr_abaixo_do_minimo: boolean;
   // V6.5 (G02): substituem 'invalidacao' (string) — o backend montava a frase com o nível cru embutido
   // (ex.: "$65370.9262", sem separador de milhar); agora devolve direção + nível numéricos, o frontend
   // formata e monta o texto.
@@ -244,6 +259,9 @@ export interface GenesisAnalysisResult {
   // Restauração pós-entrega (2026-07-27): score_basis já vem pronto do decisor (justificativa
   // estruturada), reaproveitado pras barras Técnico/Derivativos sem recalcular nada.
   score_basis?: Record<string, string> | null;
+  // V6.6 (A04): figura gráfica identificada pelo decisor (visual_observations.patterns) — antes
+  // chegava na resposta HTTP e era descartada no adaptador, sem nenhum componente exibindo.
+  visual_observations?: { patterns: VisualPattern[] };
 }
 
 export interface MarketSentiment {

@@ -13,11 +13,16 @@ export interface BoundingBox {
   height: number;
 }
 
+// V6.6 (A01): bbox (coordenadas de pixel) sai de patterns — substituído por âncoras de preço lidas
+// diretamente do modelo (preco_topo/preco_base/preco_rompimento), pré-requisito de A06/B03 (motor de
+// barreiras precisa de preço, não de posição relativa na imagem).
 export interface VisualPattern {
   id: string;
   confidence: number;
-  state: 'FORMING' | 'TESTING' | 'BREAKOUT' | 'RETEST' | 'CONFIRMED';
-  bbox: BoundingBox;
+  state: 'FORMING' | 'TESTING' | 'BREAKING' | 'RETESTING' | 'CONFIRMED';
+  preco_topo: number | null;
+  preco_base: number | null;
+  preco_rompimento: number | null;
 }
 
 export interface VisualObject {
@@ -32,10 +37,21 @@ export interface FibonacciObservation {
   confidence: number;
 }
 
+// V6.6 (B01): quarta chave de visual_observations, lida por OCR do próprio gráfico — presente:false
+// é resposta válida quando o Volume Profile não está desenhado.
+export interface VrvpObservation {
+  presente: boolean;
+  confianca?: number;
+  poc?: number | null;
+  hvn?: number[];
+  lvn?: number[];
+}
+
 export interface VisualObservations {
   patterns: VisualPattern[];
   objects: VisualObject[];
   fibonacci: FibonacciObservation[];
+  vrvp: VrvpObservation;
 }
 
 // Spec genesis-v6-4-contexto-informativo, Tarefa 2.1: restaura os campos de indicadores/macro/sentimento
@@ -145,6 +161,8 @@ export interface ExecutionCandidateSetup {
   rr_bruto: number | null;
   rr_liquido_estimado: number | null;
   rr_aviso: string | null;
+  rr_minimo_referencia: number | null;
+  rr_abaixo_do_minimo: boolean;
   custos_bps: Record<string, number>;
   entrada_ts: string;
 }
@@ -191,6 +209,8 @@ export interface ExecutionPlanoSetup {
   rr_bruto: number | null;
   rr_liquido_estimado: number | null;
   rr_aviso: string | null;
+  rr_minimo_referencia: number | null;
+  rr_abaixo_do_minimo: boolean;
   // V6.5 (G02): substituem 'invalidacao' (string, número cru embutido) — direção + nível numéricos.
   invalidacao_direcao: 'acima' | 'abaixo' | null;
   invalidacao_nivel: number | null;

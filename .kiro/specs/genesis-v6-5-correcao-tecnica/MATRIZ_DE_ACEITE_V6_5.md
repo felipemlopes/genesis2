@@ -79,7 +79,7 @@ desta auditoria):
 | :--- | :--- | :---: | :--- |
 | D01 | `d01-spot.txt`, `d01-teste-real-ao-vivo.txt` [API] | sim | **QUASE REAL** — teste ao vivo em 31/07 com conta e imagem reais: scan aceitou FUTURES (confidence 0.98), análise completou (`COMPLETED`), saldo caiu exatamente 20 (9260,00→9200,00). Falta só o lado SPOT (5 imagens SPOT reais rejeitadas) — não testamos rejeição ao vivo nesta sessão, só aceite. |
 | D02 | `d02-schema.txt` [API] | sim | **REAL** — resolvido em 31/07/2026. Reli `DecisionResponseValidator::validate()` com cuidado: o caminho de rejeição nunca lê `chart_validation.market` (só `accepted`/`analysis_status`) — o risco de regressão de 30/07 não se confirmava. `SPOT` removido do enum (`GenesisDecisionSchema.php`), mantido `nullable`. Confirmado com chamada real à API do Gemini que o schema atualizado é aceito sem erro, mais 3 testes novos + regressão de 15 testes existentes. |
-| D03 | `d03-verificacao.txt` [API] | sim | **TESTE** (com rede real embutida — 3 testes chamam a Binance de verdade). O "print SPOT declarando FUTURES sendo reprovado" real não foi produzido. |
+| D03 | `d03-verificacao.txt`, `d03-remocao-trava-31-07.txt` [API] | sim | **REVERTIDO (decisão do usuário, 31/07/2026)** — em teste real ao vivo em produção, o gate rejeitou análises legítimas repetidamente (log real: `CHART_VISIBLE_PRICE_DEVIATION` recorrente em várias sessões no mesmo dia). Causa raiz: comparava o preço visível contra um preço da Binance cacheado por até 180-300s (`BINANCE_CACHE_TTL`), com tolerância de só 0,15% — rejeitava por defasagem do nosso cache, não por erro do gráfico. Correção mínima (buscar preço sem cache só nesse ponto) foi proposta; o usuário optou por remover o bloqueio ("Eu quero que tire essa trava de preço"). `ChartMarketVerifier` continua existindo e calculando o desvio, mas o resultado só gera log informativo, nunca mais reprova a análise. Não bloqueia mais nada — item deixa de ser um gate de aceite.|
 | D04 | `d04-visual.txt`, `d04-ajuste-visual-observations-vazio.txt` [API] | sim | **REAL** — ajustado em 31/07 depois de achar, em teste real ao vivo, que a implementação original reprovava 100% das análises reais (15/15 chamadas). Corrigido (`{}`/`[]` vazio agora aceito, omissão parcial continua reprovada) e confirmado com análise real completa depois do ajuste. |
 | D05 | `d05-hash.txt` [API] | sim | **TESTE** — o "script recalculando o hash de 10 análises reais" não foi rodado literalmente; a prova é um teste unitário confirmando que os 2 hashes divergem quando esperado. |
 | D06 | `d06-response-format.txt` [API] | não | **REAL** — chamada real à API do Gemini confirmou qual formato responde 200 vs. 400. |
@@ -87,8 +87,9 @@ desta auditoria):
 | D08 | `d08-niveis-visuais.txt` [API] | não | **TESTE**. |
 
 **Bloco D: das 5 linhas bloqueantes, D02 está resolvido (real, com confirmação via API real) — o único gap
-que era código de produção, não prova, está fechado. D01 ainda falta o crédito real, D03/D04/D05 são teste
-sem o print/script literal.**
+que era código de produção, não prova, está fechado. D01 ainda falta o crédito real, D04/D05 são teste
+sem o print/script literal. D03 deixou de ser um gate bloqueante por decisão explícita do usuário em
+31/07/2026, depois de causar falsos positivos reais em produção — ver `d03-remocao-trava-31-07.txt`.**
 
 ---
 

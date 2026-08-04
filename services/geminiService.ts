@@ -1,8 +1,6 @@
 
-import { Type } from "@google/genai";
-
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
-import { GenesisAnalysisResult, TradeDirection, ChartMetadata, UnifiedChartResult, CandidateSetup, ExecutionStatus, PlanoSetup } from "../types";
+import { GenesisAnalysisResult, TradeDirection, ChartMetadata, CandidateSetup, ExecutionStatus, PlanoSetup } from "../types";
 import { ExchangeData, fetchWithProxy } from "./cryptoApi";
 import { normalizarPar } from "./normalizarPar";
 import type { GraphicalAnalysisResult } from "../types/graphicalAnalysis";
@@ -46,12 +44,6 @@ const fileToGenerativePart = async (file: File): Promise<string> => {
 // ETAPA 1: Leitura Visual Unificada via Laravel backend
 
 /**
- * unifiedChartAnalysis — Leitura visual unificada.
- * Faz UMA ÚNICA chamada ao backend, retornando tanto metadata (par, exchange, timeframe)
- * quanto dados visuais detalhados (suportes, resistências, trendlines, fibonacci, padrões).
- * Elimina a perda de dados entre leituras separadas.
- */
-/**
  * Verifica se um erro é 503 ou timeout, indicando necessidade de fallback para modelo flash.
  */
 export function isModelOverloadOrTimeout(error: unknown, status?: number): boolean {
@@ -64,89 +56,11 @@ export function isModelOverloadOrTimeout(error: unknown, status?: number): boole
   return false;
 }
 
-export const unifiedChartAnalysis = async (file: File, selectedExchange?: string): Promise<UnifiedChartResult> => {
-  const buildFormData = (withFlashModel = false): FormData => {
-    const fd = new FormData();
-    fd.append('image', file);
-    if (selectedExchange) fd.append('exchange', selectedExchange);
-    if (withFlashModel) fd.append('model', 'flash');
-    return fd;
-  };
-
-  const token = localStorage.getItem('genesis_token');
-  const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
-
-  let res: Response;
-  try {
-    res = await fetch(`${API_BASE}/v1/unified-scan`, {
-      method: 'POST',
-      headers,
-      body: buildFormData(false),
-    });
-  } catch (networkError) {
-    if (isModelOverloadOrTimeout(networkError)) {
-      console.warn('[Genesis] Leitura visual: modelo pro indisponível (network error), ativando fallback para gemini-2.0-flash');
-      res = await fetch(`${API_BASE}/v1/unified-scan`, {
-        method: 'POST',
-        headers,
-        body: buildFormData(true),
-      });
-      if (!res.ok) throw new Error('Falha na leitura visual unificada (fallback flash)');
-    } else {
-      throw networkError;
-    }
-  }
-
-  if (res!.status === 503) {
-    console.warn('[Genesis] Leitura visual: modelo pro retornou 503, ativando fallback para gemini-2.0-flash');
-    res = await fetch(`${API_BASE}/v1/unified-scan`, {
-      method: 'POST',
-      headers,
-      body: buildFormData(true),
-    });
-    if (!res.ok) throw new Error('Falha na leitura visual unificada (fallback flash)');
-  }
-
-  if (!res!.ok) {
-    const errorBody = await res!.text().catch(() => 'Unable to read response body');
-    console.error('[SCAN-DEBUG] ❌ unified-scan failed:', {
-      status: res!.status,
-      statusText: res!.statusText,
-      body: errorBody,
-    });
-    throw new Error(`Falha na leitura visual unificada (HTTP ${res!.status}: ${errorBody.substring(0, 200)})`);
-  }
-  const data = await res!.json();
-
-  const content = data.content || '';
-  let parsed: any;
-  try {
-    let cleanContent = typeof content === 'string' ? content.trim() : '';
-    if (cleanContent.startsWith('```')) {
-      cleanContent = cleanContent.replace(/^```(?:json)?\s*\n?/, '').replace(/\n?```\s*$/, '');
-    }
-    parsed = cleanContent ? JSON.parse(cleanContent) : (typeof content === 'object' ? content : {});
-  } catch (e) {
-    console.error('[SCAN-DEBUG] Failed to parse unified-scan content:', content, e);
-    parsed = {};
-  }
-
-  const symbolRaw = (parsed.symbol || '').toUpperCase().replace('/', '').replace('PERP', '').replace('.P', '').trim();
-  const symbolClean = symbolRaw ? normalizarPar(parsed.symbol || '') : '';
-
-  return {
-    pair: symbolClean,
-    exchange: selectedExchange || parsed.exchange || 'Binance',
-    timeframe: parsed.timeframe || '4h',
-    symbol: symbolClean,
-    detectedIndicators: parsed.detectedIndicators || [],
-    supports: parsed.supports || [],
-    resistances: parsed.resistances || [],
-    trendlines: parsed.trendlines || [],
-    fibonacci: parsed.fibonacci || [],
-    patterns: parsed.patterns || [],
-  } as UnifiedChartResult;
-};
+// V6.6 (H01): unifiedChartAnalysis() removida — chamava /v1/unified-scan, rota que não existe mais
+// no backend (só o pacote V6.4 arquivado ainda tinha essa rota), e o fallback pra gemini-2.0-flash
+// contrariava a regra de modelo único (DET-2 do PO). Nenhum código de produção chamava a função —
+// só testes a exercitavam contra a rota morta (removidos junto, ver __tests__/geminiService.test.ts
+// e services/__tests__/integration.e2e.test.ts).
 
 // R3.2 — Adendo Secao 28: OCR 1 estrito, somente metadados (symbol/timeframe/
 // exchange/market/confidence). Nao chama unifiedChartAnalysis — nao le nem
@@ -206,7 +120,10 @@ export const scanChartMetadata = async (file: File, selectedExchange?: string): 
     : raw;
 
   const symbol = normalizarPar(String(parsed.symbol ?? ''));
-  const timeframe = String(parsed.timeframe ?? '').trim().toLowerCase();
+  // V6.6 (D01): o backend é a autoridade de normalização de timeframe agora (TimeframeNormalizer),
+  // capaz de distinguir "1M" (mês, pt-BR) de "1m" (minuto) pelo rótulo. .toLowerCase() aqui destruía
+  // essa distinção antes mesmo do valor chegar à API — repassa o valor lido, sem transformar.
+  const timeframe = String(parsed.timeframe ?? '').trim();
   const exchange = String(parsed.exchange ?? '').trim().toUpperCase();
   const market = String(parsed.market ?? '').trim().toUpperCase();
   const confidence = Number(parsed.confidence ?? 0);
@@ -236,8 +153,8 @@ const emptyCandidateSetup: CandidateSetup = {
   entrada: null,
   stop: null,
   tp1: null, tp1_fonte: null,
-  tp2: null, tp2_fonte: null,
-  tp3: null, tp3_fonte: null,
+  tp2: null, tp2_fonte: null, tp2_motivo: null,
+  tp3: null, tp3_fonte: null, tp3_motivo: null,
   alavancagem: null,
   alavancagem_info: null,
   liquidacao: null,
@@ -251,6 +168,8 @@ const emptyCandidateSetup: CandidateSetup = {
   rr_bruto: null,
   rr_liquido_estimado: null,
   rr_aviso: null,
+  rr_minimo_referencia: null,
+  rr_abaixo_do_minimo: false,
   custos_bps: {},
   entrada_ts: null,
   qualidade_entrada: null,
@@ -344,6 +263,11 @@ const mapGraphicalToLegacy = (v64: GraphicalAnalysisResult): GenesisAnalysisResu
       : undefined,
     multiTimeframe: (ctx?.indicators?.multi_timeframe?.value as { timeframe: string; bias: string }[] | null) ?? [],
     score_basis: v64.score_basis as unknown as Record<string, string> | null,
+    // V6.6 (A04): visual_observations.patterns chegava na resposta e era descartado aqui — nenhum
+    // componente da tela renderizava figura, mesmo com o Gemini identificando um padrão claro.
+    visual_observations: {
+      patterns: v64.visual_observations?.patterns ?? [],
+    },
   };
 };
 
@@ -388,7 +312,14 @@ export const analyzeChart = async (
 
   if (!res.ok) {
     const errData = await res.json().catch(() => ({}));
-    throw new Error(errData.error || `Falha ao processar analise tecnica (HTTP ${res.status})`);
+    // V6.6 (D01): num 422 o Laravel devolve { message, errors }, não { error } — a leitura antiga
+    // sempre caía no fallback genérico e o membro nunca descobria qual campo falhou (ex.: timeframe
+    // não reconhecido).
+    const detalhe =
+      errData.error ??
+      errData.message ??
+      (errData.errors ? Object.values(errData.errors).flat().join(' ') : null);
+    throw new Error(detalhe || `Falha ao processar a análise técnica (HTTP ${res.status})`);
   }
 
   const result = (await res.json()) as GraphicalAnalysisResult;

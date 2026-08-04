@@ -270,34 +270,14 @@ describe('13.1 Integration: Full Analysis Flow (Upload → Visual → Normalize 
     );
   });
 
-  it('E2E: Unified visual reading structure contains both metadata and visual data', () => {
-    /**
-     * Validates: Requirements 2.5, 3.2
-     * 
-     * Verifies that the geminiService's unifiedChartAnalysis function is structured
-     * to return both metadata (pair, exchange, timeframe) AND visual data
-     * (supports, resistances, trendlines, fibonacci) in a single result.
-     */
+  // V6.6 (H01): 'E2E: Unified visual reading structure...' removido — validava a existência de
+  // unifiedChartAnalysis(), removida por chamar uma rota (/v1/unified-scan) que não existe mais no
+  // backend real. scanChartMetadata() continua independente dela, conferido abaixo.
+  it('E2E: scanChartMetadata is OCR-1, metadata only (independent of removed unified reading)', () => {
     const geminiSource = readGeminiService();
-    
-    // unifiedChartAnalysis exists and returns UnifiedChartResult
-    expect(geminiSource).toContain('unifiedChartAnalysis');
-    expect(geminiSource).toContain('UnifiedChartResult');
-    
-    // It returns visual data fields
-    expect(geminiSource).toMatch(/supports.*parsed/s);
-    expect(geminiSource).toMatch(/resistances.*parsed/s);
-    expect(geminiSource).toMatch(/trendlines.*parsed/s);
-    expect(geminiSource).toMatch(/fibonacci.*parsed/s);
-    
-    // R3.2 (genesis-cerebro-grafico-r3-2) — Adendo Secao 28 exige o oposto do que
-    // esta propriedade validava antes: scanChartMetadata() deixou de ser um
-    // wrapper de unifiedChartAnalysis() e agora e uma funcao OCR-1 independente,
-    // so metadados, sem elementos visuais. unifiedChartAnalysis() continua
-    // existindo (usada em outros pontos), mas nao alimenta mais scanChartMetadata.
+
     expect(geminiSource).toContain('export const scanChartMetadata');
     expect(geminiSource).toContain('StrictChartMetadata');
-    expect(geminiSource).not.toMatch(/scanChartMetadata[\s\S]*?unifiedChartAnalysis/);
 
     // normalizarPar is used in the unified reading
     expect(geminiSource).toContain('normalizarPar');
