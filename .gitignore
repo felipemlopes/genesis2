@@ -19,6 +19,12 @@ dist-ssr
 .env.*.local
 carteiras.json
 
+# Python (monitor/ — Radar News, A7/F10)
+__pycache__/
+*.pyc
+.pytest_cache/
+.hypothesis/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

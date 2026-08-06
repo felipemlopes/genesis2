@@ -9,6 +9,7 @@ Radar News NÃO é Radar de Oportunidades: nenhum código de descoberta/scoring 
 tokens roda neste worker (C11) — isso é outro sistema.
 """
 
+import hashlib
 import json
 import os
 import sys
@@ -19,9 +20,10 @@ from datetime import datetime, timedelta, timezone
 
 import pymysql
 from dotenv import load_dotenv
+from rapidfuzz import fuzz
 
-from rss_collector import RSSCollector
-from ai_classifier import AIClassifier, load_carteira_tokens
+from rss_collector import RSSCollector, CICLOS_SEM_ENTRADA_PARA_ALERTA
+from ai_classifier import AIClassifier, load_carteira_tokens, GENESIS_AI_URL, CATEGORIAS_NOMES
 from telegram_dispatcher import TelegramDispatcher
 
 load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env'))
@@ -36,7 +38,6 @@ MYSQL_PORT = int(os.getenv('MYSQL_PORT', 3306))
 
 TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN', '')
 TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID', '')
-GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', '')
 
 # ─── Ciclos e janelas ──────────────────────────────────────────────────────────
 
@@ -51,6 +52,14 @@ BRT_OFFSET = timedelta(hours=-3)    # Brasília não tem horário de verão desd
 NIVEL1_HOURLY_CAP = 3
 NIVEL1_DAILY_CAP = 10
 TEMA_COOLDOWN_HOURS = 2
+
+# Garantia de não reenvio (Bloco D) — trava de despacho (D1) e idempotência de envio (D2)
+DISPATCH_DEDUP_HOURS = 72
+DISPATCH_SIMILARITY_THRESHOLD = 88
+
+# Roteamento e orçamento (Bloco E2) — RT-07 pendente ratificação do Fabrício
+JANELA_UTIL_HORAS = 6      # depois disso a notícia perdeu o valor operacional
+ADIAMENTO_MINUTOS = 45
 
 # ─── Logging ──────────────────────────────────────────────────────────────────
 
@@ -89,6 +98,14 @@ class RadarNewsWorker:
         self.ai_classifier = AIClassifier()
         self.telegram_dispatcher = TelegramDispatcher()
 
+        # Bloco G (telemetria): acumula entre flushes de _registrar_telemetria_do_ciclo
+        # (chamado no fim de cada ciclo RSS) — disparo/supressão acontecem no drain da
+        # fila, que roda numa cadência própria (QUEUE_DRAIN_TICK_SECONDS), não presa
+        # ao ciclo de coleta.
+        self._telemetria_dispatch = {
+            'disparadas': 0, 'suprimidas_orcamento': 0, 'suprimidas_duplicidade': 0,
+        }
+
         signal.signal(signal.SIGINT, self._signal_handler)
         signal.signal(signal.SIGTERM, self._signal_handler)
 
@@ -123,7 +140,7 @@ class RadarNewsWorker:
         required_vars = {
             'TELEGRAM_BOT_TOKEN': TELEGRAM_BOT_TOKEN,
             'TELEGRAM_CHAT_ID': TELEGRAM_CHAT_ID,
-            'GEMINI_API_KEY': GEMINI_API_KEY,
+            'GENESIS_AI_URL': GENESIS_AI_URL,
             'MYSQL_HOST': MYSQL_HOST,
             'MYSQL_USER': MYSQL_USER,
             'MYSQL_DATABASE': MYSQL_DATABASE,
@@ -189,6 +206,83 @@ class RadarNewsWorker:
             logger.info(f"Ciclo RSS concluído. {len(entries)} entrada(s) nova(s) após dedup.")
         except Exception as e:
             logger.error(f"Erro no ciclo RSS: {e}")
+        finally:
+            # Bloco G: telemetria sempre fecha o ciclo, mesmo em erro/0 entradas —
+            # é exatamente o cenário ("por que o Radar não trouxe nada hoje?") que
+            # o próprio documento cita como motivação do bloco.
+            self._registrar_telemetria_do_ciclo()
+
+    # ─── Telemetria (Bloco G) ──────────────────────────────────────────────────
+
+    def _registrar_telemetria_do_ciclo(self):
+        """Junta os contadores do coletor, do classificador e do despacho num só
+        registro por ciclo. Tenta gravar em genesis_radar_telemetria; se a tabela
+        não existir ainda (dependência externa deste plano), loga o resumo mesmo
+        assim — não é aceitável que ficar sem a tabela signifique ficar sem
+        nenhuma visibilidade também."""
+        rss = getattr(self.rss_collector, 'telemetria', {})
+        ai = getattr(self.ai_classifier, '_telemetria', {})
+        disp = self._telemetria_dispatch
+        feeds_mudos = ','.join(
+            nome for nome, vazios in self.rss_collector._vazios.items()
+            if vazios >= CICLOS_SEM_ENTRADA_PARA_ALERTA
+        )
+
+        registro = {
+            'coletadas': rss.get('coletadas', 0),
+            'cortadas_frescor': rss.get('cortadas_frescor', 0),
+            'cortadas_sem_data': rss.get('cortadas_sem_data', 0),
+            'cortadas_hash': rss.get('cortadas_hash', 0),
+            'cortadas_similaridade': rss.get('cortadas_similaridade', 0),
+            'enviadas_ao_modelo': ai.get('enviadas_ao_modelo', 0),
+            'lotes_falhos': ai.get('lotes_falhos', 0),
+            'perdidas_classificacao': ai.get('perdidas_classificacao', 0),
+            'acionaveis': ai.get('acionaveis', 0),
+            'piso_aplicado': ai.get('piso_aplicado', 0),
+            'cortadas_event_key': ai.get('cortadas_event_key', 0),
+            'nivel_1': ai.get('nivel_1', 0),
+            'nivel_2': ai.get('nivel_2', 0),
+            'nivel_3': ai.get('nivel_3', 0),
+            'disparadas': disp['disparadas'],
+            'suprimidas_orcamento': disp['suprimidas_orcamento'],
+            'suprimidas_duplicidade': disp['suprimidas_duplicidade'],
+            'feeds_mudos': feeds_mudos or None,
+        }
+
+        logger.info(f"[Telemetria] {registro}")
+
+        conn = self.conectar_bd()
+        if conn:
+            try:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "INSERT INTO genesis_radar_telemetria "
+                        "(coletadas, cortadas_frescor, cortadas_sem_data, cortadas_hash, "
+                        " cortadas_similaridade, enviadas_ao_modelo, lotes_falhos, "
+                        " perdidas_classificacao, acionaveis, piso_aplicado, cortadas_event_key, "
+                        " nivel_1, nivel_2, nivel_3, disparadas, suprimidas_orcamento, "
+                        " suprimidas_duplicidade, feeds_mudos) "
+                        "VALUES (%(coletadas)s, %(cortadas_frescor)s, %(cortadas_sem_data)s, "
+                        " %(cortadas_hash)s, %(cortadas_similaridade)s, %(enviadas_ao_modelo)s, "
+                        " %(lotes_falhos)s, %(perdidas_classificacao)s, %(acionaveis)s, "
+                        " %(piso_aplicado)s, %(cortadas_event_key)s, %(nivel_1)s, %(nivel_2)s, "
+                        " %(nivel_3)s, %(disparadas)s, %(suprimidas_orcamento)s, "
+                        " %(suprimidas_duplicidade)s, %(feeds_mudos)s)",
+                        registro,
+                    )
+                conn.commit()
+            except Exception as e:
+                # Esperado até a migration de genesis_radar_telemetria existir
+                # (dependência externa, fora da pasta monitor/) — não deixa o
+                # ciclo falhar por causa disso, só fica sem persistir a linha.
+                logger.debug(f"[Telemetria] Não gravado em genesis_radar_telemetria: {e}")
+            finally:
+                conn.close()
+
+        # Janela de contagem de despacho fecha aqui — o próximo ciclo começa do zero.
+        self._telemetria_dispatch = {
+            'disparadas': 0, 'suprimidas_orcamento': 0, 'suprimidas_duplicidade': 0,
+        }
 
     # ─── Orçamento e cooldown por tema (C9) ───────────────────────────────────
 
@@ -200,15 +294,18 @@ class RadarNewsWorker:
 
         try:
             with conn.cursor() as cur:
+                # E2: contar pelo horário do ENVIO, não pelo da criação — senão uma
+                # notícia criada há 50min e só enviada agora (após fila/adiamento)
+                # nunca conta pro teto da hora em que foi de fato pro Telegram.
                 cur.execute(
                     "SELECT COUNT(*) AS n FROM genesis_radar_news "
-                    "WHERE nivel = 1 AND telegram_sent = 1 AND created_at >= NOW() - INTERVAL 1 HOUR"
+                    "WHERE nivel = 1 AND telegram_sent = 1 AND telegram_sent_at >= NOW() - INTERVAL 1 HOUR"
                 )
                 hora = cur.fetchone()['n']
 
                 cur.execute(
                     "SELECT COUNT(*) AS n FROM genesis_radar_news "
-                    "WHERE nivel = 1 AND telegram_sent = 1 AND DATE(created_at) = CURDATE()"
+                    "WHERE nivel = 1 AND telegram_sent = 1 AND DATE(telegram_sent_at) = CURDATE()"
                 )
                 dia = cur.fetchone()['n']
 
@@ -224,17 +321,83 @@ class RadarNewsWorker:
                     )
                     tema = cur.fetchone()['n']
         except Exception as e:
-            logger.error(f"[Budget] Erro ao checar orçamento/cooldown: {e}")
-            return True  # falha de leitura do orçamento não deve bloquear notícia crítica de fato
+            # Fail-open explícito (E2): o pior caso aqui é uma notícia a mais, nunca
+            # uma repetida — o oposto deliberado do fail-closed de _ja_foi_ao_telegram.
+            logger.error(f"[Budget] Falha ao checar orçamento, liberando por segurança: {e}")
+            return True
 
         return hora < NIVEL1_HOURLY_CAP and dia < NIVEL1_DAILY_CAP and tema == 0
+
+    # ─── Garantia de não reenvio (Bloco D) ─────────────────────────────────────
+
+    def _ja_foi_ao_telegram(self, row: dict, conn) -> str | None:
+        """Devolve o motivo da supressão, ou None se pode enviar (D1).
+        Regra: um fato vai ao Telegram UMA vez. Nunca duas."""
+        try:
+            with conn.cursor() as cur:
+                if row.get('event_key'):
+                    cur.execute(
+                        "SELECT id FROM genesis_radar_news "
+                        "WHERE event_key = %s AND telegram_sent = 1 AND id <> %s "
+                        "AND telegram_sent_at >= NOW() - INTERVAL %s HOUR LIMIT 1",
+                        (row['event_key'], row['id'], DISPATCH_DEDUP_HOURS),
+                    )
+                    dup = cur.fetchone()
+                    if dup:
+                        return f"event_key ja enviado no id={dup['id']}"
+
+                cur.execute(
+                    "SELECT id, title FROM genesis_radar_news "
+                    "WHERE telegram_sent = 1 AND telegram_sent_at >= NOW() - INTERVAL %s HOUR",
+                    (DISPATCH_DEDUP_HOURS,),
+                )
+                enviados = cur.fetchall()
+        except Exception as e:
+            logger.error(f"[Dedup-Despacho] Erro na verificacao: {e}")
+            return "erro na verificacao de duplicidade"  # fail-CLOSED: na duvida, nao envia
+
+        alvo = (row.get('title') or '').lower()
+        for env in enviados:
+            if fuzz.token_sort_ratio(alvo, (env['title'] or '').lower()) >= DISPATCH_SIMILARITY_THRESHOLD:
+                return f"titulo similar ao id={env['id']} ja enviado"
+
+        return None
+
+    def _reservar_despacho(self, row: dict, conn) -> bool:
+        """Reserva a chave de despacho ANTES do POST (D2). False = já reservada, não envia.
+
+        NOTA: o documento descreve em prosa que um despacho FAILED (erro claro, ex.
+        400/403) deveria poder ser reenviado até 2 tentativas, mas o código literal
+        dado (INSERT + bloqueio por IntegrityError) bloqueia qualquer nova tentativa
+        pra sempre, porque a dispatch_key já existe na tabela — a mesma chave nunca
+        mais passa pelo INSERT com sucesso. Implementei o código literal (simples) e
+        sinalizo essa tensão aqui: falta decidir se `attempts` deveria liberar reenvio
+        via UPDATE em vez de depender do INSERT falhar, antes disso valer pra FAILED.
+        """
+        base = row.get('event_key') or row.get('title_hash') or str(row['id'])
+        dispatch_key = hashlib.sha256(f"{base}|nivel1".encode('utf-8')).hexdigest()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "INSERT INTO genesis_radar_dispatch (news_id, dispatch_key, status) "
+                    "VALUES (%s, %s, 'PENDING')",
+                    (row['id'], dispatch_key),
+                )
+            conn.commit()
+            row['_dispatch_key'] = dispatch_key
+            return True
+        except pymysql.err.IntegrityError:
+            conn.rollback()
+            logger.info(f"[Idempotencia] Despacho ja reservado para id={row['id']}, envio bloqueado.")
+            return False
 
     # ─── Fila persistente do Telegram (C8) ────────────────────────────────────
 
     def _drain_telegram_queue(self):
         """Drena a fila persistente de Nível 1 pendente, 1 mensagem por vez, respeitando
         o intervalo mínimo de 30s. telegram_sent só é marcado DEPOIS da confirmação de envio —
-        sobrevive a restart do pm2 porque a fila vive na própria tabela, não em thread."""
+        sobrevive a restart do supervisor (A7: genesis-radar-news.conf) porque a fila vive
+        na própria tabela, não em thread."""
         now = time.time()
         if now - self._last_telegram_send_ts < TELEGRAM_SEND_SPACING_SECONDS:
             return
@@ -245,49 +408,150 @@ class RadarNewsWorker:
 
         try:
             with conn.cursor() as cur:
+                # E2: fila por RELEVÂNCIA (impact_score), não por idade — a versão
+                # anterior (ORDER BY created_at ASC) gastava o teto de 3/hora na
+                # notícia mais velha e empurrava a mais importante pra depois.
+                # Janela de 6h (JANELA_UTIL_HORAS): depois disso a notícia perdeu
+                # o valor operacional e sai da fila de tentativa. adiado_ate:
+                # notícia que esbarrou no orçamento espera 45min antes de tentar
+                # de novo, em vez de ser rebaixada na hora (ver bloco abaixo).
                 cur.execute(
-                    "SELECT * FROM genesis_radar_news WHERE nivel = 1 AND telegram_sent = 0 "
-                    "ORDER BY (severity = 'CRITICAL') DESC, created_at ASC LIMIT 1"
+                    "SELECT * FROM genesis_radar_news "
+                    "WHERE nivel = 1 AND telegram_sent = 0 "
+                    "  AND created_at >= NOW() - INTERVAL %s HOUR "
+                    "  AND (adiado_ate IS NULL OR adiado_ate <= NOW()) "
+                    "ORDER BY (severity = 'CRITICAL') DESC, impact_score DESC, created_at DESC "
+                    "LIMIT 1",
+                    (JANELA_UTIL_HORAS,),
                 )
                 row = cur.fetchone()
 
             if not row:
                 return
 
-            if not self._pode_disparar(row, conn):
+            motivo = self._ja_foi_ao_telegram(row, conn)
+            if motivo:
                 with conn.cursor() as cur:
-                    cur.execute("UPDATE genesis_radar_news SET nivel = 2 WHERE id = %s", (row['id'],))
+                    cur.execute(
+                        "UPDATE genesis_radar_news SET nivel = 2, supressao = %s WHERE id = %s",
+                        (f'DUPLICADO: {motivo}', row['id']),
+                    )
                 conn.commit()
+                self._telemetria_dispatch['suprimidas_duplicidade'] += 1
                 logger.info(
-                    f"[Budget] Nível 1 rebaixado para Nível 2 (orçamento/cooldown): "
-                    f"id={row['id']} \"{(row.get('title') or '')[:60]}\""
+                    f"[Dedup-Despacho] SUPRIMIDA id={row['id']} ({motivo}): "
+                    f"\"{(row.get('title') or '')[:60]}\""
                 )
+                return
+
+            if not self._pode_disparar(row, conn):
+                # E2: rebaixamento deixa de ser sentença. Só vira Nível 2 de vez
+                # quando a notícia já passou da janela útil (6h) — antes disso,
+                # é só adiada 45min, pra não morrer por causa de um pico pontual
+                # de orçamento/cooldown.
+                idade_horas = (datetime.utcnow() - row['created_at']).total_seconds() / 3600
+                with conn.cursor() as cur:
+                    if idade_horas >= JANELA_UTIL_HORAS:
+                        cur.execute(
+                            "UPDATE genesis_radar_news SET nivel = 2, supressao = 'ORCAMENTO_EXPIRADO' "
+                            "WHERE id = %s",
+                            (row['id'],),
+                        )
+                        logger.info(f"[Budget] Rebaixada por expiração: id={row['id']}")
+                    else:
+                        cur.execute(
+                            "UPDATE genesis_radar_news SET adiado_ate = NOW() + INTERVAL %s MINUTE "
+                            "WHERE id = %s",
+                            (ADIAMENTO_MINUTOS, row['id']),
+                        )
+                        logger.info(
+                            f"[Budget] Adiada {ADIAMENTO_MINUTOS} min (orçamento/cooldown): id={row['id']}"
+                        )
+                conn.commit()
+                self._telemetria_dispatch['suprimidas_orcamento'] += 1
+                return
+
+            if not self._reservar_despacho(row, conn):
+                # Já reservado por um ciclo anterior (ex.: processo caiu entre reservar
+                # e enviar, ou já foi tratado). Não reenvia.
                 return
 
             row['affected_assets'] = json.loads(row.get('affected_assets') or '[]')
 
-            sent = self.telegram_dispatcher.send_news_alert(row)
+            resultado = self.telegram_dispatcher.send_news_alert(row)
 
-            if sent:
-                with conn.cursor() as cur:
+            with conn.cursor() as cur:
+                if resultado['status'] == 'SENT':
+                    cur.execute(
+                        "UPDATE genesis_radar_dispatch SET status = 'SENT', telegram_message_id = %s, "
+                        "confirmed_at = NOW() WHERE dispatch_key = %s",
+                        (resultado.get('message_id'), row['_dispatch_key']),
+                    )
                     cur.execute(
                         "UPDATE genesis_radar_news SET telegram_sent = 1, telegram_sent_at = NOW() WHERE id = %s",
                         (row['id'],),
                     )
-                conn.commit()
-                self._last_telegram_send_ts = time.time()
-                logger.info(f"[Telegram] Despachado id={row['id']}: {(row.get('title') or '')[:60]}")
-            else:
-                logger.error(
-                    f"[Telegram] Falha ao enviar id={row['id']}; telegram_sent permanece 0, "
-                    f"reprocessa no próximo ciclo."
-                )
+                    conn.commit()
+                    self._last_telegram_send_ts = time.time()
+                    self._telemetria_dispatch['disparadas'] += 1
+                    logger.info(f"[Telegram] Despachado id={row['id']}: {(row.get('title') or '')[:60]}")
+                elif resultado['status'] == 'FAILED':
+                    cur.execute(
+                        "UPDATE genesis_radar_dispatch SET status = 'FAILED', attempts = attempts + 1 "
+                        "WHERE dispatch_key = %s",
+                        (row['_dispatch_key'],),
+                    )
+                    conn.commit()
+                    logger.error(
+                        f"[Telegram] Erro claro ao enviar id={row['id']}; despacho marcado FAILED "
+                        f"(telegram_sent permanece 0)."
+                    )
+                else:  # UNCERTAIN
+                    cur.execute(
+                        "UPDATE genesis_radar_dispatch SET status = 'UNCERTAIN' WHERE dispatch_key = %s",
+                        (row['_dispatch_key'],),
+                    )
+                    conn.commit()
+                    logger.error(
+                        f"[Telegram] Desfecho INCERTO ao enviar id={row['id']} (timeout/erro de rede). "
+                        f"NÃO reenviando — a mensagem pode já ter sido entregue (RT-04)."
+                    )
         except Exception as e:
             logger.error(f"Erro ao drenar fila do Telegram: {e}")
         finally:
             conn.close()
 
     # ─── Resumo diário — 20h horário de Brasília (seção 5.1) ─────────────────
+
+    @staticmethod
+    def _limites_dia_brt() -> tuple[datetime, datetime]:
+        """Início e fim do dia em horário de Brasília, convertidos pra UTC (D3) —
+        nunca CURDATE(), que compararia contra o relógio do servidor MySQL.
+        created_at é gravado em UTC (datetime.utcnow() em todo o resto do worker)."""
+        agora_brt = _agora_brt()
+        inicio_brt = agora_brt.replace(hour=0, minute=0, second=0, microsecond=0)
+        fim_brt = inicio_brt + timedelta(days=1)
+        # _agora_brt() embute o offset de -3h nos números do datetime (tzinfo
+        # continua utc); subtrair BRT_OFFSET de volta dá o instante UTC real.
+        inicio_utc = (inicio_brt - BRT_OFFSET).replace(tzinfo=None)
+        fim_utc = (fim_brt - BRT_OFFSET).replace(tzinfo=None)
+        return inicio_utc, fim_utc
+
+    def _reservar_resumo_do_dia(self, hoje, conn) -> bool:
+        """Reserva a linha do resumo do dia ANTES de enviar (D4). False = já
+        enviado hoje (por este processo ou por outro, antes de um restart)."""
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "INSERT INTO genesis_radar_resumo (data_ref, itens) VALUES (%s, 0)",
+                    (hoje,),
+                )
+            conn.commit()
+            return True
+        except pymysql.err.IntegrityError:
+            conn.rollback()
+            logger.info(f"[Resumo] Resumo de {hoje} já foi enviado, não reenviando.")
+            return False
 
     def _maybe_send_resumo_diario(self):
         agora = _agora_brt()
@@ -296,44 +560,87 @@ class RadarNewsWorker:
         if agora.hour < RESUMO_HOUR_BRT:
             return
         if self._last_resumo_date == hoje:
+            # Otimização local, não a garantia: evita bater no banco a cada
+            # QUEUE_DRAIN_TICK_SECONDS pelo resto da noite. Quem garante
+            # não-reenvio de verdade é a tabela genesis_radar_resumo (D4) —
+            # um restart limpa esse cache, mas o INSERT reservado continua
+            # rejeitando o reenvio.
             return
 
-        self._last_resumo_date = hoje  # marca antes de tentar: nunca reenvia no mesmo dia
-        self._run_resumo_diario()
+        if self._run_resumo_diario():
+            self._last_resumo_date = hoje
 
-    def _run_resumo_diario(self):
+    def _run_resumo_diario(self) -> bool:
+        """Retorna True se o resumo já está tratado (enviado agora, enviado antes,
+        ou não havia nada pra enviar) — False só em falha real que vale reprocessar
+        no próximo tick."""
         logger.info("─── Gerando resumo diário do Radar News ───")
+        hoje = _agora_brt().date()
         conn = self.conectar_bd()
         if not conn:
             logger.error("Sem conexão MySQL para o resumo diário.")
-            return
+            return False
 
         try:
+            if not self._reservar_resumo_do_dia(hoje, conn):
+                return True  # já saiu — não é erro, só nada a fazer
+
+            inicio_utc, fim_utc = self._limites_dia_brt()
             with conn.cursor() as cur:
                 cur.execute(
-                    "SELECT * FROM genesis_radar_news "
-                    "WHERE nivel IN (1, 2) AND DATE(created_at) = CURDATE() "
-                    "ORDER BY nivel ASC, impact_score DESC, created_at DESC "
-                    "LIMIT 10"
+                    """
+                    SELECT * FROM (
+                        SELECT n.*,
+                               CASE n.severity
+                                   WHEN 'CRITICAL' THEN 3 WHEN 'HIGH' THEN 2
+                                   WHEN 'MEDIUM' THEN 1 ELSE 0
+                               END AS severity_ord,
+                               ROW_NUMBER() OVER (
+                                   PARTITION BY COALESCE(n.event_key, n.title_hash)
+                                   ORDER BY n.impact_score DESC, n.created_at DESC
+                               ) AS rn
+                        FROM genesis_radar_news n
+                        WHERE n.nivel IN (1, 2)
+                          AND n.created_at >= %s AND n.created_at < %s
+                    ) t
+                    WHERE t.rn = 1
+                    ORDER BY t.impact_score DESC, t.severity_ord DESC, t.created_at DESC
+                    LIMIT 10
+                    """,
+                    (inicio_utc, fim_utc),
                 )
                 top10 = cur.fetchall()
         except Exception as e:
             logger.error(f"Erro ao buscar notícias do dia para o resumo: {e}")
-            return
+            return False
         finally:
             conn.close()
 
         if not top10:
             logger.info("Sem notícia relevante hoje — resumo diário não enviado.")
-            return
+            return True
 
         conclusao = self._gerar_conclusao_do_dia(top10)
         texto = self._formatar_resumo_diario(top10, conclusao)
 
         if self.telegram_dispatcher.send_resumo_diario(texto):
             logger.info("Resumo diário enviado com sucesso.")
+            return True
         else:
             logger.error("Falha ao enviar o resumo diário.")
+            # A linha do dia já foi reservada em genesis_radar_resumo; se o envio
+            # falhou aqui, o resumo de hoje não tem mais uma segunda tentativa
+            # (limitação conhecida do desenho do documento — D4 não tem coluna de
+            # status como o D2 tem, só a existência da linha).
+            return False
+
+    @staticmethod
+    def _categoria_nome(item: dict) -> str:
+        """F07: o rótulo sai de CATEGORIAS_NOMES (a partir de `categoria`, número) —
+        `category` (texto) parou de ser gravado em persist_classified; o fallback pro
+        texto legado só serve pra linha antiga que já tinha `category` persistido
+        antes desta correção."""
+        return CATEGORIAS_NOMES.get(item.get('categoria')) or item.get('category') or 'Radar News'
 
     def _formatar_resumo_diario(self, top10: list[dict], conclusao: str) -> str:
         linhas = [
@@ -343,7 +650,7 @@ class RadarNewsWorker:
             '',
         ]
         for i, item in enumerate(top10, start=1):
-            categoria_nome = item.get('category') or 'Radar News'
+            categoria_nome = self._categoria_nome(item)
             titulo = item.get('title') or 'Sem título'
             impacto = (item.get('impact_summary') or '').strip()
             linhas.append(f'{i}. [{categoria_nome}] {titulo}')
@@ -359,7 +666,7 @@ class RadarNewsWorker:
     def _gerar_conclusao_do_dia(self, top10: list[dict]) -> str:
         """Pede ao Gemini (via API interna Genesis) uma leitura objetiva do tom do mercado."""
         resumo_itens = "\n".join(
-            f"- [{item.get('category') or ''}] {item.get('title') or ''}: {(item.get('impact_summary') or '')[:200]}"
+            f"- [{self._categoria_nome(item)}] {item.get('title') or ''}: {(item.get('impact_summary') or '')[:200]}"
             for item in top10
         )
         prompt = (

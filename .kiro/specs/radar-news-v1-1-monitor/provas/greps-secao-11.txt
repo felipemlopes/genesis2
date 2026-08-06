@@ -1,0 +1,84 @@
+GREPS OBRIGATORIOS - Secao 11 do RADAR_NEWS_V1_1.md
+Rodado em: Wed Aug  5 17:58:37     2026
+Diretorio: /c/Users/felip/Downloads/G-nesis-2.0-main/G-nesis-2.0-main
+
+### Devem devolver ZERO ###
+
+--- grep -rn "generativelanguage.googleapis.com" monitor/ ---
+(resultado: 0 ocorrencias)
+
+--- grep -rn "translate.googleapis.com" monitor/ ---
+(resultado: 0 ocorrencias)
+
+--- grep -rn "hours=3" monitor/ ---
+(resultado: 0 ocorrencias)
+
+--- grep -rn "threading.Timer" monitor/ ---
+(resultado: 0 ocorrencias)
+
+--- grep -n "source = %s" monitor/rss_collector.py ---
+(resultado: 0 ocorrencias)
+
+--- grep -rn "discovery_score\|send_discovery_alert" monitor/ ---
+(resultado: 0 ocorrencias)
+
+--- grep -rn "monitor_worker" nos arquivos do Radar News (F11) ---
+(resultado: 0 ocorrencias esperado)
+
+### EXCECAO DOCUMENTADA (nao-zero, ver Fase 7/F06 no tasks.md) ###
+
+--- grep -rn "impact_summary" monitor/ ---
+monitor/ai_classifier.py:473:                 categoria, affected_assets, market_bias, impact_summary, nivel, impact_score,
+monitor/ai_classifier.py:488:            # F06: impacto_pt é a única fonte aqui — o campo compat 'impact_summary'
+monitor/ai_classifier.py:490:            # A coluna do banco continua se chamando impact_summary (fora do escopo
+monitor/ai_classifier.py:699:            e['impacto_pt'] = impacto_pt  # F06: impact_summary (compat legado) saiu — fica só este
+monitor/telegram_dispatcher.py:91:        # linha crua vinda do banco (SELECT * — a coluna persistida é impact_summary).
+monitor/telegram_dispatcher.py:94:        impact = html.escape((entry.get('impact_summary') or '').strip()[:220])
+monitor/worker_radar_news.py:655:            impacto = (item.get('impact_summary') or '').strip()
+monitor/worker_radar_news.py:669:            f"- [{self._categoria_nome(item)}] {item.get('title') or ''}: {(item.get('impact_summary') or '')[:200]}"
+
+### Devem devolver PRESENTE ###
+
+--- grep -n "GENESIS_AI_URL" monitor/ai_classifier.py ---
+30:# GENESIS_AI_URL=            <- ESPACO RESERVADO: endpoint da API interna Genesis
+34:GENESIS_AI_URL = os.getenv('GENESIS_AI_URL', '').rstrip('/')
+318:                (GENESIS_AI_URL/GENESIS_AI_TOKEN do ambiente), nunca com API key
+360:        if not GENESIS_AI_URL:
+361:            logger.critical("[AI] GENESIS_AI_URL não configurada. Classificação abortada.")
+560:        if not GENESIS_AI_URL:
+561:            logger.critical('[AI] GENESIS_AI_URL nao configurada. Classificacao abortada.')
+579:                r = requests.post(GENESIS_AI_URL, json=payload, headers=headers, timeout=GEMINI_TIMEOUT)
+
+--- grep -n "gemini-3.6-flash" monitor/.env.example ---
+16:GEMINI_ANALYSIS_MODEL=gemini-3.6-flash
+
+--- grep -n "normalizar_event_key" monitor/ai_classifier.py ---
+288:def normalizar_event_key(raw: str | None) -> str | None:
+680:            event_key = normalizar_event_key(cls.get('event_key'))
+
+--- grep -n "piso_de_severidade" monitor/ai_classifier.py ---
+17:from eventos_graves import piso_de_severidade
+683:            piso = piso_de_severidade(entry.get('title', ''), entry.get('summary', ''))
+
+--- grep -n "piso_de_severidade" monitor/eventos_graves.py ---
+6:dolar usados em piso_de_severidade/_maior_valor_usd sao PROPOSTA do documento
+53:def piso_de_severidade(titulo: str, resumo: str) -> str | None:
+
+--- grep -n "_ja_foi_ao_telegram" monitor/worker_radar_news.py ---
+325:            # uma repetida — o oposto deliberado do fail-closed de _ja_foi_ao_telegram.
+333:    def _ja_foi_ao_telegram(self, row: dict, conn) -> str | None:
+432:            motivo = self._ja_foi_ao_telegram(row, conn)
+
+--- grep -n "_reservar_despacho" monitor/worker_radar_news.py ---
+366:    def _reservar_despacho(self, row: dict, conn) -> bool:
+474:            if not self._reservar_despacho(row, conn):
+
+--- grep -n "GATILHOS_POR_CATEGORIA" monitor/ai_classifier.py ---
+78:GATILHOS_POR_CATEGORIA = """
+174:""" + GATILHOS_POR_CATEGORIA + """
+
+--- grep -n "adiado_ate" monitor/worker_radar_news.py ---
+415:                # o valor operacional e sai da fila de tentativa. adiado_ate:
+422:                    "  AND (adiado_ate IS NULL OR adiado_ate <= NOW()) "
+463:                            "UPDATE genesis_radar_news SET adiado_ate = NOW() + INTERVAL %s MINUTE "
+

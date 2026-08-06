@@ -1,0 +1,6 @@
+=== P02: subir com GENESIS_AI_URL vazia -> log CRITICAL, classificacao abortada, sem chamar o Google ===
+Rodado em: Wed Aug  5 17:59:40     2026
+
+CRITICAL [AI] GENESIS_AI_URL não configurada. Classificação abortada.
+RESULTADO classify(): []
+P02 OK: GENESIS_AI_URL vazia -> log CRITICAL acima, retornou [], nenhuma chamada de rede feita

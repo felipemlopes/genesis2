@@ -1,0 +1,13 @@
+=== Comando: leitura read-only do schema real (nenhum INSERT/UPDATE/DDL executado) ===
+Tabelas genesis_radar*: ['genesis_radar_news']
+genesis_carteira_tokens existe: True
+Colunas genesis_radar_news: ['id', 'title', 'title_hash', 'event_key', 'source', 'source_url', 'severity', 'category', 'nivel', 'categoria', 'impact_score', 'affected_assets', 'ativo_tema', 'market_bias', 'impact_summary', 'observacao', 'discovery_score', 'is_discovery', 'telegram_sent', 'telegram_sent_at', 'created_at', 'updated_at']
+  tem title_original? False
+  tem supressao? False
+  tem adiado_ate? False
+  tem piso_aplicado? False
+  tem event_key? True
+Linhas em genesis_radar_news: 98
+genesis_carteira_tokens ativos (esperado 15): 0
+=== Conclusao: genesis_radar_dispatch, genesis_radar_resumo, genesis_radar_telemetria NAO existem. ===
+=== Colunas title_original/supressao/adiado_ate/piso_aplicado NAO existem em genesis_radar_news. ===

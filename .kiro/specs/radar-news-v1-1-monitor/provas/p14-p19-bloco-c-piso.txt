@@ -1,0 +1,11 @@
+=== P14-P19: piso deterministico de severidade (Bloco C), 100% codigo real (sem mock de rede/banco) ===
+Rodado em: Wed Aug  5 18:00:21     2026
+
+P14 ["Binance suspends withdrawals amid technical issues"] severity_modelo=MEDIUM -> severity_final=CRITICAL piso_aplicado=CRITICAL (esperado CRITICAL)
+P15 ["MicroStrategy sells 12,000 BTC"] severity_modelo=MEDIUM -> severity_final=CRITICAL (esperado CRITICAL)
+P16 ["MicroStrategy buys 4,000 BTC"] severity_modelo=HIGH -> severity_final=HIGH piso_aplicado=None (esperado HIGH, nao escala)
+P17 ["Tether USDT depegs to $0.94"] severity_modelo=LOW, USDT fora da carteira -> severity_final=CRITICAL (esperado CRITICAL)
+P18 ["Protocol X exploited for $340 million"] severity_modelo=MEDIUM -> severity_final=CRITICAL (esperado CRITICAL, limiar US$ 25mi)
+P19 ["Analyst says Bitcoin could reach $200k"] opiniao/previsao -> severity_final=LOW acionavel=False piso_aplicado=None (esperado LOW, acionavel False, sem piso)
+
+P14-P19 OK - todas as 6 provas passaram com codigo real (piso_de_severidade + calcular_nivel), sem simulacao de rede ou banco.

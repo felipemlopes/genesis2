@@ -945,10 +945,35 @@ real entre o documento e o código/decisões anteriores do usuário — resolvid
 decidir por interpretação (D02: gate reativado com tolerância proporcional; G04: código real já uniforme
 por timeframe, sem mudança). H07 (Fase 4) teve divergência de alto risco (3 dos 4 arquivos citados como
 "resíduo" estão vivos em produção) — único item da spec inteira deixado sem qualquer ação, por decisão
-explícita do usuário. Suíte PHPUnit não executada em nenhuma das quatro fases (decisão do usuário, banco
-de dev `genesisteste`); `php -l`/`tsc --noEmit` limpos em todos os arquivos tocados em todas as fases;
-Fase 4 também rodou `npm test` (vitest) e conferiu que nenhuma falha nova foi introduzida (mesma linha
-de base de 29 falhas pré-existentes, não relacionadas).
+explícita do usuário. Suíte PHPUnit não executada em nenhuma das quatro fases de implementação (decisão
+do usuário, banco de dev `genesisteste`); `php -l`/`tsc --noEmit` limpos em todos os arquivos tocados em
+todas as fases; Fase 4 também rodou `npm test` (vitest) e conferiu que nenhuma falha nova foi introduzida
+(mesma linha de base de 29 falhas pré-existentes, não relacionadas).
+
+**Sessão de geração de prova (04/08/2026, pós-Fase 4, autorização explícita do usuário em duas etapas):**
+suíte PHPUnit rodada pela primeira vez em todo o ciclo (autorizado com a condição explícita de nunca dar
+refresh no banco — confirmado antes de rodar que nenhum teste usa `RefreshDatabase`/migrations, só
+criação+limpeza manual de linhas, mesmo padrão do resto da suíte). **265 testes, 727 assertions, 264
+passam.** Encontrado e corrigido 1 bug real nunca antes exercitado:
+`DecisionResponseValidatorTest::test_accepts_valid_contract` quebrava ("Only variables should be passed
+by reference") por passar o retorno de `valid()` direto pro parâmetro `&$decision` por referência de
+A02/A03 — corrigido atribuindo a uma variável antes. 1 falha remanescente, pré-existente e não
+relacionada (`RadarNewsPollTest`, feature de notícias do radar). Os 48 testes específicos dos itens da
+V6.6 (9 arquivos, Fases 1-4) passam 100%. Depois, autorizada uma análise real ao vivo (gasto de crédito
+real aceito): duas chamadas reais completas à API Gemini (`GraphicalAnalysisOrchestrator::analyze()`
+chamado diretamente via comando Artisan temporário, mesmo código do controller real, símbolo APTUSDT,
+timeframe 1w, conta admin@admin.com id 13, saldo 9160→9120, -40 créditos as duas), usando o gráfico real
+fornecido pelo usuário (`grafico de teste.jpeg`, semanal "1S" do TradingView). Resultado determinístico
+idêntico nas duas chamadas (seed fixa). Pacote completo de evidências em `provas/v6_6/` (ver
+`provas/v6_6/README.txt`) — cobre D01 (normalizador com o rótulo real do gráfico), F07 (versão/
+fingerprint V6.6 no boot log real), E01 (executable=true com SEM_BARREIRA_REAL), E04 (rr nulo sobre
+alvo projetado), F01 (campos de referência de RR nos dois planos), F02 (acentuação em texto gerado ao
+vivo, não fixture), D02 (gate não bloqueou análise legítima), e prova parcial de A02/A03/A05 (lado "sem
+figura clara", DP-07). Ainda faltam: A04/A05 (lado "com figura") e B01 (lado "vrvp presente:true") —
+o gráfico de teste usado não tinha padrão nem VRVP desenhado claros o suficiente, precisa de outro
+gráfico; capturas de tela do frontend (exige subir servidor+navegador); C01-C04 com barreira real
+disputando (esta análise caiu 100% em projeção, sem barreira disponível na faixa de preço); A01 (log
+bruto do payload enviado), G01/G03 (comparação/volume de análises).
 
 **Bloqueantes (18):** A01, A02, A03, A04, A05, A06, B01, B03, B05, C01, C02, C04, D01, D02, E01, E02,
 E03, E04, F01, F02, F06, F10 — conferir contra a Matriz de Aceite do documento (seção 13) antes de

@@ -1,0 +1,12 @@
+=== P04: derrubar a API interna no meio do lote -> log ERROR + reprocessamento individual das 3, nenhuma perdida em silencio ===
+Rodado em: Wed Aug  5 17:59:57     2026
+(_call_gemini mockado para simular a API interna fora do ar so no lote inteiro; individualmente 2 respondem, 1 continua falhando de verdade)
+
+INFO [AI] Classificando batch 1 (3 entradas)...
+ERROR [AI] Lote 1 falhou. Reprocessando as 3 entradas individualmente.
+ERROR [AI] PERDIDA sem classificacao: "Noticia 3"
+INFO [AI] 2/3 entrada(s) classificada(s) com sucesso.
+Chamadas totais a _call_gemini: 4 (1 lote + 3 individuais)
+Classificadas com sucesso: 2 -> ids: [1, 2]
+Telemetria perdidas_classificacao: 1
+P04 OK

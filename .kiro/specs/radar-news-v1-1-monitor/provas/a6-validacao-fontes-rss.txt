@@ -1,0 +1,24 @@
+=== A6: validacao das 5 fontes RSS propostas (RT-05, pendente ratificacao) ===
+Rodado em: Wed Aug  5 17:59:24     2026
+Comando: curl -A "Mozilla/5.0 (compatible; GenesisRadarNews/1.1; +https://cripto.ico)" -IL --max-time 10 <url>
+
+=== SEC Press Releases (https://www.sec.gov/news/pressreleases.rss) ===
+HTTP/1.1 200 OK
+
+=== CFTC Press Releases (https://www.cftc.gov/RSS/RSSGP/rssgp.xml) ===
+HTTP/1.1 200 OK
+
+=== Federal Reserve (https://www.federalreserve.gov/feeds/press_all.xml) ===
+HTTP/1.1 200 OK
+
+=== CoinDesk (https://www.coindesk.com/arc/outboundfeeds/rss/) ===
+HTTP/1.1 308 Permanent Redirect
+Location: /arc/outboundfeeds/rss
+HTTP/1.1 200 OK
+
+=== Reuters Business (https://www.reutersagency.com/feed/?best-topics=business-finance) ===
+HTTP/1.1 301 Moved Permanently
+Location: https://reutersagency.com/feed/?best-topics=business-finance
+HTTP/1.1 404 Not Found
+
+=== Resultado: SEC/CFTC/Fed/CoinDesk = 200 (CoinDesk via redirect 308 que o feedparser segue). Reuters Business = 301 -> 404 (link morto de verdade). ===

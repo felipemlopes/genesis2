@@ -9,22 +9,35 @@ import json
 import logging
 import os
 import re
-from datetime import datetime, timedelta
+import unicodedata
 
 import pymysql
 import requests
-from rapidfuzz import fuzz
+
+from eventos_graves import piso_de_severidade
 
 logger = logging.getLogger('radar-news')
 
-# ─── Configuração da chamada Gemini ───────────────────────────────────────────
+# ─── Ordem de severidade (Bloco C — piso só promove, nunca rebaixa) ────────────
 
-GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', '')
-GEMINI_MODEL = os.getenv('GEMINI_ANALYSIS_MODEL', 'gemini-2.5-flash')
-GEMINI_TIMEOUT = 30  # seconds
-RETRY_DELAY = 5      # seconds
+ORDEM_SEV = {'LOW': 0, 'MEDIUM': 1, 'HIGH': 2, 'CRITICAL': 3}
 
-GEMINI_URL = f'https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent'
+# ─── Configuração da chamada Gemini (API interna Genesis, nunca a API do Google) ──
+# Aviso 2 da V1.0/V1.1: chamada direta ao Google é proibida por custo — e o efeito
+# colateral (lote inteiro descartado quando a chamada falha) é pior que o custo (A1).
+
+# .env (obrigatorio)
+# GENESIS_AI_URL=            <- ESPACO RESERVADO: endpoint da API interna Genesis
+# GENESIS_AI_TOKEN=          <- ESPACO RESERVADO: token da API interna
+# GEMINI_ANALYSIS_MODEL=gemini-3.6-flash
+
+GENESIS_AI_URL = os.getenv('GENESIS_AI_URL', '').rstrip('/')
+GENESIS_AI_TOKEN = os.getenv('GENESIS_AI_TOKEN', '')
+GEMINI_MODEL = os.getenv('GEMINI_ANALYSIS_MODEL', 'gemini-3.6-flash')
+
+GEMINI_TIMEOUT = 45
+MAX_OUTPUT_TOKENS = 8192
+BATCH_SIZE = 3          # era 5: lote menor cabe no orcamento de tokens com folga
 
 # ─── Categorias oficiais (seção 3 da spec) ────────────────────────────────────
 
@@ -41,14 +54,105 @@ CATEGORIAS_NOMES = {
     10: 'Stablecoins',
 }
 
-CATEGORIAS_MERCADO_INTEIRO = (5, 6)  # Macro/Geo disparam Nível 1 sem tocar a carteira
+CATEGORIAS_MERCADO_INTEIRO = (5, 6)  # Macro/Geo disparam Nível 1 sem tocar a carteira — pré-E1, mantida só como referência histórica (não usada mais em calcular_nivel)
+
+# ─── E1: categorias/ativos sistêmicos (Bloco E, Fase 6) ────────────────────────
+# RT-06 (pendente ratificação do Fabrício): categorias 2/3/4/10 contando como
+# sistêmicas, além de 5/6. Sem isso, um depeg de USDT (categoria 10) nunca
+# alcançava Nível 1 porque USDT não é BTC nem está na carteira Cripto.ico — a
+# V1.0 já mandava disparar em depeg e a regra de nível fechava a porta por engano.
+ATIVOS_SISTEMICOS = {'BTC', 'ETH', 'USDT', 'USDC', 'DAI', 'USDE', 'PYUSD', 'FDUSD'}
+CATEGORIAS_SISTEMICAS = (2, 3, 4, 5, 6, 10)
 
 # ─── Travas de anti-repetição (C2) ─────────────────────────────────────────────
+# Dedup por hash exato e por similaridade de título saiu daqui — roda no coletor,
+# ANTES da classificação (rss_collector.deduplicate, A3). A trava de event_key
+# (abaixo) não usa mais janela em Python (A4/F04) — o índice do banco é UNIQUE
+# global e a data já está dentro da própria chave normalizada.
 
-EXACT_HASH_WINDOW_HOURS = 24
-SIMILARITY_WINDOW_HOURS = 72
-SIMILARITY_THRESHOLD = 85  # % (rapidfuzz)
+# ─── Gatilhos por categoria (seção 3 da V1.0, Bloco B da V1.1) ─────────────────
+# Sem isso, o classificador decidia severidade/acionabilidade pelo critério dele,
+# sem nenhum dos gatilhos da spec na frente — corte mecânico funcionando com o
+# critério inteligente que deveria alimentá-lo de fora do prompt.
 
+GATILHOS_POR_CATEGORIA = """
+Para cada categoria abaixo, DISPARA lista os eventos materiais e NUNCA lista o que
+nao pode ser tratado como impacto real. Se a noticia nao se encaixar em nenhum item
+de DISPARA, ela e "acionavel": false, independentemente de quao chamativa seja a manchete.
+
+1. ATIVOS CRIPTO.ICO
+DISPARA: listagem ou deslistagem relevante; integracao que aumente utilidade real;
+uso como colateral; mudanca em staking; alteracao de tokenomics; unlock ou queima
+relevante; exploit no protocolo; upgrade com impacto economico; entrada ou saida
+relevante de liquidez.
+NUNCA: post promocional; parceria vaga; campanha de marketing; mencao de influencer;
+previsao de preco; analise opinativa.
+
+2. RISCO DE MERCADO
+DISPARA: hack ou exploit relevante; suspensao de saques; insolvencia; congelamento de
+fundos; falha grave de rede; risco em exchange ou stablecoin relevante; liquidacao
+forcada relevante; contagio entre protocolos ou empresas.
+NUNCA: problema em protocolo irrelevante; rumor sem confirmacao; falha sem impacto
+financeiro; ataque sem perda relevante; noticia antiga reembalada.
+
+3. REGULACAO
+DISPARA: aprovacao ou rejeicao de ETF relevante; decisao oficial de SEC, CFTC, Fed,
+BCE, China, Japao ou Russia; lei com impacto direto; restricao a exchanges; acao contra
+empresa sistemica; decisao judicial que mude precedente; regra sobre stablecoin,
+custodia, staking ou DeFi; multa relevante em empresa grande.
+NUNCA: investigacao pequena; multa irrelevante; comentario isolado de politico; fala
+generica de regulador; proposta sem avanco; materia juridica sem impacto operacional.
+
+4. INSTITUCIONAL
+DISPARA: compra ou venda relevante de BTC ou ETH; aprovacao, lancamento, fechamento ou
+fluxo relevante de ETF; banco grande oferecendo custodia ou produto; gestora criando
+produto; empresa listada com BTC ou ETH em tesouraria; fundo mudando exposicao;
+parceria institucional com impacto em liquidez ou acesso.
+NUNCA: relatorio de banco; opiniao de executivo; empresa "estudando cripto"; gestora
+pequena; anuncio sem produto lancado; materia sem valor financeiro claro.
+
+5. MACROECONOMIA (EUA, UE, China, Japao, Russia)
+DISPARA: decisao de juros; inflacao fora do esperado; payroll ou emprego muito fora do
+esperado; fala relevante do Fed que mude expectativa; movimento forte no dolar ou nos
+yields; injecao ou retirada de liquidez; crise bancaria; evento que altere expectativa
+de juros.
+NUNCA: dado sem surpresa; fala generica; noticia macro local sem impacto global;
+indicador secundario sem reacao; comentario repetido de autoridade.
+
+6. GEOPOLITICA (EUA, UE, China, Japao, Russia)
+DISPARA: sancao economica relevante; risco de guerra ou escalada militar; bloqueio
+financeiro; restricao a bancos; tensao envolvendo dolar, energia ou comercio global;
+medida que afete fluxo de capital; evento politico com impacto direto em mercados.
+NUNCA: eleicao local irrelevante; conflito sem impacto economico; fala politica comum;
+tensao diplomatica sem consequencia financeira; noticia sem relacao com mercado.
+
+7. LISTAGEM E LIQUIDEZ (Binance, Coinbase, OKX, Bybit, Upbit, Kraken, Bitstamp, CME)
+DISPARA: listagem ou deslistagem em exchange relevante; abertura de futuros ou
+perpetuos; novo par de alta liquidez; entrada em mercado institucional; mudanca de
+liquidez que afete preco.
+NUNCA: listagem em exchange pequena; par irrelevante; campanha promocional; volume
+baixo; noticia sem impacto claro de liquidez.
+
+8. SUPPLY E TOKENOMICS
+DISPARA: unlock relevante; vesting grande; queima ou emissao relevante; mudanca na
+politica de supply; alteracao em staking ou recompensa; migracao de token; risco de
+pressao vendedora por desbloqueio.
+NUNCA: unlock pequeno; queima simbolica; mudanca sem impacto em oferta circulante;
+tokenomics de projeto irrelevante; conteudo explicativo sem evento novo.
+
+9. DEFI E INTEGRACAO
+DISPARA: ativo virando colateral; integracao com protocolo DeFi relevante; aumento de
+utilidade economica; novo mercado de lending; mudanca relevante em TVL; bridge
+relevante; staking com impacto em oferta; risco em protocolo com capital significativo.
+NUNCA: integracao pequena; parceria vaga; protocolo sem liquidez; anuncio tecnico sem
+impacto economico; post institucional sem uso real.
+
+10. STABLECOINS (USDT, USDC, DAI, USDe e sistemicas)
+DISPARA: depeg; resgate em massa; emissao ou queima relevante; problema em reservas;
+restricao regulatoria; acao contra emissor relevante; risco em stablecoin sistemica.
+NUNCA: relatorio comum sem surpresa; crescimento pequeno de market cap; opiniao sobre
+stablecoins; stablecoin irrelevante; noticia sem risco ou fluxo relevante.
+"""
 
 CLASSIFICATION_PROMPT = """Você é o classificador do Radar News da Genesis Labs. Sua única função é avaliar
 se cada notícia abaixo tem IMPACTO REAL de mercado (mover preço, liquidez, risco, oferta,
@@ -67,6 +171,13 @@ CATEGORIAS (escolha exatamente uma por entrada, pelo número):
 1 = Ativos Cripto.ico | 2 = Risco de Mercado | 3 = Regulação | 4 = Institucional |
 5 = Macroeconomia | 6 = Geopolítica | 7 = Listagem e Liquidez | 8 = Supply e Tokenomics |
 9 = DeFi e Integração | 10 = Stablecoins
+""" + GATILHOS_POR_CATEGORIA + """
+REGRA DO event_key: o TIPO_EVENTO descreve o FATO ESPECIFICO, nunca a categoria.
+Correto:   ETHFI|INTEGRACAO_COLATERAL_AAVE|2026-07-18
+Correto:   BINANCE|SUSPENSAO_SAQUES|2026-08-02
+ERRADO:    BTC|REGULACAO|2026-08-02   (generico demais: engole o dia inteiro)
+ERRADO:    MERCADO|NOTICIA|2026-08-02
+Use sempre: ENTIDADE|TIPO_EVENTO|AAAA-MM-DD, em maiusculas, sem acento, sem espaco.
 
 Para CADA entrada, retorne um objeto JSON com:
 - "id": o número da entrada (inteiro, igual ao [N] mostrado abaixo)
@@ -105,19 +216,26 @@ Responda APENAS com o array JSON. Sem markdown, sem explicação."""
 
 
 def calcular_nivel(e: dict, carteira: set) -> int:
-    """Nível calculado por regra (categoria + carteira + mecanismo declarado), C4.
+    """Nível calculado por regra (categoria + carteira + mecanismo declarado), C4/E1.
 
     Nível 1: Telegram + popup + histórico. Nível 2: popup discreto + resumo + histórico.
     Nível 3: só histórico.
+
+    E1 (Bloco E): risco sistêmico, regulação e stablecoin deixam de precisar de um
+    ticker da carteira Cripto.ico pra existir — um ativo sistêmico (BTC/ETH/stable
+    grande) ou uma categoria que trata do mercado inteiro (2/3/4/5/6/10) já basta.
+    O funil continua fechado pela exigência de acionavel + mecanismo escrito, que
+    é o que barra opinião, previsão de preço e parceria vaga — isso não mudou.
     """
     sev = e.get('severity', 'LOW')
-    toca_carteira = bool(set(e.get('affected_assets', [])) & carteira)
-    mercado_inteiro = e.get('categoria') in CATEGORIAS_MERCADO_INTEIRO or 'BTC' in e.get('affected_assets', [])
+    ativos = set(e.get('affected_assets', []))
+    toca_carteira = bool(ativos & carteira)
+    sistemico = e.get('categoria') in CATEGORIAS_SISTEMICAS or bool(ativos & ATIVOS_SISTEMICOS)
     acionavel = bool(e.get('acionavel')) and bool((e.get('mecanismo') or '').strip())
 
     if sev == 'CRITICAL':
         return 1
-    if sev == 'HIGH' and acionavel and (toca_carteira or mercado_inteiro):
+    if sev == 'HIGH' and acionavel and (toca_carteira or sistemico):
         return 1
     if sev in ('HIGH', 'MEDIUM') and toca_carteira:
         return 2
@@ -167,23 +285,63 @@ def load_carteira_tokens(connection) -> list[dict]:
     return carteira
 
 
+def normalizar_event_key(raw: str | None) -> str | None:
+    """ENTIDADE|TIPO_EVENTO|AAAA-MM-DD, sem acento, maiusculo, sem espaco (A4).
+
+    Chave malformada devolve None e a notícia entra sem trava de fato — melhor
+    perder a deduplicação por event_key numa notícia do que descartar a notícia
+    inteira por causa de um formato ruim vindo do modelo.
+    """
+    if not isinstance(raw, str) or not raw.strip():
+        return None
+    s = unicodedata.normalize('NFKD', raw).encode('ascii', 'ignore').decode()
+    s = re.sub(r'\s+', '_', s.upper().strip())
+    s = re.sub(r'[^A-Z0-9|_\-]', '', s)
+    partes = [p.strip('_') for p in s.split('|')]
+    if len(partes) != 3 or not all(partes):
+        logger.warning(f'[AI] event_key malformado, descartado: {raw[:80]}')
+        return None
+    if not re.fullmatch(r'\d{4}-\d{2}-\d{2}', partes[2]):
+        logger.warning(f'[AI] event_key sem data ISO, descartado: {raw[:80]}')
+        return None
+    return '|'.join(partes)[:160]
+
+
 class AIClassifier:
     """Classifica notícias de RSS usando Gemini (API interna Genesis)."""
 
     def __init__(self, api_key: str | None = None):
         """
         Args:
-            api_key: Gemini API key. Se None, usa GEMINI_API_KEY do ambiente.
+            api_key: aceito por compatibilidade de assinatura; não é mais usado —
+                a chamada ao Gemini passou a ser feita pela API interna Genesis
+                (GENESIS_AI_URL/GENESIS_AI_TOKEN do ambiente), nunca com API key
+                do Google (Aviso 2).
         """
-        self.api_key = api_key or os.getenv('GEMINI_API_KEY', '')
         self._alias_map: dict[str, str] = {}
+        # Bloco G (telemetria): contadores do ciclo atual, em memória. Persistir
+        # em genesis_radar_telemetria depende de migration que não existe ainda —
+        # o worker lê este dict no fim do ciclo e tenta o INSERT (ver
+        # RadarNewsWorker._registrar_telemetria_do_ciclo).
+        self._telemetria: dict[str, int] = {
+            'enviadas_ao_modelo': 0,
+            'lotes_falhos': 0,
+            'perdidas_classificacao': 0,
+            'acionaveis': 0,
+            'piso_aplicado': 0,
+            'cortadas_event_key': 0,
+            'nivel_1': 0,
+            'nivel_2': 0,
+            'nivel_3': 0,
+        }
 
     def classify(self, entries: list[dict], carteira: list[dict] | None = None) -> list[dict]:
-        """Classifica uma lista de entradas de notícias via Gemini.
+        """Classifica uma lista de entradas de notícias via Gemini (API interna Genesis).
 
-        Envia em batches de 5. Injeta a carteira Cripto.ico no prompt para
-        normalizar tickers/aliases (seção 2). Calcula nivel/impact_score por
-        regra (C4/C5) após a mesclagem por id (C3).
+        Envia em batches de BATCH_SIZE (3). Injeta a carteira Cripto.ico no prompt
+        para normalizar tickers/aliases (seção 2). Calcula nivel/impact_score por
+        regra (C4/C5) após a mesclagem por id (C3). Lote que falha é reprocessado
+        entrada por entrada antes de qualquer coisa ser dada como perdida (A2).
 
         Args:
             entries: Lista de dicts com pelo menos 'title', 'source', 'summary'.
@@ -194,12 +352,18 @@ class AIClassifier:
             incluindo nivel e impact_score. Entradas sem par na resposta do
             Gemini são descartadas.
         """
+        import time
+
         if not entries:
             return []
 
-        if not self.api_key:
-            logger.error("[AI] GEMINI_API_KEY não configurada. Pulando classificação.")
+        if not GENESIS_AI_URL:
+            logger.critical("[AI] GENESIS_AI_URL não configurada. Classificação abortada.")
             return []
+
+        # Bloco G: telemetria zera a cada ciclo (classify() é chamado 1x por ciclo RSS).
+        self._telemetria = {k: 0 for k in self._telemetria}
+        self._telemetria['enviadas_ao_modelo'] = len(entries)
 
         carteira = carteira or []
         carteira_set = {c['ticker'] for c in carteira}
@@ -213,7 +377,6 @@ class AIClassifier:
 
         carteira_text = self._format_carteira_for_prompt(carteira)
 
-        BATCH_SIZE = 5
         all_classified = []
 
         for i in range(0, len(entries), BATCH_SIZE):
@@ -221,26 +384,37 @@ class AIClassifier:
             for idx, entry in enumerate(batch, start=1):
                 entry['id'] = idx
 
-            logger.info(f"[AI] Classificando batch {i // BATCH_SIZE + 1} ({len(batch)} entradas)...")
+            n = i // BATCH_SIZE + 1
+            logger.info(f"[AI] Classificando batch {n} ({len(batch)} entradas)...")
 
             entries_text = self._format_entries_for_prompt(batch)
             prompt = CLASSIFICATION_PROMPT.format(carteira_text=carteira_text, entries_text=entries_text)
 
             raw_response = self._call_gemini(prompt)
-            if raw_response is None:
-                logger.warning(f"[AI] Falha no batch {i // BATCH_SIZE + 1}. Pulando.")
-                continue
+            classifications = self._parse_response(raw_response) if raw_response else None
 
-            classifications = self._parse_response(raw_response)
             if classifications is None:
-                logger.warning(f"[AI] Parse falhou no batch {i // BATCH_SIZE + 1}. Pulando.")
-                continue
-
-            classified = self._merge_classifications(batch, classifications, carteira_set)
-            all_classified.extend(classified)
+                # Fallback: tenta uma a uma antes de perder qualquer coisa (A2) —
+                # lote inteiro nunca mais some em silêncio.
+                self._telemetria['lotes_falhos'] += 1
+                logger.error(f"[AI] Lote {n} falhou. Reprocessando as {len(batch)} entradas individualmente.")
+                for entry in batch:
+                    single_prompt = CLASSIFICATION_PROMPT.format(
+                        carteira_text=carteira_text,
+                        entries_text=self._format_entries_for_prompt([entry]),
+                    )
+                    raw = self._call_gemini(single_prompt, max_output_tokens=3072)
+                    parsed = self._parse_response(raw) if raw else None
+                    if parsed:
+                        all_classified.extend(self._merge_classifications([entry], parsed, carteira_set))
+                    else:
+                        logger.error(f"[AI] PERDIDA sem classificacao: \"{entry.get('title', '')[:120]}\"")
+                        self._telemetria['perdidas_classificacao'] += 1
+            else:
+                classified = self._merge_classifications(batch, classifications, carteira_set)
+                all_classified.extend(classified)
 
             if i + BATCH_SIZE < len(entries):
-                import time
                 time.sleep(1)
 
         logger.info(f"[AI] {len(all_classified)}/{len(entries)} entrada(s) classificada(s) com sucesso.")
@@ -249,17 +423,18 @@ class AIClassifier:
     def persist_classified(self, entry: dict, connection) -> bool:
         """Persiste uma entrada classificada na tabela genesis_radar_news.
 
-        Identidade por FATO (C2): três travas antes de inserir —
-        1. event_key já registrado nas últimas 24h (bloqueia qualquer fonte/redação)
-        2. title_hash exato já registrado nas últimas 24h (barreira barata)
-        3. similaridade de título >= 85% contra títulos das últimas 72h (rapidfuzz)
+        Identidade por FATO (C2): a partir da A3 (V1.1), dedup por hash exato e por
+        similaridade de título roda no coletor, ANTES da classificação
+        (rss_collector.deduplicate) — sobre o título original, nunca o traduzido.
+        Aqui fica só a trava de event_key: o fato já é conhecido pelo Gemini quando
+        a notícia chega neste ponto.
 
         Args:
             entry: Dict classificado (ver _merge_classifications).
             connection: Conexão pymysql ativa.
 
         Returns:
-            True se inserido com sucesso, False se duplicata (por qualquer trava) ou erro.
+            True se inserido com sucesso, False se duplicata (event_key) ou erro.
         """
         title = (entry.get('titulo_pt') or entry.get('title', '')).strip() or 'Sem título'
         title_hash = entry.get('title_hash') or hashlib.sha256(
@@ -270,52 +445,34 @@ class AIClassifier:
         try:
             with connection.cursor() as cursor:
                 if event_key:
+                    # A4: sem janela em Python — o índice do banco é UNIQUE global e a
+                    # data já está dentro da chave, então os dois passam a concordar.
                     cursor.execute(
-                        "SELECT id FROM genesis_radar_news WHERE event_key = %s AND created_at >= %s LIMIT 1",
-                        (event_key, datetime.utcnow() - timedelta(hours=EXACT_HASH_WINDOW_HOURS)),
+                        "SELECT id FROM genesis_radar_news WHERE event_key = %s LIMIT 1",
+                        (event_key,),
                     )
                     if cursor.fetchone():
                         logger.info(f"[AI] Fato já registrado (event_key), ignorada: \"{title[:60]}...\"")
+                        self._telemetria['cortadas_event_key'] = self._telemetria.get('cortadas_event_key', 0) + 1
                         return False
-
-                cursor.execute(
-                    "SELECT id FROM genesis_radar_news WHERE title_hash = %s AND created_at >= %s LIMIT 1",
-                    (title_hash, datetime.utcnow() - timedelta(hours=EXACT_HASH_WINDOW_HOURS)),
-                )
-                if cursor.fetchone():
-                    logger.info(f"[AI] Título idêntico já registrado, ignorada: \"{title[:60]}...\"")
-                    return False
-
-                cursor.execute(
-                    "SELECT title FROM genesis_radar_news WHERE created_at >= %s",
-                    (datetime.utcnow() - timedelta(hours=SIMILARITY_WINDOW_HOURS),),
-                )
-                recent_titles = [row['title'] for row in cursor.fetchall() if row.get('title')]
         except Exception as e:
-            logger.error(f"[AI] Erro ao checar duplicatas: {e}")
+            logger.error(f"[AI] Erro ao checar duplicata de event_key: {e}")
             return False
-
-        for existing_title in recent_titles:
-            score = fuzz.token_sort_ratio(title.lower(), existing_title.lower())
-            if score >= SIMILARITY_THRESHOLD:
-                logger.info(
-                    f"[AI] Título similar ({score:.0f}% >= {SIMILARITY_THRESHOLD}%) "
-                    f"já registrado, ignorada: \"{title[:60]}...\""
-                )
-                return False
 
         affected_assets = entry.get('affected_assets', [])
         affected_assets_json = json.dumps(affected_assets if isinstance(affected_assets, list) else [])
 
         categoria = entry.get('categoria')
-        category_label = CATEGORIAS_NOMES.get(categoria, entry.get('category'))
 
+        # F07: a coluna `category` (texto) para de ser gravada — duplicava `categoria`
+        # (número). O rótulo passa a sair só de CATEGORIAS_NOMES na hora de exibir
+        # (telegram_dispatcher.py e worker_radar_news.py já fazem isso por `categoria`).
         sql = """
             INSERT INTO genesis_radar_news
-                (title, title_hash, event_key, source, source_url, severity, category,
+                (title, title_hash, event_key, source, source_url, severity,
                  categoria, affected_assets, market_bias, impact_summary, nivel, impact_score,
                  ativo_tema, observacao, telegram_sent)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """
 
         params = (
@@ -325,11 +482,14 @@ class AIClassifier:
             entry.get('source', ''),
             entry.get('source_url', None),
             entry.get('severity', 'LOW'),
-            category_label,
             categoria,
             affected_assets_json,
             entry.get('market_bias', 'NEUTRAL'),
-            (entry.get('impacto_pt') or entry.get('impact_summary') or '')[:220] or None,
+            # F06: impacto_pt é a única fonte aqui — o campo compat 'impact_summary'
+            # não existe mais no dict em memória (removido de _merge_classifications).
+            # A coluna do banco continua se chamando impact_summary (fora do escopo
+            # desta pasta renomear); é só o que ela guarda que vem só de impacto_pt.
+            (entry.get('impacto_pt') or '')[:220] or None,
             entry.get('nivel', 3),
             entry.get('impact_score', 0),
             (entry.get('ativo_tema') or '')[:45] or None,
@@ -346,9 +506,9 @@ class AIClassifier:
                 f"\"{title[:60]}...\""
             )
             return True
-        except pymysql.err.IntegrityError:
+        except pymysql.err.IntegrityError as e:
             connection.rollback()
-            logger.debug(f"[AI] Duplicata (constraint de banco): \"{title[:60]}...\"")
+            logger.error(f"[AI] REJEITADA pelo índice único ({e}): \"{title[:80]}\" event_key={event_key}")
             return False
         except Exception as e:
             connection.rollback()
@@ -389,55 +549,51 @@ class AIClassifier:
         normalized = self._alias_map.get(raw_clean.lower())
         return normalized or raw_clean.upper()
 
-    def _call_gemini(self, prompt: str) -> str | None:
-        """Chama a API Gemini (via API interna Genesis) com retry (1 tentativa extra após 5s).
+    def _call_gemini(self, prompt: str, max_output_tokens: int = MAX_OUTPUT_TOKENS) -> str | None:
+        """Chama o Gemini SEMPRE pela API interna Genesis. Nunca a API do Google (Aviso 2, A1).
 
         Returns:
             Texto da resposta ou None em caso de falha.
         """
         import time
 
-        for attempt in range(2):
+        if not GENESIS_AI_URL:
+            logger.critical('[AI] GENESIS_AI_URL nao configurada. Classificacao abortada.')
+            return None
+
+        payload = {
+            'model': GEMINI_MODEL,
+            'prompt': prompt,
+            'temperature': 0,
+            'response_mime_type': 'application/json',
+            'max_output_tokens': max_output_tokens,
+            'thinking_budget': 0,   # o raciocinio nao pode consumir o orcamento de saida
+        }
+        headers = {
+            'Content-Type': 'application/json',
+            'Authorization': f'Bearer {GENESIS_AI_TOKEN}',
+        }
+
+        for attempt in range(3):
             try:
-                response = requests.post(
-                    GEMINI_URL,
-                    params={'key': self.api_key},
-                    headers={'Content-Type': 'application/json'},
-                    json={
-                        'contents': [{'parts': [{'text': prompt}]}],
-                        'generationConfig': {
-                            'temperature': 0.2,
-                            'maxOutputTokens': 4096,
-                        },
-                    },
-                    timeout=GEMINI_TIMEOUT,
-                )
-
-                if response.status_code == 200:
-                    data = response.json()
-                    text = (
-                        data.get('candidates', [{}])[0]
-                        .get('content', {})
-                        .get('parts', [{}])[0]
-                        .get('text', '')
-                    )
-                    if text:
-                        return text
-                    logger.warning("[AI] Resposta do Gemini sem texto.")
+                r = requests.post(GENESIS_AI_URL, json=payload, headers=headers, timeout=GEMINI_TIMEOUT)
+                if r.status_code == 200:
+                    texto = (r.json() or {}).get('text') or ''
+                    if texto.strip():
+                        return texto
+                    logger.error('[AI] API interna devolveu 200 com corpo vazio.')
+                elif r.status_code in (429, 500, 502, 503, 504):
+                    logger.warning(f'[AI] API interna HTTP {r.status_code}, tentativa {attempt + 1}.')
                 else:
-                    logger.warning(
-                        f"[AI] Gemini retornou HTTP {response.status_code}: "
-                        f"{response.text[:200]}"
-                    )
-
+                    logger.error(f'[AI] API interna HTTP {r.status_code}: {r.text[:200]}')
+                    return None
             except requests.exceptions.Timeout:
-                logger.warning(f"[AI] Timeout ({GEMINI_TIMEOUT}s) na tentativa {attempt + 1}.")
+                logger.warning(f'[AI] Timeout ({GEMINI_TIMEOUT}s) na tentativa {attempt + 1}.')
             except Exception as e:
-                logger.warning(f"[AI] Erro na tentativa {attempt + 1}: {e}")
+                logger.warning(f'[AI] Erro na tentativa {attempt + 1}: {e}')
 
-            if attempt == 0:
-                logger.info(f"[AI] Retentando em {RETRY_DELAY}s...")
-                time.sleep(RETRY_DELAY)
+            if attempt < 2:
+                time.sleep(5 * (2 ** attempt))   # 5s, 10s
 
         return None
 
@@ -521,7 +677,16 @@ class AIClassifier:
             mecanismo = (cls.get('mecanismo') or '').strip()
             ativo_tema = (cls.get('ativo_tema') or (', '.join(affected_assets) if affected_assets else '')).strip()[:45]
             observacao = (cls.get('observacao') or '').strip()[:120]
-            event_key = (cls.get('event_key') or '').strip() or None
+            event_key = normalizar_event_key(cls.get('event_key'))
+
+            # Bloco C: piso determinístico de severidade — só promove, nunca rebaixa.
+            piso = piso_de_severidade(entry.get('title', ''), entry.get('summary', ''))
+            piso_aplicado = None
+            if piso and ORDEM_SEV[piso] > ORDEM_SEV[severity]:
+                logger.info(f'[AI] Severidade promovida por catálogo: {severity} -> {piso} | "{titulo_pt[:60]}"')
+                severity = piso
+                cls['acionavel'] = True  # evento do catálogo é acionável por definição
+                piso_aplicado = piso
 
             e['severity'] = severity
             e['market_bias'] = market_bias
@@ -531,14 +696,21 @@ class AIClassifier:
             e['acionavel'] = bool(cls.get('acionavel'))
             e['mecanismo'] = mecanismo
             e['titulo_pt'] = titulo_pt
-            e['impacto_pt'] = impacto_pt
-            e['impact_summary'] = impacto_pt  # compat com campo legado
+            e['impacto_pt'] = impacto_pt  # F06: impact_summary (compat legado) saiu — fica só este
             e['ativo_tema'] = ativo_tema
             e['observacao'] = observacao
             e['event_key'] = event_key
+            e['piso_aplicado'] = piso_aplicado  # telemetria (persistência depende de coluna nova, fora de escopo)
 
             e['nivel'] = calcular_nivel(e, carteira_set)
             e['impact_score'] = calcular_impact_score(e, carteira_set)
+
+            # Bloco G: telemetria por nível/acionabilidade/piso deste ciclo.
+            self._telemetria[f"nivel_{e['nivel']}"] = self._telemetria.get(f"nivel_{e['nivel']}", 0) + 1
+            if e['acionavel']:
+                self._telemetria['acionaveis'] += 1
+            if piso_aplicado:
+                self._telemetria['piso_aplicado'] += 1
 
             classified.append(e)
 
