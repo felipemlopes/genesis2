@@ -1,14 +1,15 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import html2canvas from 'html2canvas';
 import {
   Share2, Activity, Download, ArrowRight, ArrowUp, ArrowDown, Target, BarChart2, Shield, RefreshCw,
   CheckCircle2, AlertTriangle, XCircle, ChevronDown, ChevronUp
 } from 'lucide-react';
-import { GenesisAnalysisResult, AnalysisDirection } from '../types';
+import { GenesisAnalysisResult, AnalysisDirection, PlanoSetup } from '../types';
 import { selecionarZona, getMe } from '../services/api';
 import { formatPrice } from '../services/cryptoApi';
-import { rotularFonte } from '../utils/rotulos';
+import { rotularFonte, rotularComponenteBuffer } from '../utils/rotulos';
 import { faixaDeConviccao } from '../utils/conviccao';
+import { calcularRiscoRetornoAlvo } from '../utils/riscoRetorno';
 import AssetBadge from './AssetBadge';
 import BlocoConviccaoQualidade from './BlocoConviccaoQualidade';
 import ScoreBasisBars from './ScoreBasisBars';
@@ -18,7 +19,10 @@ interface AnalysisResultProps {
   data: GenesisAnalysisResult;
   change24h?: string;
   isPositiveChange?: boolean;
-  onSaveTrade?: () => void;
+  // V6.7 (B-24): antes não recebia argumento nenhum — o chamador (GenesisPage) não tinha como saber
+  // qual plano (A ou B) estava selecionado na tela, e sempre gravava o Plano A (executable_setup),
+  // mesmo com o Plano B visivelmente selecionado. Agora recebe o plano ativo no momento do clique.
+  onSaveTrade?: (planoAtivo: PlanoSetup | null) => void;
   onReset?: () => void;
   analiseId?: string | null;
 }
@@ -48,6 +52,18 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, change24h, isPosi
   const [selectedZone, setSelectedZone] = useState<'A' | 'B' | null>(null);
   const [zoneSaveStatus, setZoneSaveStatus] = useState<'idle' | 'saving' | 'success' | 'error'>('idle');
   const [zoneSaveError, setZoneSaveError] = useState<string | null>(null);
+
+  // V6.7 (D-31): GenesisPage renderiza este componente sem `key` — o mesmo componente sobrevive entre
+  // análises diferentes (troca de par/upload), então `selectedZone` (e o feedback de salvar zona)
+  // continuavam com o valor da análise ANTERIOR. Resultado: abrir uma análise nova com Plano B
+  // selecionado "por herança" da análise passada — plano ativo (e todos os campos que dependem dele)
+  // decidido sem nenhuma ação do membro nesta análise. Reseta sempre que a identidade da análise muda.
+  const analiseIdentidade = analiseId ?? data?.analysis_id ?? null;
+  useEffect(() => {
+    setSelectedZone(null);
+    setZoneSaveStatus('idle');
+    setZoneSaveError(null);
+  }, [analiseIdentidade]);
 
   // Campos informativos que o PHP continua calculando de forma determinística
   // (wyckoff, sessão, multiTimeframe) — não fazem parte do contrato formal
@@ -177,8 +193,6 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, change24h, isPosi
     return texto;
   })();
 
-  const activeEntrada = planoAtivo?.entrada ?? (selectedZone === 'B' && planoB?.entrada ? planoB.entrada : setup?.entrada);
-
   // V6.5 (E11): antes o backend montava a frase inteira, usando o par completo como se fosse a
   // unidade da quantidade ("0.05 BTCUSDT" — errado, a unidade real é só o ativo base, BTC). Backend
   // agora só devolve os números; a frase é montada aqui.
@@ -196,6 +210,28 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, change24h, isPosi
     return `${base}. Risco estimado até o stop: ${formatPrice(riscoUsd)} (${riscoMargemPct}% da margem-base).`;
   })();
 
+  // V6.7 (C-27): TP2/TP3 não têm risco-retorno pronto no payload — só TP1 tem rr_bruto/
+  // rr_liquido_estimado, calculado pelo backend (ExecucaoService::montar()). Calculado aqui com a
+  // mesma fórmula (utils/riscoRetorno.ts) para TP2/TP3; TP1 reaproveita o valor pronto do backend,
+  // nunca recalculado.
+  const rrPorAlvo = (() => {
+    const entradaAtiva = planoAtivo?.entrada ?? setup?.entrada ?? null;
+    const stopAtivo = planoAtivo?.stop ?? setup?.stop ?? null;
+    const custoTotalBps = (planoAtivo?.custos_bps ?? setup?.custos_bps)?.total ?? null;
+    return {
+      tp1: {
+        bruto: planoAtivo?.rr_bruto ?? setup?.rr_bruto ?? null,
+        liquido: planoAtivo?.rr_liquido_estimado ?? setup?.rr_liquido_estimado ?? null,
+      },
+      tp2: calcularRiscoRetornoAlvo(
+        entradaAtiva, stopAtivo, planoAtivo?.tp2 ?? setup?.tp2, planoAtivo?.tp2_fonte ?? setup?.tp2_fonte, custoTotalBps
+      ),
+      tp3: calcularRiscoRetornoAlvo(
+        entradaAtiva, stopAtivo, planoAtivo?.tp3 ?? setup?.tp3, planoAtivo?.tp3_fonte ?? setup?.tp3_fonte, custoTotalBps
+      ),
+    };
+  })();
+
   const badgeColor = isLong ? 'text-genesis-positive' : isShort ? 'text-genesis-negative' : 'text-yellow-500';
   const progressColor = isLong ? 'bg-genesis-positive' : isShort ? 'bg-genesis-negative' : 'bg-yellow-500/60';
 
@@ -208,6 +244,13 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, change24h, isPosi
   const invalidacaoAtiva = invalidacaoDirecao && invalidacaoNivel != null
     ? `A tese perde validade com fechamento ${invalidacaoDirecao} de ${formatPrice(invalidacaoNivel)}.`
     : (analysis.invalidacao_tese || null);
+
+  // V6.7 (A-14): três estados do stop — troca junto com o plano ativo, mesmo padrão de
+  // invalidacaoDirecao/invalidacaoNivel acima.
+  const stopStatusAtivo = planoAtivo?.stop_status ?? setup?.stop_status ?? 'STOP_UNAVAILABLE';
+  const stopAncoraAtiva = planoAtivo?.stop_ancora ?? setup?.stop_ancora ?? null;
+  const stopBufferAtivo = planoAtivo?.stop_buffer ?? setup?.stop_buffer ?? null;
+  const stopMotivoAtivo = planoAtivo?.stop_motivo ?? setup?.stop_motivo ?? null;
 
   // R3.2 — Adendo Seção 32: contrato canônico em inglês primeiro, com
   // fallback ao português legado. `execution.motivo` nunca alimenta a
@@ -292,15 +335,16 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, change24h, isPosi
                     {directionLabel[direction] ?? direction}
                   </span>
                   {/* V6.5 (E09-E10): antes só aparecia com podeInteragir (RR/convicção baixos escondiam
-                      a alavancagem inteira da tela) — agora sempre visível quando há um valor calculado,
-                      com aviso quando o valor pedido foi reduzido por segurança (nunca mais silencioso). */}
+                      a alavancagem inteira da tela) — agora sempre visível quando há um valor calculado.
+                      V6.7 (B-17, DP-06): o número exibido é sempre a escolha do membro (o sistema não
+                      reduz mais) — o alerta agora significa "acima da faixa segura", não "foi reduzida". */}
                   {(planoAtivo?.alavancagem ?? setup?.alavancagem) != null && (
                     <span
                       className={`px-3 py-1 rounded bg-white/5 text-xl font-bold font-mono ${badgeColor} inline-flex items-center gap-1.5`}
                       title={(planoAtivo?.alavancagem_info ?? setup?.alavancagem_info)?.motivo ?? undefined}
                     >
                       {planoAtivo?.alavancagem ?? setup?.alavancagem}x
-                      {(planoAtivo?.alavancagem_info ?? setup?.alavancagem_info)?.ajustada && (
+                      {(planoAtivo?.alavancagem_info ?? setup?.alavancagem_info)?.excede_seguro && (
                         <AlertTriangle size={14} className="text-yellow-500" />
                       )}
                     </span>
@@ -372,6 +416,7 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, change24h, isPosi
           <BlocoConviccaoQualidade
             score={score}
             rr={planoAtivo?.rr_liquido_estimado ?? setup?.rr_liquido_estimado ?? null}
+            rrBruto={planoAtivo?.rr_bruto ?? setup?.rr_bruto ?? null}
             rrMinimo={planoAtivo?.rr_minimo_referencia ?? setup?.rr_minimo_referencia ?? null}
             rrAbaixoDoMinimo={planoAtivo?.rr_abaixo_do_minimo ?? setup?.rr_abaixo_do_minimo ?? false}
             fatores={planoAtivo?.qualidade_entrada ?? setup?.qualidade_entrada ?? []}
@@ -411,6 +456,26 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, change24h, isPosi
             "—"/"N/A" sozinho quando null; o gate operacional fica no botão de confirmação. */}
         {setup && (
         <>
+        {/* V6.7 (C-25): recommended/motivo/reason_code chegavam no payload desde a V6.5 (E02) e
+            nenhum componente lia — SEM_BARREIRA_REAL, RR_LIQUIDO_ABAIXO_MINIMO e
+            CONVICCAO_ABAIXO_MINIMO ficavam invisíveis para o membro. Restrição obrigatória (DP-03/
+            DP-05): este bloco só avisa, nunca desabilita nada — podeInteragir continua amarrado
+            exclusivamente a execution.executable, não a execution.recommended. */}
+        {!execution.recommended && (
+          <div className="bg-amber-950/20 border border-amber-600/30 rounded-lg p-3 mb-6 flex items-start gap-2.5">
+            <AlertTriangle size={14} className="text-amber-400 shrink-0 mt-0.5" />
+            <div>
+              <p className="text-[11px] font-bold text-amber-300 uppercase tracking-wider mb-1">Plano não recomendado</p>
+              <p className="text-[11px] text-amber-200/90 leading-relaxed">
+                {execution.motivo || 'Esta configuração não atingiu os limiares recomendados de risco-retorno ou convicção. A decisão de seguir é sua.'}
+              </p>
+              {execution.reason_code && (
+                <p className="text-[9px] text-amber-500/60 font-mono mt-1 tracking-wide">{execution.reason_code}</p>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* CAMADA 2: RISCO-RETORNO */}
         {/* V6.6 (F01, DF-02): card "RISCO/RETORNO (TP1)" removido — RR passa a existir só no bloco
             de convicção (ver BlocoConviccaoQualidade acima). */}
@@ -456,6 +521,18 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, change24h, isPosi
             </span>
           </div>
         </div>
+
+        {/* V6.7 (B-20): alerta explícito de liquidação — antes calculado (gerarPlanoB()) mas nunca
+            publicado nem exibido. DP-03: é aviso, nunca bloqueio — o botão de confirmar continua
+            habilitado, a decisão de seguir é do membro. */}
+        {(planoAtivo?.verificacao ?? setup.verificacao) === 'INSEGURO' && (
+          <div className="mb-6 -mt-3 p-3 rounded-md bg-red-950/30 border border-red-500/30 flex items-start gap-2">
+            <AlertTriangle size={14} className="text-red-500 shrink-0 mt-0.5" />
+            <p className="text-[10px] text-red-400 leading-relaxed">
+              Nesta alavancagem, sua posição liquida antes do stop.
+            </p>
+          </div>
+        )}
 
         {/* CAMADA 3: O PLANO DE AÇÃO */}
         <div className="bg-[#050505]  rounded-[10px] p-[16px] mb-6">
@@ -527,6 +604,20 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, change24h, isPosi
                       </p>
                     </button>
                   )}
+                  {/* V6.7 (D-29): antes a ausência do Plano B só ocultava o botão, sem explicação —
+                      o membro não tinha como saber se era "não existe" ou "ainda não carregou". Com
+                      D-29 (zona sempre do lado certo do preço), Plano B fica indisponível com mais
+                      frequência — a tela agora explica por quê, em vez de só sumir. */}
+                  {planoB?.entrada == null && (
+                    <div className="w-full text-left p-2.5 rounded-lg border border-dashed border-white/10 bg-black/10">
+                      <span className="text-[10px] font-bold text-gray-500">Plano B (Alternativo)</span>
+                      <p className="text-[9px] text-gray-500 font-mono tracking-wide leading-tight mt-1">
+                        Sem espaço estrutural para uma entrada alternativa nesta análise — a zona de
+                        pullback/repique ficaria colada no preço atual ou sem uma âncora técnica
+                        confiável do lado certo.
+                      </p>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -534,7 +625,7 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, change24h, isPosi
               <div className="mt-4 pt-3 border-t border-white/5 relative group">
                 <button
                   disabled={!podeInteragir || !selectedZone}
-                  onClick={() => { if (onSaveTrade) onSaveTrade(); }}
+                  onClick={() => { if (onSaveTrade) onSaveTrade(planoAtivo); }}
                   className={`w-full flex items-center justify-center gap-2 py-2 px-3 rounded-md text-xs font-mono uppercase tracking-wider font-bold transition-all duration-[180ms] ${
                     !selectedZone || !podeInteragir
                       ? 'bg-white/5 text-gray-600 cursor-not-allowed'
@@ -569,6 +660,8 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, change24h, isPosi
                     <div className="text-right">
                       <span className="text-genesis-positive font-mono font-bold text-sm bg-genesis-positive/10 px-2 py-0.5 rounded">{(planoAtivo?.tp1 ?? setup.tp1) != null ? formatPrice(Number(planoAtivo?.tp1 ?? setup.tp1)) : '—'}</span>
                       {(planoAtivo?.tp1_fonte ?? setup.tp1_fonte) && <div className="text-[8px] text-gray-500 mt-0.5">{rotularFonte(planoAtivo?.tp1_fonte ?? setup.tp1_fonte)}</div>}
+                      {/* V6.7 (C-27): RR por alvo — antes só o RR do TP1 (geral) era visível na tela. */}
+                      {rrPorAlvo.tp1.liquido != null && <div className="text-[8px] text-genesis-positive/80 font-mono mt-0.5">RR 1:{rrPorAlvo.tp1.liquido.toFixed(2)}</div>}
                     </div>
                 </div>
                 <div className="flex justify-between items-center group">
@@ -578,6 +671,7 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, change24h, isPosi
                       {(planoAtivo?.tp2 ?? setup.tp2) != null
                         ? ((planoAtivo?.tp2_fonte ?? setup.tp2_fonte) && <div className="text-[8px] text-gray-500 mt-0.5">{rotularFonte(planoAtivo?.tp2_fonte ?? setup.tp2_fonte)}</div>)
                         : ((planoAtivo?.tp2_motivo ?? setup.tp2_motivo) && <div className="text-[8px] text-gray-500 mt-0.5">{planoAtivo?.tp2_motivo ?? setup.tp2_motivo}</div>)}
+                      {rrPorAlvo.tp2.liquido != null && <div className="text-[8px] text-genesis-positive/80 font-mono mt-0.5">RR 1:{rrPorAlvo.tp2.liquido.toFixed(2)}</div>}
                     </div>
                 </div>
                 <div className="flex justify-between items-center group">
@@ -587,6 +681,7 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, change24h, isPosi
                       {(planoAtivo?.tp3 ?? setup.tp3) != null
                         ? ((planoAtivo?.tp3_fonte ?? setup.tp3_fonte) && <div className="text-[8px] text-gray-500 mt-0.5">{rotularFonte(planoAtivo?.tp3_fonte ?? setup.tp3_fonte)}</div>)
                         : ((planoAtivo?.tp3_motivo ?? setup.tp3_motivo) && <div className="text-[8px] text-gray-500 mt-0.5">{planoAtivo?.tp3_motivo ?? setup.tp3_motivo}</div>)}
+                      {rrPorAlvo.tp3.liquido != null && <div className="text-[8px] text-genesis-positive/80 font-mono mt-0.5">RR 1:{rrPorAlvo.tp3.liquido.toFixed(2)}</div>}
                     </div>
                 </div>
               </div>
@@ -599,33 +694,66 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, change24h, isPosi
               <ArrowDown size={20} strokeWidth={1.5} />
             </div>
 
-            {/* Bloco 3: STOP LOSS */}
+            {/* Bloco 3: STOP LOSS — V6.7 (A-14): único ponto de renderização do stop da análise,
+                três estados (VALID/VALID_WIDE/STOP_UNAVAILABLE). Plano A e Plano B são avaliados
+                separadamente — pode existir A VALID com B STOP_UNAVAILABLE. */}
             <div className="w-full lg:w-1/3 bg-white/[0.02]  rounded-lg p-5 border-l-genesis-negative hover:bg-red-950/20 transition-colors relative h-full min-h-[140px]">
               <span className="text-[10px] font-bold text-genesis-negative uppercase tracking-widest block mb-3">Defesa (Stop Loss)</span>
-              <div className="mb-4 mt-2">
-                <span className="text-2xl font-mono text-genesis-negative font-bold drop--[0_0_8px_rgba(239,68,68,0.4)]">{(planoAtivo?.stop ?? setup.stop) != null ? formatPrice(Number(planoAtivo?.stop ?? setup.stop)) : '—'}</span>
-              </div>
 
-              {/* BLOCO 2 - INVALIDAÇÃO DA TESE */}
-              <div className="bg-red-950/30 p-3 rounded border-red-900/50 mt-1 mb-2">
-                    <span className="text-[9px] font-bold text-genesis-negative/80 block mb-1.5 uppercase tracking-wider">
-                      INVALIDAÇÃO DA TESE
-                    </span>
-                    <p className="text-[10px] text-gray-400 font-mono leading-relaxed">
-                      {invalidacaoAtiva || "Zona de invalidação não calculada."}
+              {stopStatusAtivo === 'STOP_UNAVAILABLE' ? (
+                // Sem stop, alavancagem/liquidação/tamanho/RR não existem (todos null no payload,
+                // já renderizam '—' sozinhos nos outros blocos). O botão de confirmar continua
+                // habilitado (DP-03) — podeInteragir depende só de execution.executable.
+                <p className="text-[11px] text-gray-400 leading-relaxed">
+                  {stopMotivoAtivo || 'Não encontramos um stop adequado. Sugerimos que você verifique e defina um stop compatível com seu perfil de investidor e com o risco da operação.'}
+                </p>
+              ) : (
+                <>
+                  <div className="mb-2 mt-2">
+                    <span className="text-2xl font-mono text-genesis-negative font-bold drop--[0_0_8px_rgba(239,68,68,0.4)]">{(planoAtivo?.stop ?? setup.stop) != null ? formatPrice(Number(planoAtivo?.stop ?? setup.stop)) : '—'}</span>
+                  </div>
+
+                  {stopAncoraAtiva && (
+                    <p className="text-[9px] text-gray-500 font-mono mb-0.5">
+                      {rotularFonte(stopAncoraAtiva.tipo)} em {formatPrice(stopAncoraAtiva.valor)}
                     </p>
-              </div>
-              {/* V6.6 (F08): "Condição de Disparo" mostrava executionLabel[execution.status] —
-                  repetição do status pela terceira vez na tela (F01 já removeu as outras duas), e
-                  nenhuma das duas frases do status ("Execução não recomendada...", "Condições
-                  matemáticas atendidas") é de fato uma condição de disparo. O conteúdo real da
-                  condição de entrada do Plano B (zona + descrição do motor) já aparece no card do
-                  seletor de plano acima (planoBDescricaoCompleta) — campo removido daqui em vez de
-                  duplicado. */}
+                  )}
+                  {stopBufferAtivo && (
+                    <p className="text-[9px] text-gray-500 font-mono mb-2">
+                      +{formatPrice(stopBufferAtivo.valor)}, {rotularComponenteBuffer(stopBufferAtivo.componente_vencedor)}
+                    </p>
+                  )}
+
+                  {stopStatusAtivo === 'VALID_WIDE' && (
+                    <div className="mb-2 flex items-start gap-1.5 bg-amber-950/20 border border-amber-600/30 rounded px-2 py-1.5">
+                      <AlertTriangle size={11} className="text-amber-400 shrink-0 mt-0.5" />
+                      <span className="text-[9px] text-amber-300 leading-relaxed">Stop mais largo que o normal. Reduza o tamanho e a alavancagem.</span>
+                    </div>
+                  )}
+
+                  {/* BLOCO 2 - INVALIDAÇÃO DA TESE */}
+                  <div className="bg-red-950/30 p-3 rounded border-red-900/50 mt-1 mb-2">
+                        <span className="text-[9px] font-bold text-genesis-negative/80 block mb-1.5 uppercase tracking-wider">
+                          INVALIDAÇÃO DA TESE
+                        </span>
+                        <p className="text-[10px] text-gray-400 font-mono leading-relaxed">
+                          {invalidacaoAtiva || "Zona de invalidação não calculada."}
+                        </p>
+                  </div>
+                  {/* V6.6 (F08): "Condição de Disparo" mostrava executionLabel[execution.status] —
+                      repetição do status pela terceira vez na tela (F01 já removeu as outras duas), e
+                      nenhuma das duas frases do status ("Execução não recomendada...", "Condições
+                      matemáticas atendidas") é de fato uma condição de disparo. O conteúdo real da
+                      condição de entrada do Plano B (zona + descrição do motor) já aparece no card do
+                      seletor de plano acima (planoBDescricaoCompleta) — campo removido daqui em vez de
+                      duplicado. */}
+                </>
+              )}
             </div>
           </div>
 
           {/* BLOCO 6 - TAMANHO DE POSICAO SUGERIDO */}
+          {stopStatusAtivo !== 'STOP_UNAVAILABLE' && (
           <div className="mt-6 pt-5 border-t border-white/[0.05]">
             <div className="flex items-center gap-3">
               <span className="text-[9px] font-bold text-gray-500 uppercase tracking-wider flex items-center gap-2">
@@ -639,6 +767,7 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, change24h, isPosi
               )}
             </div>
           </div>
+          )}
 
         </div>
         </>)}
@@ -715,7 +844,16 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, change24h, isPosi
                     {(anyData.indicadores?.fontes?.ema21 === 'GRAFICO' || anyData.indicadores?.fontes?.ema21 === 'OCR') && <span className="text-[8px] bg-yellow-500/20 text-yellow-500 border border-yellow-500/30 px-1 py-0.5 rounded">OCR</span>}
                     {anyData.indicadores?.fontes?.ema21 === 'INDISPONIVEL' && <span className="text-[8px] bg-gray-500/20 text-gray-400 border border-gray-500/30 px-1 py-0.5 rounded">N/D</span>}
                   </div>
-                  <span className="text-[9px] text-white font-mono">{(anyData.indicadores?.ema21 != null || anyData.indicadores?.ema50 != null || anyData.indicadores?.ema200 != null) ? `${formatPrice(Number(anyData.indicadores?.ema21))} | ${formatPrice(Number(anyData.indicadores?.ema50))} | ${formatPrice(Number(anyData.indicadores?.ema200))}` : 'N/D'}</span>
+                  {/* V6.7 (G-46): guard antigo era "||" — bastava 1 EMA existir pras 3 serem formatadas,
+                      e Number(null) é 0, então EMA ausente virava "$ 0" (viola DP-11: ausência é null,
+                      nunca zero). Cada EMA agora é avaliada individualmente; ausente renderiza N/D. */}
+                  <span className="text-[9px] text-white font-mono">
+                    {anyData.indicadores?.ema21 != null ? formatPrice(Number(anyData.indicadores.ema21)) : 'N/D'}
+                    {' | '}
+                    {anyData.indicadores?.ema50 != null ? formatPrice(Number(anyData.indicadores.ema50)) : 'N/D'}
+                    {' | '}
+                    {anyData.indicadores?.ema200 != null ? formatPrice(Number(anyData.indicadores.ema200)) : 'N/D'}
+                  </span>
                 </div>
 
                 {/* WYCKOFF */}

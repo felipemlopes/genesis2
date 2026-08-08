@@ -1,34 +1,19 @@
 ﻿import React, { useState, useEffect, useMemo } from 'react';
-import { SavedAnalysis } from '../types';
+import { SavedAnalysis, HistoricoPlano } from '../types';
 import { Trash2, TrendingUp, TrendingDown, Target, Clock, Filter, Activity, CheckCircle, XCircle, AlertCircle } from 'lucide-react';
-import { fetchHistoricoAnalises, storeAnalise, updateResultadoAnalise, deleteAllAnalises, fetchEstatisticas, fetchPrice } from '../services/api';
+import { fetchHistoricoAnalises, updateResultadoAnalise, deleteAllAnalises, fetchEstatisticas, fetchPrice } from '../services/api';
 import AssetBadge from './AssetBadge';
 
-// Salva análise via API — sem localStorage
-// Aceita dados extras opcionais para enviar campos completos ao servidor
-export const saveAnalysisToHistory = async (analysis: SavedAnalysis, extraData?: Record<string, any>): Promise<string | null> => {
-  try {
-    const response = await storeAnalise({
-      ativo: analysis.symbol,
-      timeframe: analysis.interval,
-      direcao: analysis.direction,
-      score: analysis.score,
-      stop_loss: analysis.stop_loss,
-      take_profit_1: analysis.target_price,
-      ...extraData,
-    });
-    window.dispatchEvent(new Event('analysis_history_updated'));
-    // Return the server-generated analysis ID if available
-    const serverId = response?.data?.id || response?.id;
-    if (!serverId) {
-      console.warn('[saveAnalysisToHistory] API não retornou ID. Response:', JSON.stringify(response));
-    }
-    return serverId ? String(serverId) : null;
-  } catch (error) {
-    console.error('Falha ao salvar análise via API', error);
-    return null;
-  }
-};
+// V6.7 (F-43): saveAnalysisToHistory() removida — desde a V6.5 (F03-F04),
+// GraphicalAnalysisOrchestrator::persist() já grava a linha real da análise (com os 2 planos em
+// genesis_analise_planos); esta função criava uma SEGUNDA linha em genesis_analises via
+// POST /v1/analises, exatamente a duplicação que a V6.5 eliminou no fluxo principal — só sobrava
+// como export morto, sem nenhum call site (confirmado por grep no repo inteiro; GenesisPage.tsx já
+// não a chamava desde a F03-F04, só um comentário citando o nome antigo). `storeAnalise()`
+// (services/api.ts) era usada só por esta função — removida junto (rastro, seção 20.4). A rota
+// backend (POST /v1/analises → AnaliseController::store) NÃO foi removida — o próprio controller já
+// a documenta como "mantida por compatibilidade" com algo fora deste repositório que o procedimento
+// de higiene (seção 20.1) não tem como confirmar a partir daqui; avaliada, não removida.
 
 const AnalysisHistoryDashboard: React.FC = () => {
   const [history, setHistory] = useState<SavedAnalysis[]>([]);
@@ -44,8 +29,15 @@ const AnalysisHistoryDashboard: React.FC = () => {
       const data = await fetchHistoricoAnalises();
       if (data.data && data.data.length > 0) {
         const serverHistory = data.data.map((row: any) => {
-          // Fallback: extrair entrada do setup_entrada JSON se campo entrada/plano_a vazio
-          let entryPrice = parseFloat(row.entrada) || parseFloat(row.plano_a) || 0;
+          // V6.7 (F-41): planos[] (genesis_analise_planos, via AnaliseTransformer) é a fonte real
+          // desde a V6.5 pra qualquer análise não-legado — as colunas achatadas abaixo
+          // (entrada/plano_a/take_profit_*/stop_loss) já não são gravadas para análises novas.
+          const planos: HistoricoPlano[] = Array.isArray(row.planos) ? row.planos : [];
+          const planoA = planos.find((p) => p.plano === 'A') ?? null;
+
+          // Fallback: extrair entrada do setup_entrada JSON se campo entrada/plano_a vazio — só
+          // chega a ser usado em linhas legado (planos[] vazio).
+          let entryPrice = planoA?.entrada ?? (parseFloat(row.entrada) || parseFloat(row.plano_a) || 0);
           if (entryPrice === 0 && row.setup_entrada) {
             try {
               const setupJson = JSON.parse(row.setup_entrada);
@@ -64,11 +56,12 @@ const AnalysisHistoryDashboard: React.FC = () => {
             ema200: 0,
             adx: 0,
             entry_price: entryPrice,
-            target_price: parseFloat(row.take_profit_1) || 0,
-            target_price2: parseFloat(row.take_profit_2) || 0,
-            target_price3: parseFloat(row.take_profit_3) || 0,
-            stop_loss: parseFloat(row.stop_loss) || 0,
-            status: row.resultado === 'PENDENTE' ? 'PENDENTE' : (row.resultado?.includes('TP') ? 'ACERTOU' : 'ERROU')
+            target_price: planoA?.tp1 ?? (parseFloat(row.take_profit_1) || 0),
+            target_price2: planoA?.tp2 ?? (parseFloat(row.take_profit_2) || 0),
+            target_price3: planoA?.tp3 ?? (parseFloat(row.take_profit_3) || 0),
+            stop_loss: planoA?.stop ?? (parseFloat(row.stop_loss) || 0),
+            status: row.resultado === 'PENDENTE' ? 'PENDENTE' : (row.resultado?.includes('TP') ? 'ACERTOU' : 'ERROU'),
+            planos,
           };
         });
         setHistory(serverHistory);
@@ -105,6 +98,14 @@ const AnalysisHistoryDashboard: React.FC = () => {
   };
 
   // Auto-monitoramento de preços via proxy do servidor (sem chamada direta a exchanges)
+  // V6.7 (E-36): antes este efeito também DECIDIA o desfecho (acerto/erro) comparando o preço ATUAL
+  // contra os alvos, e gravava via updateResultadoAnalise — regra diferente da do servidor
+  // (DesfechoService, candle a candle desde a entrada): uma operação que bateu o stop e depois voltou
+  // ao alvo era marcada como acerto aqui. Com genesis:acompanhar-planos (E-34/E-35) escrevendo o
+  // desfecho real em genesis_analises.resultado, duas fontes gravando o mesmo campo com regras
+  // diferentes não pode coexistir — DP-08 exige uma fonte de verdade. Este efeito passa a ser
+  // exclusivamente visual (progresso indicativo em direção ao alvo/stop); o desfecho em si só é
+  // decidido no servidor, e o histórico só é atualizado quando loadHistory() relê o que ele gravou.
   useEffect(() => {
     let cancelled = false;
 
@@ -133,13 +134,9 @@ const AnalysisHistoryDashboard: React.FC = () => {
 
       if (cancelled) return;
 
-      let updated = false;
-      const newHistory = [...history];
       const newProgressMap: Record<string, { tp1: number; tp2: number; tp3: number; stop: number }> = {};
 
-      for (const analysis of newHistory) {
-        if (analysis.status !== 'PENDENTE') continue;
-
+      for (const analysis of pendingAnalyses) {
         const symbol = analysis.symbol.replace('/', '').toUpperCase();
         const currentPrice = priceMap[symbol];
         if (!currentPrice || currentPrice <= 0) continue;
@@ -147,7 +144,7 @@ const AnalysisHistoryDashboard: React.FC = () => {
         const entryPrice = analysis.entry_price || 0;
         if (entryPrice <= 0) continue;
 
-        // Calcula progresso para cada alvo
+        // Calcula progresso para cada alvo — só indicativo visual, não decide desfecho.
         const tp1Progress = analysis.target_price > 0
           ? calcProgress(analysis.direction, entryPrice, currentPrice, analysis.target_price) : 0;
         const tp2Progress = analysis.target_price2 > 0
@@ -158,53 +155,11 @@ const AnalysisHistoryDashboard: React.FC = () => {
           ? calcProgress(analysis.direction === 'LONG' ? 'SHORT' : 'LONG', entryPrice, currentPrice, analysis.stop_loss) : 0;
 
         newProgressMap[analysis.id] = { tp1: tp1Progress, tp2: tp2Progress, tp3: tp3Progress, stop: stopProgress };
-
-        // Verifica se algum alvo foi atingido (progresso >= 100%)
-        let resultado: string | null = null;
-        if (analysis.direction === 'LONG') {
-          if (analysis.target_price > 0 && currentPrice >= analysis.target_price) {
-            resultado = 'TP1_ATINGIDO';
-          } else if (analysis.target_price2 > 0 && currentPrice >= analysis.target_price2) {
-            resultado = 'TP2_ATINGIDO';
-          } else if (analysis.target_price3 > 0 && currentPrice >= analysis.target_price3) {
-            resultado = 'TP3_ATINGIDO';
-          } else if (analysis.stop_loss > 0 && currentPrice <= analysis.stop_loss) {
-            resultado = 'STOP_ATINGIDO';
-          }
-        } else {
-          if (analysis.target_price > 0 && currentPrice <= analysis.target_price) {
-            resultado = 'TP1_ATINGIDO';
-          } else if (analysis.target_price2 > 0 && currentPrice <= analysis.target_price2) {
-            resultado = 'TP2_ATINGIDO';
-          } else if (analysis.target_price3 > 0 && currentPrice <= analysis.target_price3) {
-            resultado = 'TP3_ATINGIDO';
-          } else if (analysis.stop_loss > 0 && currentPrice >= analysis.stop_loss) {
-            resultado = 'STOP_ATINGIDO';
-          }
-        }
-
-        if (resultado) {
-          analysis.status = resultado.includes('TP') ? 'ACERTOU' : 'ERROU';
-          updated = true;
-
-          // Envia PUT para persistir resultado no servidor
-          try {
-            await updateResultadoAnalise(parseInt(analysis.id), {
-              resultado,
-              preco_resultado: currentPrice,
-            });
-          } catch (e) {
-            console.warn('Falha ao sync resultado:', e);
-          }
-        }
       }
 
       if (cancelled) return;
 
       setProgressMap(newProgressMap);
-      if (updated) {
-        setHistory(newHistory);
-      }
     };
 
     // Verifica a cada 15 segundos
@@ -545,7 +500,10 @@ const AnalysisHistoryDashboard: React.FC = () => {
                      <th className="py-4 px-2 tracking-widest text-center">Ativo</th>
                      <th className="py-4 px-2 tracking-widest text-center">TF</th>
                      <th className="py-4 px-2 tracking-widest text-center">Direção</th>
-                     <th className="py-4 px-2 tracking-widest text-center">Entrada</th>
+                     <th className="py-4 px-2 tracking-widest text-center">Entrada (A)</th>
+                     {/* V6.7 (F-41): Plano B tem entrada/stop/desfecho PRÓPRIOS — antes o histórico só
+                         mostrava o Plano A (via colunas achatadas), sem nenhum traço do Plano B. */}
+                     <th className="py-4 px-2 tracking-widest text-center">Plano B</th>
                      <th className="py-4 px-2 tracking-widest text-center">TP1</th>
                      <th className="py-4 px-2 tracking-widest text-center">TP2</th>
                      <th className="py-4 px-2 tracking-widest text-center">TP3</th>
@@ -557,7 +515,7 @@ const AnalysisHistoryDashboard: React.FC = () => {
                <tbody className="divide-y divide-white/5">
                   {currentData.length === 0 ? (
                      <tr>
-                        <td colSpan={11} className="py-12 text-center">
+                        <td colSpan={12} className="py-12 text-center">
                            <div className="flex flex-col items-center justify-center text-gray-600">
                                <AlertCircle size={32} className="mb-3 opacity-50" />
                                <span className="text-xs uppercase tracking-widest font-bold">Nenhum registro encontrado</span>
@@ -587,6 +545,37 @@ const AnalysisHistoryDashboard: React.FC = () => {
                                  </span>
                               </td>
                               <td className="py-4 px-2 text-[11px] font-mono text-gray-400 text-center">{item.entry_price ? item.entry_price.toLocaleString() : '-'}</td>
+                              {/* V6.7 (F-41): Plano B — entrada/stop/desfecho próprios, independentes
+                                  do Plano A mostrado na coluna anterior e nas colunas de TP (que
+                                  continuam sendo sempre do Plano A, é o plano que define o resultado
+                                  da análise por padrão, DP-08/E-35). */}
+                              <td className="py-4 px-2 text-center">
+                                {(() => {
+                                  const planoB = item.planos?.find((p) => p.plano === 'B') ?? null;
+                                  if (!planoB || planoB.entrada == null) {
+                                    return <span className="text-[10px] text-gray-600 font-mono">—</span>;
+                                  }
+                                  return (
+                                    <div className="flex flex-col items-center gap-0.5">
+                                      <span className="text-[11px] font-mono text-gray-400">{planoB.entrada.toLocaleString()}</span>
+                                      {planoB.stop != null && (
+                                        <span className="text-[9px] font-mono text-gray-600">stop {planoB.stop.toLocaleString()}</span>
+                                      )}
+                                      <span className={`text-[8px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded ${
+                                        !planoB.desfecho
+                                          ? 'text-yellow-500 bg-yellow-500/5'
+                                          : planoB.desfecho.includes('TP')
+                                            ? 'text-genesis-positive bg-genesis-positive/5'
+                                            : planoB.desfecho === 'EXPIRADO'
+                                              ? 'text-gray-500 bg-gray-500/5'
+                                              : 'text-red-400 bg-red-500/5'
+                                      }`}>
+                                        {planoB.desfecho ?? 'Pendente'}
+                                      </span>
+                                    </div>
+                                  );
+                                })()}
+                              </td>
                               <td className="py-4 px-2 text-center">
                                 {item.target_price !== undefined && item.target_price !== null ? (
                                   <div className="flex flex-col items-center gap-0.5">

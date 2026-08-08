@@ -1,4 +1,11 @@
-import type { VisualPattern } from './types/graphicalAnalysis';
+// V6.7 (G-44): ExecutionPlanB e ScoreBasis vêm do contrato real do backend (types/graphicalAnalysis.ts)
+// em vez de Record<string, unknown>/Record<string, string> genéricos — eram esses dois "achatamentos"
+// que forçavam o adaptador (geminiService.ts) a usar "as unknown as" pra preencher os campos.
+import type { VisualPattern, ExecutionPlanB, ScoreBasis, StopStatus, StopAncora, StopBuffer } from './types/graphicalAnalysis';
+
+// V6.7 (A-13): reexportados para quem importa de '../types' (a maioria dos componentes) em vez de
+// '../types/graphicalAnalysis' diretamente.
+export type { StopStatus, StopAncora, StopBuffer };
 
 export enum TradeDirection {
   LONG = 'LONG',
@@ -85,11 +92,13 @@ export interface GraphicalAnalysis {
 
 // V6.5 (E09-E10): antes alavancagemSegura() só devolvia o número já reduzido, sem indicar que houve
 // redução — o membro pedia 20x, o sistema aplicava 8x em silêncio.
+// V6.7 (B-17, DP-06): 'aplicada' passa a ser sempre igual a 'escolhida'; 'ajustada' foi substituído
+// por 'excede_seguro' — mesma estrutura de types/graphicalAnalysis.ts (compatibilidade estrutural).
 export interface AlavancagemInfo {
   escolhida: number;
   aplicada: number;
   maxima_segura: number;
-  ajustada: boolean;
+  excede_seguro: boolean;
   motivo: string | null;
 }
 
@@ -130,6 +139,14 @@ export interface CandidateSetup {
   entrada_ts: string | null;
   // V6.5 (G15, Decisão 8 do PO): 4 fatores de LOCALIZAÇÃO de QualidadeEntradaService.
   qualidade_entrada: { fator: string; avaliacao: 'BOM' | 'MEDIO' | 'RUIM'; detalhe: string }[] | null;
+  // V6.7 (A-13): campos novos do contrato do stop.
+  stop_status: StopStatus;
+  stop_ancora: StopAncora | null;
+  stop_buffer: StopBuffer | null;
+  stop_motivo: string | null;
+  // V6.7 (B-20): verificação de segurança de liquidação — null quando não há stop.
+  verificacao: 'SEGURO' | 'INSEGURO' | null;
+  verificacao_motivo: string | null;
 }
 
 // V6.5 (E08): Plano A e Plano B chegavam com formatos diferentes — CandidateSetup completo para A,
@@ -182,6 +199,15 @@ export interface PlanoSetup {
   // sem nota composta nem porcentagem inventada. null quando os insumos (EMA21/ATR/barreira) não
   // estavam disponíveis.
   qualidade_entrada: { fator: string; avaliacao: 'BOM' | 'MEDIO' | 'RUIM'; detalhe: string }[] | null;
+  // V6.7 (A-13): campos novos do contrato do stop — presentes nos dois planos.
+  stop_status: StopStatus;
+  stop_ancora: StopAncora | null;
+  stop_buffer: StopBuffer | null;
+  stop_motivo: string | null;
+  // V6.7 (B-20/B-21): verificação de segurança de liquidação — presente nos dois planos, cada um
+  // calculado contra o próprio stop.
+  verificacao: 'SEGURO' | 'INSEGURO' | null;
+  verificacao_motivo: string | null;
 }
 
 export interface GenesisAnalysisResult {
@@ -227,7 +253,7 @@ export interface GenesisAnalysisResult {
     motivo: string;
     candidate_setup: CandidateSetup | null;
     executable_setup: CandidateSetup | null;
-    planoB: Record<string, unknown> | null;
+    planoB: ExecutionPlanB | null;
     // V6.5 (E08): 1 item (só Plano A) ou 2 (A e B), mesmo formato completo pros dois — ver PlanoSetup.
     planos: PlanoSetup[];
     // V6.5 (G02): invalidacao (string) substituída por direção + nível numéricos — campo legado,
@@ -258,7 +284,7 @@ export interface GenesisAnalysisResult {
   folha_decisao?: Record<string, unknown>;
   // Restauração pós-entrega (2026-07-27): score_basis já vem pronto do decisor (justificativa
   // estruturada), reaproveitado pras barras Técnico/Derivativos sem recalcular nada.
-  score_basis?: Record<string, string> | null;
+  score_basis?: ScoreBasis | null;
   // V6.6 (A04): figura gráfica identificada pelo decisor (visual_observations.patterns) — antes
   // chegava na resposta HTTP e era descartada no adaptador, sem nenhum componente exibindo.
   visual_observations?: { patterns: VisualPattern[] };
@@ -358,4 +384,29 @@ export interface SavedAnalysis {
   status: 'PENDENTE' | 'ACERTOU' | 'ERROU' | 'NAO_EXECUTAVEL';
   profit_loss?: number | null;
   notes?: string;
+  // V6.7 (F-41): os dois planos (A e B) com entrada/stop/alvos/desfecho PRÓPRIOS — antes o histórico
+  // só lia as colunas achatadas de `genesis_analises` (entrada/take_profit_*/stop_loss), que a versão
+  // atual não grava mais para análises novas (fonte real é `genesis_analise_planos` desde a V6.5).
+  // `[]` (ou ausente) em análises legado — `entry_price`/`target_price`/`stop_loss` acima continuam a
+  // única fonte nesse caso.
+  planos?: HistoricoPlano[];
+}
+
+export interface HistoricoPlano {
+  plano: 'A' | 'B';
+  entrada: number | null;
+  stop: number | null;
+  tp1: number | null;
+  tp2: number | null;
+  tp3: number | null;
+  rr: number | null;
+  // V6.7 (F-42): rr_bruto/rr_liquido — null enquanto a migration não estiver aplicada em produção
+  // (autorização de banco pendente) ou em linhas gravadas antes dela.
+  rr_bruto: number | null;
+  rr_liquido: number | null;
+  alavancagem: number | null;
+  liquidacao: number | null;
+  liquidacao_rotulo: string | null;
+  status_acionamento: string | null;
+  desfecho: string | null;
 }

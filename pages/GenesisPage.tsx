@@ -22,7 +22,7 @@ import LiquidationHeatmap from '../components/LiquidationHeatmap';
 import SectorSentiment from '../components/SectorSentiment';
 import { analyzeChart, scanChartMetadata, ChartMetadataBlockedError } from '../services/geminiService';
 import { normalizarPar } from '../services/normalizarPar';
-import { GenesisAnalysisResult, ChartMetadata, UnifiedChartResult } from '../types';
+import { GenesisAnalysisResult, ChartMetadata, UnifiedChartResult, PlanoSetup } from '../types';
 import { fetchBinanceData, fetchBybitData, fetchBitgetData, fetchOkxData, formatPrice, ExchangeData } from '../services/cryptoApi';
 import { calculateLiquidationPrice } from '../services/futuresCalculations';
 
@@ -104,6 +104,7 @@ const GenesisPage: React.FC = () => {
     targetProfit, setTargetProfit,
     leverage, setLeverage,
     leverageOptions,
+    avisoAlavancagem, setAvisoAlavancagem,
     entryValue, setEntryValue,
     isDataLoading,
     refreshTrigger, setRefreshTrigger,
@@ -369,7 +370,11 @@ const GenesisPage: React.FC = () => {
     setCurrentAnaliseId(null);
   };
 
-  const handleSaveTrade = () => {
+  // V6.7 (B-24): recebe o plano selecionado na tela (A ou B) — antes não recebia nenhum argumento e
+  // sempre usava result.execution.executable_setup (Plano A), mesmo com o Plano B visivelmente
+  // selecionado em AnalysisResult.tsx. Sem planoSelecionado (resposta cacheada de antes de
+  // execution.planos[] existir, E08), cai no Plano A como fallback — nunca o ticker.
+  const handleSaveTrade = (planoSelecionado: PlanoSetup | null) => {
     if (!result) return;
 
     if (!result.execution.executable || !result.execution.executable_setup) {
@@ -377,22 +382,22 @@ const GenesisPage: React.FC = () => {
       return;
     }
 
-    const setup = result.execution.executable_setup;
+    const setup = planoSelecionado ?? result.execution.executable_setup;
     const direction = result.execution.action;
     if (!direction) return;
 
     const now = new Date();
     const formattedDate = `${now.getDate().toString().padStart(2, '0')}/${(now.getMonth() + 1).toString().padStart(2, '0')}/${now.getFullYear()}, ${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
 
-    const parsePrice = (p: string | number) => {
-      if (!p || p === '-' || p === '---') return 0;
-      if (typeof p === 'number') return p;
-      const firstPart = String(p).split('\n')[0];
-      return parseFloat(firstPart.replace(/[^0-9,.-]+/g, '').replace(',', '.'));
-    };
-
-    const entryP = currentPrice ? parsePrice(currentPrice) : (toNullableNumber(setup.entrada) ?? 0);
+    // V6.7 (B-24): entrada gravada é SEMPRE a entrada calculada do plano escolhido — nunca mais o
+    // preço vivo do ticker (currentPrice), que sobrescrevia a entrada real do setup (do Plano B,
+    // inclusive, que costuma ser bem diferente do preço atual por definição — é uma zona de
+    // pullback/repique).
+    const entryP = toNullableNumber(setup.entrada) ?? 0;
     const targetP = toNullableNumber(setup.tp1) ?? 0;
+    // V6.7 (B-17): setup.alavancagem já é sempre a escolha do membro (nunca mais reduzida em
+    // silêncio) — o fallback pra `leverage` (estado do formulário) continua só por segurança
+    // defensiva, para o caso raro de um setup sem o campo preenchido.
     const levVal = setup.alavancagem ?? leverage;
     const liqPrice = setup.liquidacao != null
       ? setup.liquidacao
@@ -532,6 +537,20 @@ const GenesisPage: React.FC = () => {
                     </select>
                     <ChevronDown className="absolute right-3 top-3.5 text-genesis-text-muted pointer-events-none" size={14} />
                   </div>
+                  {/* V6.7 (B-22): aviso explícito quando a troca de corretora ajustou a alavancagem
+                      escolhida — nunca mais um padrão silencioso. */}
+                  {avisoAlavancagem && (
+                    <p className="text-[9px] text-yellow-500 mt-1.5 flex items-start gap-1">
+                      <span>{avisoAlavancagem}</span>
+                      <button
+                        type="button"
+                        onClick={() => setAvisoAlavancagem(null)}
+                        className="text-yellow-500/60 hover:text-yellow-500 underline shrink-0"
+                      >
+                        ok
+                      </button>
+                    </p>
+                  )}
                 </div>
               </div>
 

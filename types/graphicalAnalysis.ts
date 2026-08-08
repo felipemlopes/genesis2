@@ -131,27 +131,65 @@ export interface ScoreBasis {
 // estavam disponíveis ou o cálculo falhou (best-effort).
 // V6.5 (E09-E10): antes alavancagemSegura() só devolvia o número já reduzido, sem indicar que houve
 // redução — o membro pedia 20x, o sistema aplicava 8x em silêncio.
+// V6.7 (B-17, DP-06): 'aplicada' passa a ser sempre igual a 'escolhida' (o sistema nunca mais reduz
+// a alavancagem do membro); 'ajustada' foi substituído por 'excede_seguro' — mesmo papel de aviso,
+// nunca mais de redução.
 export interface AlavancagemInfo {
   escolhida: number;
   aplicada: number;
   maxima_segura: number;
-  ajustada: boolean;
+  excede_seguro: boolean;
   motivo: string | null;
 }
 
+// V6.7 (A-13): contrato novo do stop. stop_status distingue os três estados que a tela renderiza
+// (A-14); stop_ancora é o nível estrutural puro (antes do buffer); stop_buffer expõe os quatro
+// componentes calculados (A-09) e qual venceu; stop_motivo só existe quando stop_status é
+// STOP_UNAVAILABLE (mensagem de A-08).
+export type StopStatus = 'VALID' | 'VALID_WIDE' | 'STOP_UNAVAILABLE';
+
+export interface StopAncora {
+  tipo: string;
+  valor: number;
+  origem: 'API' | 'VISION';
+  validada: boolean;
+  nota: number;
+}
+
+export interface StopBuffer {
+  valor: number;
+  componente_vencedor: string;
+  componentes: {
+    atr_0_5: number;
+    pavios: number;
+    spread: number;
+    slippage: number;
+  };
+}
+
+// V6.7 (G-44): antes faltavam tp2_motivo/tp3_motivo/qualidade_entrada — o backend
+// (ExecucaoService::montar(), candidate_setup) sempre enviou os três, mas o tipo do contrato não os
+// declarava, e o adaptador (geminiService.ts) escondia a divergência com "as unknown as CandidateSetup"
+// em vez de dar erro de compilação. liquidacao_rotulo é literal 'estimada' (nunca outra string) para
+// este formato — só o formato de plano (ExecutionPlanoSetup, abaixo) aceita string livre, quando o
+// Plano B publica o texto de liquidação indisponível.
 export interface ExecutionCandidateSetup {
   entrada: number;
-  stop: number;
+  // V6.7 (A-08/A-14): stop deixa de ser sempre um número — STOP_UNAVAILABLE (sem âncora estrutural
+  // dentro da banda elegível) publica null em vez de um stop fabricado por ATR.
+  stop: number | null;
   tp1: number | null;
   tp1_fonte: string | null;
   tp2: number | null;
   tp2_fonte: string | null;
+  tp2_motivo: string | null;
   tp3: number | null;
   tp3_fonte: string | null;
+  tp3_motivo: string | null;
   alavancagem: number;
   alavancagem_info: AlavancagemInfo | null;
   liquidacao: number | null;
-  liquidacao_rotulo: string | null;
+  liquidacao_rotulo: 'estimada' | null;
   risco_preco_pct: number | null;
   risco_margem_pct: number | null;
   risco_usd_estimado: number | null;
@@ -165,11 +203,28 @@ export interface ExecutionCandidateSetup {
   rr_abaixo_do_minimo: boolean;
   custos_bps: Record<string, number>;
   entrada_ts: string;
+  qualidade_entrada: { fator: string; avaliacao: 'BOM' | 'MEDIO' | 'RUIM'; detalhe: string }[] | null;
+  // V6.7 (A-13): campos novos do contrato do stop.
+  stop_status: StopStatus;
+  stop_ancora: StopAncora | null;
+  stop_buffer: StopBuffer | null;
+  stop_motivo: string | null;
+  // V6.7 (B-20): verificação de segurança de liquidação (stop cai antes ou depois da liquidação) —
+  // null quando não há stop (STOP_UNAVAILABLE), mesmo padrão de alavancagem_info/liquidacao acima.
+  verificacao: 'SEGURO' | 'INSEGURO' | null;
+  verificacao_motivo: string | null;
 }
 
+// V6.7 (G-44): faltavam zona_de/zona_ate/fonte — MotorExecucaoService::gerarPlanoB() sempre devolveu
+// os três (usados por ExecucaoService::montar() para montar zonaInteresse e planoBCompleto), mas o
+// tipo não os declarava. Este é o formato bruto de execution.planoB (compatibilidade legado); o
+// formato completo e verificado pela tela é execution.planos[] (ExecutionPlanoSetup, abaixo).
 export interface ExecutionPlanB {
   entrada: number;
   stop: number;
+  zona_de: number | null;
+  zona_ate: number | null;
+  fonte: string | null;
   tp1: number | null;
   tp2: number | null;
   tp3: number | null;
@@ -181,6 +236,13 @@ export interface ExecutionPlanB {
   verificacao_motivo: string | null;
   tipo: string;
   descricao: string;
+  // V6.7 (A-13): stop próprio do Plano B — gerarPlanoB() devolve null (Plano B indisponível) em vez
+  // de publicar este objeto quando STOP_UNAVAILABLE, então aqui dentro stop_status é sempre 'VALID'
+  // ou 'VALID_WIDE' na prática.
+  stop_status: StopStatus;
+  stop_ancora: StopAncora | null;
+  stop_buffer: StopBuffer | null;
+  stop_motivo: string | null;
 }
 
 // V6.5 (E08): formato único e completo compartilhado pelos dois planos em execution.planos[] — antes
@@ -194,8 +256,12 @@ export interface ExecutionPlanoSetup {
   tp1_fonte: string | null;
   tp2: number | null;
   tp2_fonte: string | null;
+  // V6.7 (G-44): faltavam — ExecucaoService::montar() sempre inclui tp2_motivo/tp3_motivo em cada
+  // item de 'planos' (linhas 429/432 do Plano A, 378/381 do Plano B, ambos podendo ser null).
+  tp2_motivo: string | null;
   tp3: number | null;
   tp3_fonte: string | null;
+  tp3_motivo: string | null;
   alavancagem: number | null;
   alavancagem_info: AlavancagemInfo | null;
   liquidacao: number | null;
@@ -223,6 +289,16 @@ export interface ExecutionPlanoSetup {
   // V6.5 (G15): 4 fatores de LOCALIZAÇÃO de QualidadeEntradaService — null quando não computado
   // (hoje, sempre null no Plano B: ver ExecucaoService.php).
   qualidade_entrada: { fator: string; avaliacao: 'BOM' | 'MEDIO' | 'RUIM'; detalhe: string }[] | null;
+  // V6.7 (A-13): campos novos do contrato do stop — presentes nos dois planos, cada um com sua
+  // própria âncora/buffer (o stop do Plano B é ancorado na própria entrada dele, não na do Plano A).
+  stop_status: StopStatus;
+  stop_ancora: StopAncora | null;
+  stop_buffer: StopBuffer | null;
+  stop_motivo: string | null;
+  // V6.7 (B-20/B-21): verificação de segurança de liquidação — presente nos dois planos, cada um
+  // calculado contra o próprio stop (B-21: Plano B não reaproveita mais o do Plano A).
+  verificacao: 'SEGURO' | 'INSEGURO' | null;
+  verificacao_motivo: string | null;
 }
 
 export interface ExecutionPipelineResult {

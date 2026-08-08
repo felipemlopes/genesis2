@@ -48,6 +48,10 @@ interface AppContextType {
   leverage: number;
   setLeverage: (v: number) => void;
   leverageOptions: number[];
+  // V6.7 (B-22): aviso quando a troca de corretora ajustou a alavancagem escolhida — null quando
+  // não há aviso pendente (dispensado pela tela depois de mostrado).
+  avisoAlavancagem: string | null;
+  setAvisoAlavancagem: React.Dispatch<React.SetStateAction<string | null>>;
   marginMode: string;
   setMarginMode: (v: string) => void;
   entryValue: number | '';
@@ -107,6 +111,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [entryValue, setEntryValue] = useState<number | ''>('');
   const [marginMode, setMarginMode] = useState('Isolada');
   const [leverageOptions, setLeverageOptions] = useState<number[]>([]);
+  // V6.7 (B-22): aviso visível quando a troca de corretora força um ajuste na alavancagem escolhida
+  // (a corretora nova não oferece o valor atual) — null quando não há aviso pendente.
+  const [avisoAlavancagem, setAvisoAlavancagem] = useState<string | null>(null);
 
   const [activeTrades, setActiveTrades] = useState<ActiveTrade[]>([]);
   const [closedTrades, setClosedTrades] = useState<ActiveTrade[]>([]);
@@ -165,8 +172,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setIsLoadingPairs(true);
       const options = getLeverageOptions(exchange);
       setLeverageOptions(options);
+      // V6.7 (B-22): antes caía num padrão fixo (5x, ou o primeiro valor da lista) em silêncio quando
+      // a corretora nova não tinha a alavancagem atual — o membro só descobria olhando o seletor.
+      // Agora escolhe o valor válido mais próximo PARA BAIXO (nunca inventa um padrão) e avisa.
       if (!options.includes(leverage)) {
-        setLeverage(options.includes(5) ? 5 : options[0]);
+        const maisProximoParaBaixo = [...options].reverse().find((opt) => opt <= leverage) ?? options[0];
+        setAvisoAlavancagem(
+          `${exchange} não oferece ${leverage}x — alavancagem ajustada para ${maisProximoParaBaixo}x.`
+        );
+        setLeverage(maisProximoParaBaixo);
+      } else {
+        setAvisoAlavancagem(null);
       }
 
       let pairs: string[] = [];
@@ -334,6 +350,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         leverage,
         setLeverage,
         leverageOptions,
+        avisoAlavancagem,
+        setAvisoAlavancagem,
         marginMode,
         setMarginMode,
         entryValue,

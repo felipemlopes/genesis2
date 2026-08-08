@@ -173,6 +173,14 @@ const emptyCandidateSetup: CandidateSetup = {
   custos_bps: {},
   entrada_ts: null,
   qualidade_entrada: null,
+  // V6.7 (A-13): placeholder também precisa dos campos novos do contrato do stop.
+  stop_status: 'STOP_UNAVAILABLE',
+  stop_ancora: null,
+  stop_buffer: null,
+  stop_motivo: null,
+  // V6.7 (B-20): idem, placeholder também precisa dos campos novos de verificação de liquidação.
+  verificacao: null,
+  verificacao_motivo: null,
 };
 
 // Adaptador (2026-07-27): traduz a resposta do motor V6.4 (rota /v1/graphical-analysis) para o
@@ -206,7 +214,15 @@ const mapGraphicalToLegacy = (v64: GraphicalAnalysisResult): GenesisAnalysisResu
       // V6.5 (G14): antes leitura_fraca vinha chumbado em false e base_conviction reintroduzia o
       // score final com outro nome — nenhum dos dois refletia dado real. cobertura_baixa é derivado
       // de coverage_percent de verdade.
-      cobertura_baixa: v64.coverage_percent != null ? v64.coverage_percent < 70 : undefined,
+      // V6.7 (H-47): limiar recalibrado de 70 para 75 no MESMO commit que mudou o denominador de
+      // coverage_percent (EvidenceManifestBuilder.php) de "tudo menos DISPLAY_ONLY" (66 itens, ainda
+      // contava os 20 CONTEXT) para "só DECISION" (46 itens) — o documento descreve que isso sobe a
+      // cobertura estruturalmente 4-6 pontos pra qualquer análise (itens CONTEXT tendem a faltar mais
+      // que os DECISION: fontes macro/sentimento/derivativos secundários). 75 é o meio da faixa
+      // estimada — **valor provisório, precisa de confirmação com cobertura real de análises pós-
+      // correção antes do gate final (seção 25)**, não uma medição própria (não rodei análise real
+      // nesta sessão).
+      cobertura_baixa: v64.coverage_percent != null ? v64.coverage_percent < 75 : undefined,
     },
     execution: exec ? {
       status: exec.status as ExecutionStatus,
@@ -219,12 +235,15 @@ const mapGraphicalToLegacy = (v64: GraphicalAnalysisResult): GenesisAnalysisResu
       direction_reference: exec.direction_reference,
       reason_code: exec.reason_code,
       motivo: exec.motivo,
-      candidate_setup: (exec.candidate_setup as unknown as CandidateSetup) ?? emptyCandidateSetup,
-      executable_setup: exec.executable_setup as unknown as CandidateSetup | null,
-      planoB: exec.planoB as unknown as Record<string, unknown> | null,
+      // V6.7 (G-44): tipos unificados com o contrato real do backend (types/graphicalAnalysis.ts) —
+      // ExecutionCandidateSetup/ExecutionPlanoSetup/ExecutionPlanB são estruturalmente compatíveis com
+      // CandidateSetup/PlanoSetup/ExecutionPlanB (types.ts) depois da correção, sem precisar de cast.
+      candidate_setup: exec.candidate_setup ?? emptyCandidateSetup,
+      executable_setup: exec.executable_setup,
+      planoB: exec.planoB,
       // V6.5 (E08): campo novo do backend — vazio quando a resposta vier de uma decisão cacheada
       // antes deste campo existir (a tela cai no fallback de candidate_setup/planoB nesse caso).
-      planos: (exec.planos as unknown as PlanoSetup[]) ?? [],
+      planos: exec.planos ?? [],
       zonaInteresse: exec.zonaInteresse,
       avisos: exec.avisos,
       stop_ancora: exec.stop_ancora,
@@ -262,7 +281,8 @@ const mapGraphicalToLegacy = (v64: GraphicalAnalysisResult): GenesisAnalysisResu
       ? { nome: ctx.indicators.session.value.name, cor: 'text-white' }
       : undefined,
     multiTimeframe: (ctx?.indicators?.multi_timeframe?.value as { timeframe: string; bias: string }[] | null) ?? [],
-    score_basis: v64.score_basis as unknown as Record<string, string> | null,
+    // V6.7 (G-44): ScoreBasis importado do contrato real, sem cast.
+    score_basis: v64.score_basis,
     // V6.6 (A04): visual_observations.patterns chegava na resposta e era descartado aqui — nenhum
     // componente da tela renderizava figura, mesmo com o Gemini identificando um padrão claro.
     visual_observations: {
@@ -297,7 +317,11 @@ export const analyzeChart = async (
   fd.append('image', file);
   fd.append('symbol', metadata.pair);
   fd.append('timeframe', metadata.timeframe);
-  if (userLeverage > 0) fd.append('leverage', String(userLeverage));
+  // V6.7 (B-18/B-23): antes só enviava quando > 0 — se o estado de alavancagem no app zerasse por
+  // qualquer motivo, o campo simplesmente sumia da requisição e o backend caía no default
+  // silencioso (0). Agora sempre envia; leverage <= 0 volta como erro de requisição explícito do
+  // backend (GraphicalAnalysisRequest::rules()), nunca um 1x aplicado sem avisar.
+  fd.append('leverage', String(userLeverage));
   if (equity && Number(equity) > 0) fd.append('equity', equity);
 
   const res = await fetch(`${API_BASE}/v1/graphical-analysis`, {

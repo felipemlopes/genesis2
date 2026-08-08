@@ -24,6 +24,11 @@ export interface FatorQualidadeEntrada {
 interface Props {
   score: number | null;
   rr: number | null;
+  // V6.7 (C-26): risco-retorno bruto passa a ser exibido ao lado do líquido, cada um rotulado —
+  // antes só o líquido (rr) era mostrado, sem dizer que já descontava taxas/spread/slippage, sob o
+  // rótulo genérico "Risco e retorno" (quem conferia na régua encontrava o bruto e via o líquido na
+  // tela). Não há erro de cálculo, só de rótulo — os dois números já existiam no payload.
+  rrBruto?: number | null;
   // V6.6 (F01, DF-02): risco e retorno passa a existir só aqui — dentro do mínimo, mostra só o
   // número; abaixo do mínimo, o número ganha a observação entre parênteses. rrMinimo/rrAbaixoDoMinimo
   // vêm prontos do backend (rr_minimo_referencia/rr_abaixo_do_minimo, ver E04) — nunca recalculados.
@@ -66,7 +71,7 @@ const montarConclusao = (rr: number | null, fatores: FatorQualidadeEntrada[]): s
   return `${comRr}. A decisão é sua.`;
 };
 
-export const BlocoConviccaoQualidade: React.FC<Props> = ({ score, rr, rrMinimo, rrAbaixoDoMinimo, fatores, direcao }) => (
+export const BlocoConviccaoQualidade: React.FC<Props> = ({ score, rr, rrBruto, rrMinimo, rrAbaixoDoMinimo, fatores, direcao }) => (
   <section className="bg-black/40 rounded-lg p-[16px] border border-white/[0.05] relative z-10 mb-5">
     <div className="grid grid-cols-2 gap-4 mb-4">
       <div>
@@ -82,18 +87,30 @@ export const BlocoConviccaoQualidade: React.FC<Props> = ({ score, rr, rrMinimo, 
       </div>
       <div>
         <span className="text-[9px] font-bold text-gray-500 uppercase tracking-wider">Risco e retorno</span>
-        <div className="mt-0.5">
-          {rr == null ? (
+        {/* V6.7 (C-26): bruto e líquido lado a lado, cada um rotulado — nenhum dos dois some. */}
+        <div className="mt-0.5 space-y-0.5">
+          {rr == null && rrBruto == null ? (
             <span className="text-sm text-gray-500">sem alvo ancorado em barreira real</span>
           ) : (
-            <div className="flex items-baseline gap-2 flex-wrap">
-              <strong className="text-lg font-mono text-white">1:{rr.toFixed(2)}</strong>
-              {rrAbaixoDoMinimo && (
-                <span className="text-[10px] text-amber-500">
-                  (cuidado, risco retorno abaixo do recomendado, 1:{(rrMinimo ?? 0).toFixed(2)})
-                </span>
+            <>
+              {rrBruto != null && (
+                <div className="flex items-baseline gap-1.5 flex-wrap">
+                  <strong className="text-sm font-mono text-gray-300">1:{rrBruto.toFixed(2)}</strong>
+                  <span className="text-[9px] text-gray-500">bruto</span>
+                </div>
               )}
-            </div>
+              {rr != null && (
+                <div className="flex items-baseline gap-2 flex-wrap">
+                  <strong className="text-lg font-mono text-white">1:{rr.toFixed(2)}</strong>
+                  <span className="text-[9px] text-gray-500">líquido (taxas, spread e slippage)</span>
+                  {rrAbaixoDoMinimo && (
+                    <span className="text-[10px] text-amber-500">
+                      (cuidado, risco retorno abaixo do recomendado, 1:{(rrMinimo ?? 0).toFixed(2)})
+                    </span>
+                  )}
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>

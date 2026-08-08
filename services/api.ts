@@ -193,15 +193,8 @@ export async function fetchHistoricoAnalises() {
   return res.json();
 }
 
-export async function storeAnalise(data: any) {
-  const res = await fetch(`${API_BASE}/v1/analises`, {
-    method: 'POST',
-    headers: getAuthHeaders(),
-    body: JSON.stringify(data),
-  });
-  await assertOk(res);
-  return res.json();
-}
+// V6.7 (F-43): storeAnalise() removida junto com sua única chamadora
+// (saveAnalysisToHistory, components/AnalysisHistoryDashboard.tsx) — ver comentário lá.
 
 export async function updateResultadoAnalise(id: number, data: any) {
   const res = await fetch(`${API_BASE}/v1/analises/${id}/resultado`, {
