@@ -21,10 +21,18 @@ explicitamente de fora — ver seção "Fora de escopo" abaixo.
 Repositórios: **[API]** = `E:\Programas\wamp64\www\genesis-api` · **[FE]** =
 `c:\Users\felip\Downloads\G-nesis-2.0-main\G-nesis-2.0-main`.
 
-**Status geral em 07/08/2026: 53 de 54 correções implementadas (Fases 1 a 7 completas, exceto I-51 —
-mudança de ambiente fora do alcance desta sessão).** Documento recebido nesta data, plano criado no
-mesmo dia. Todas as 7 ondas autorizadas e concluídas em 07/08/2026. **Gate de aceite #4 (stop das 3 análises diárias reais
-inalterado) NÃO está verificado** — ver aviso no topo da seção da Fase 4. **Achado durante
+**Status geral em 08/08/2026: 53 de 54 correções implementadas (Fases 1 a 7 completas, exceto I-51 —
+mudança de ambiente fora do alcance desta sessão).** Documento recebido em 07/08/2026, plano criado no
+mesmo dia. Todas as 7 ondas concluídas em código em 07/08/2026; em 08/08/2026 o usuário autorizou
+execução real ("Precisa fazer isso, só não pode apagar coisas do banco de dados e nem refresh no banco
+de dados") e boa parte das provas passou de sintética/pendente pra real: commits reais, migration F-42
+aplicada, suíte PHPUnit completa rodada contra o banco de dev (10+2 regressões reais encontradas e
+corrigidas — só em fixtures de teste, nunca em código de produção), os 3 comandos agendados executados
+de verdade, `npm run lint`/`build` reais, e provas de infraestrutura (`route:list`/`schedule:list`/
+`config:show`/`about`) coletadas. Detalhe completo em `PROVAS_V6_7.md` (raiz do `genesis-api`). **Gate
+de aceite #4 (stop das 3 análises diárias reais inalterado) e as capturas de tela de UI seguem
+bloqueados de verdade — sem imagens de referência (BTCUSDT/POLUSDT/APTUSDT) nem ferramenta de captura
+de tela disponível nesta sessão; precisa de insumo do usuário pra fechar.** **Achado durante
 a Onda 2, não previsto
 pelo documento:** `genesis:acompanhar-planos` e `genesis:evaluate-outcomes` já estavam agendados desde
 31/07/2026 via `GenesisGraphicalServiceProvider::boot()` — um `Schedule::command()` fora do
@@ -244,8 +252,9 @@ ficar claro que um dos dois pode ser absorvido pelo outro por inteiro.
 
 Ordem interna obrigatória: **E-34, E-35 e E-36 antes de E-38.** Sem este bloco, nenhuma correção do
 documento pode ser validada por dado — é por isso que todo ciclo anterior terminou em leitura de print
-de tela. **Código concluído em 07/08/2026; execução real (rodar os comandos de verdade contra o banco)
-segue bloqueada até autorização explícita, por pedido do usuário.**
+de tela. **Código concluído em 07/08/2026; execução real autorizada e feita em 08/08/2026 (3 execuções
+consecutivas de `genesis:acompanhar-planos` contra Binance/dev DB, mais `genesis:evaluate-outcomes` e
+`analises:verificar-resultados`) — ver `PROVAS_V6_7.md` seção "Comandos agendados".**
 
 > **Achado durante esta onda, fora do que o documento previa:** `genesis:acompanhar-planos` e
 > `genesis:evaluate-outcomes` **já estavam agendados desde 31/07/2026** (V6.5, F07), via
@@ -266,8 +275,10 @@ segue bloqueada até autorização explícita, por pedido do usuário.**
     `whereNull('desfecho')`. Um plano que veio `ACIONADO` sem bater stop/TP (caso normal minutos
     depois da análise) volta a ser reavaliado na próxima execução — o critério de saída passou a ser
     exclusivamente ter `desfecho` preenchido (por stop/TP real ou por `EXPIRADO`, ver E-37).
-  - Verificação feita: `php -l` limpo. **Prova real (3 execuções consecutivas do comando) pendente —
-    exige rodar contra o banco, não autorizado ainda.**
+  - Verificação feita: `php -l` limpo. **Prova real feita em 08/08/2026:** 3 execuções consecutivas de
+    `php artisan genesis:acompanhar-planos` contra Binance/dev DB processaram os mesmos 5 planos
+    elegíveis em todas as 3 execuções (não saíram da fila após a 1ª) — confirma E-34. Detalhes em
+    `PROVAS_V6_7.md`.
   - Depende de: nada.
 
 - [x] **E-35 (P0)** — Comando não escreve o resultado em `genesis_analises` —
@@ -277,7 +288,12 @@ segue bloqueada até autorização explícita, por pedido do usuário.**
     (`analise.plano_escolhido`, ou Plano A se nenhum foi escolhido — regra literal do documento) e, se
     for, grava `resultado`/`preco_resultado`/`data_resultado` em `genesis_analises`. Um Plano B
     fechando quando o membro escolheu A (ou vice-versa) não sobrescreve o resultado da análise.
-  - Verificação feita: `php -l` limpo. **Prova real (consulta ao banco após execução) pendente.**
+  - Verificação feita: `php -l` limpo. **Prova real parcial (08/08/2026):** nenhum dos 5 planos
+    elegíveis fechou (stop/TP/expiração) durante as 3 execuções reais desta sessão, então a propagação
+    não teve dado novo pra exercitar. Achado à parte, sem relação com o código desta sessão: 3 planos
+    (`101`/`112`/`132`) fecharam em 04/08/2026 (4 dias antes do 1º commit deste ciclo) e suas `Analise`
+    pai seguem com `resultado=PENDENTE` — dado histórico anterior à existência deste código, não corrigido
+    (exigiria escrita manual em produção, fora do autorizado). Ver `PROVAS_V6_7.md`.
   - Depende de: E-34 (o plano precisa voltar a ser reavaliado pra ter a chance de fechar).
 
 - [x] **E-36 (P0)** — Navegador calcula desfecho com regra diferente do servidor (usa preço atual, não
@@ -326,8 +342,8 @@ segue bloqueada até autorização explícita, por pedido do usuário.**
     (leitura, não grava nada) confirma os três comandos presentes, sem duplicata:
     `genesis:acompanhar-planos`, `genesis:evaluate-outcomes` (ambos via
     `GenesisGraphicalServiceProvider`), `analises:verificar-resultados` (via `Kernel.php`), todos
-    `*/15 * * * *`. **Log de execução real com contagem de chamadas à Binance pendente — exige rodar
-    contra o banco, não autorizado ainda.**
+    `*/15 * * * *`. **Execução real feita em 08/08/2026** (mesmas 3 rodadas de `acompanhar-planos` +
+    1 rodada de `evaluate-outcomes`, que registrou 15 telemetrias — ver `PROVAS_V6_7.md`).
   - Depende de: E-34, E-35, E-36 (fechados antes desta).
 
 - [x] **E-39 (P2)** — Desfecho de 1d usa candles do próprio 1d; quando stop e alvo caem no mesmo
@@ -350,10 +366,11 @@ segue bloqueada até autorização explícita, por pedido do usuário.**
 **Pacote de evidências desta fase:** os 7 itens com código aplicado, `php -l` limpo em todos os 4
 arquivos PHP tocados (`AcompanharPlanos.php`, `EvaluateGenesisOutcomes.php`,
 `ResultVerifierCommand.php`, `Kernel.php`) e `tsc --noEmit` limpo no frontend (`AnalysisHistoryDashboard.tsx`).
-`php artisan schedule:list` confirma os 3 comandos, sem duplicata. **Nenhum comando foi executado de
-verdade, nenhuma migration rodou, nenhuma linha do banco foi lida ou escrita nesta fase** — por pedido
-explícito do usuário, essas provas (P-15, P-16, teste unitário de E-37, teste de candle de E-39) ficam
-pendentes até autorização específica.
+`php artisan schedule:list` confirma os 3 comandos, sem duplicata. **Execução real feita em 08/08/2026**
+(autorização do usuário: "Precisa fazer isso, só não pode apagar coisas do banco de dados e nem refresh
+no banco de dados") — 3 execuções de `acompanhar-planos` + 1 de `evaluate-outcomes` + 1 de
+`verificar-resultados`, todas contra o banco de dev real. Teste unitário de E-37 (5 faixas) e teste de
+candle de E-39 seguem pendentes (não são proof-by-execution, são testes novos ainda não escritos).
 
 **Rastro a limpar nesta onda:** a função de cálculo de desfecho no navegador (E-36) foi removida junto
 com o item, não deixada para depois.
@@ -696,8 +713,12 @@ escolhida pelo membro nunca é alterada.** **Concluída em 07/08/2026**, todos o
   - Verificação feita: `php -l` limpo, `tsc --noEmit` limpo. Leitura manual confirma que `min:1` já
     barra `leverage=0` quando presente — o gap real era só a ausência do campo, fechado pelo `required`
     + pelo FE nunca mais omitir o campo.
-  - Depende de: nada. **Prova real (request sem leverage e com leverage=0, ambos retornando 422 com a
-    mensagem nova) pendente.**
+  - Depende de: nada. **Prova real parcial, 08/08/2026:** ao rodar a suíte Feature real contra o banco,
+    `GraphicalAnalysisImageValidationTest` e `GraphicalAnalysisSpotRejectionTest` — que já existiam e
+    faziam POST sem `leverage` — passaram a falhar com 422 (confirmando `required` na prática, não só
+    em leitura de código); corrigidas adicionando `leverage` ao payload de cada teste, já que elas
+    queriam isolar outro comportamento. Não existe ainda um teste dedicado à mensagem de erro específica
+    de `leverage=0`/ausente — isso segue pendente.
 
 - [x] **B-19 (P0)** — Teste `NivelServiceE09E10Test.php` exigia o comportamento antigo —
       `tests/Unit/NivelServiceE09E10Test.php` (implementado em 07/08/2026) — **mesmo commit de B-17**
@@ -943,20 +964,22 @@ acesso a produção), documentado abaixo com o que já foi verificado do lado do
 - [x] **F-42 (P1)** — RR do histórico numa coluna só (Plano A grava líquido, Plano B grava bruto) —
       migration nova, `app/Models/AnalisePlano.php`,
       `app/Services/GraphicalAnalysis/GraphicalAnalysisOrchestrator.php` (implementado em 07/08/2026)
-  - Status: **código aplicado, migration criada mas NÃO executada** (autorização de banco pendente,
-    restrição geral deste plano). Migration
+  - Status: **código aplicado, migration criada E EXECUTADA de verdade em 08/08/2026** (`php artisan
+    migrate --force`, autorizado pelo usuário). Migration
     `2026_08_07_000001_add_rr_bruto_liquido_to_genesis_analise_planos_table.php` (aditiva, `down()`
-    reversível). **Achado real ao implementar:** `persistPlanos()` tratava Plano A e Plano B com
+    reversível, confirmada aditiva na prática: as 10 linhas pré-existentes de `genesis_analise_planos`
+    não foram tocadas). **Achado real ao implementar:** `persistPlanos()` tratava Plano A e Plano B com
     lógicas de RR diferentes (A: líquido com fallback pra bruto; B: sempre `rr1`, que é bruto) — raiz
     exata da divergência que a migration corrige. Reescrito pra iterar sobre `execution.planos[]`
     (formato uniforme dos dois planos, existe desde a V6.7/A-13) em vez de tratar `candidate_setup`/
     `planoB` separadamente — os dois planos agora usam a mesma prioridade (líquido com fallback pra
     bruto) tanto na coluna antiga (`rr`, mantida por compatibilidade) quanto nas duas novas.
-  - Verificação feita: `php -l` limpo. `AnaliseTransformer` já expõe `rr_bruto`/`rr_liquido` (ficam
-    `null` até a migration rodar — sem quebrar nada, `AnalisePlano` não falha ao ler coluna
-    inexistente, só devolve `null`).
-  - Depende de: nada (dentro desta onda). **[MIGRATION — autorização de banco explícita obrigatória
-    antes de `php artisan migrate`.] Prova real (consulta ao banco pós-migration) pendente.**
+  - Verificação feita: `php -l` limpo. `AnaliseTransformer` já expõe `rr_bruto`/`rr_liquido`. Suíte
+    PHPUnit real (08/08/2026) exercitou `persistPlanos()` via
+    `GraphicalAnalysisOrchestratorPlanoPersistenceTest` (fixture atualizada pro formato `planos[]`) —
+    passou.
+  - Depende de: nada (dentro desta onda). Migration aplicada. **Prova real de tela (screenshot do
+    histórico mostrando `rr_bruto`/`rr_liquido` preenchidos numa análise nova) ainda pendente.**
 
 - [x] **F-43 (P2)** — `saveAnalysisToHistory()` continuava exportada, sem call site nenhum —
       `components/AnalysisHistoryDashboard.tsx`, `services/api.ts` (implementado em 07/08/2026)
@@ -1139,14 +1162,17 @@ vivos na V6.6. Nome antigo não é prova de código morto.
 
 Item sem prova válida conta como **não feito**, mesmo com código correto.
 
-**Infraestrutura (uma vez por entrega):** SHA backend/frontend, `route:list` (v1/), `schedule:list`,
-`config:show genesis` de produção, `.env` relevante, `php artisan about`, suíte PHPUnit completa,
-`tsc --noEmit`, `npm run lint` + `npm run build`.
+**Infraestrutura (uma vez por entrega):** ✅ **feito em 08/08/2026** — SHA backend/frontend, `route:list`
+(v1/), `schedule:list`, `config:show genesis_graphical_v6` (de dev, não de produção — sem acesso à
+produção nesta sessão), `php artisan about`, suíte PHPUnit completa (contra o banco de dev), `tsc
+--noEmit`, `npm run lint` + `npm run build`. Detalhe completo em `PROVAS_V6_7.md`.
 
-**Execução real (3 reanálises APTUSDT/BTCUSDT/POLUSDT, antes e depois):** payload público completo
-antes/depois, comparação campo a campo (stop/alavancagem/RR/zona Plano B), log `EXECUCAO_AVALIADA` com
-nota de cada âncora, consulta a `genesis_analises` + `genesis_analise_planos` de análise nova, log de
-3 execuções consecutivas de `genesis:acompanhar-planos`.
+**Execução real (3 reanálises APTUSDT/BTCUSDT/POLUSDT, antes e depois):** ❌ **ainda bloqueado** — exige
+3 imagens de gráfico reais que reproduzam os stops citados no documento e uma ferramenta de captura de
+tela/navegador, nenhum dos dois disponível nesta sessão (ver `PROVAS_V6_7.md`, seção "Bloqueio
+confirmado"). ✅ **feito**: log de 3 execuções consecutivas de `genesis:acompanhar-planos` contra dado
+real (Binance + dev DB) — não fechou nenhum plano novo nesta janela, então não há consulta pós-fechamento
+de `genesis_analises`/`genesis_analise_planos` pra anexar ainda.
 
 **Tela (desktop + mobile):** stop `VALID`/`VALID_WIDE`/`STOP_UNAVAILABLE`, `recommended` falso com
 aviso, RR bruto/líquido lado a lado, alavancagem alta + alerta de liquidação, Plano A/B coerentes,
