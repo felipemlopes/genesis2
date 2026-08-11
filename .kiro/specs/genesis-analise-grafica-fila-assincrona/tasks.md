@@ -202,51 +202,81 @@ dessa mudança — limpa.
 
 Suíte completa (Unit 203 + Feature/Integration 46) rodada de novo depois de toda a Fase 3 — limpa.
 
-## FASE 4 — Controller e endpoint de disparo
+## FASE 4 — Controller e endpoint de disparo ✅ concluída (11/08/2026)
 
-- [ ] **4.1** `GraphicalAnalysisController`: mantém validação (`GraphicalAnalysisRequest`, inalterada)
-      e reserva de crédito (inalterada). Muda o que acontece depois: salva a imagem em
-      `Storage::disk(...)` (path gravado na Analise, coluna nova da Fase 2), cria a `Analise` com
-      `analysis_status='PENDING'` (pré-populando `ativo`/`timeframe`/`alavancagem_membro`/
-      `margem_membro`/`credit_reservation_id`/`analysis_uuid` — todos já existem no fillable),
-      despacha `GraphicalAnalysisAttemptJob::dispatch($analise->id)`, responde **202** com
-      `{analysis_id: uuid, status: 'PENDING'}`.
-- [ ] **4.2** Idempotência: mantém o padrão já existente (`Analise::where('credit_reservation_id',
-      ...)->first()`) — se já existe uma Analise pra essa reserva, devolve o estado atual dela em vez
-      de despachar de novo.
-- [ ] **4.3** Segurança de crédito órfão: `EstornarReservasOrfas` (comando existente, 15 min) **já não
-      precisa mudar** — como a `Analise` agora nasce junto com a reserva (antes do dispatch), a
-      condição `whereDoesntHave('analise')` desse comando nunca mais vai bater pra reservas em
-      processamento assíncrono (confirmado por leitura do comando). **Precisa de um comando novo**
-      pra cobrir o caso que não existia antes: `Analise` presa em `PENDING` por tempo demais (worker
-      caiu, nunca pegou o job) — mesmo padrão do `EstornarReservasOrfas`, mas filtrando
-      `analysis_status='PENDING'` e `created_at` antigo, finalizando como `FAILED` + estornando.
-- [ ] **4.4** Prova: teste real do fluxo completo, POST → 202 → poll até COMPLETED, rodando com
-      `QUEUE_CONNECTION=sync` neste ambiente de dev (job roda inline, sem precisar de worker separado
-      pra validar a lógica — só o *comportamento*, não a infra de produção).
+- [x] **4.1** `GraphicalAnalysisController` reescrito: valida (inalterado), reserva crédito
+      (inalterado), salva a imagem em `Storage::disk('local')`, cria a `Analise` `PENDING`, despacha
+      `GraphicalAnalysisAttemptJob::dispatch()`. **Ajuste real em relação ao plano original**: em vez
+      de responder sempre `202`/`PENDING`, relê a Analise depois do dispatch e devolve o estado
+      ATUAL — com `QUEUE_CONNECTION=sync` (padrão deste ambiente) o job já rodou por completo nesse
+      ponto, então mentir "PENDING" seria enganoso; `202` só sai quando genuinamente ainda está
+      pendente (fila de verdade em produção).
+- [x] **4.2** Idempotência real testada: duas requisições com a mesma `Idempotency-Key` não
+      despacham o job 2x nem debitam 2x (`GraphicalAnalysisAsyncFlowTest`).
+- [x] **4.3** `FinalizarAnalisesTravadas` (comando novo, agendado a cada 15min, mesmo padrão do
+      `EstornarReservasOrfas`) cobre `Analise` presa em `PENDING`. Confirmado que
+      `EstornarReservasOrfas` não precisou de nenhuma mudança.
+- [x] **4.4** Prova real: `GraphicalAnalysisAsyncFlowTest` (2 testes) — fluxo completo via HTTP com
+      `QUEUE_CONNECTION=sync` (resposta do POST já resolvida + poll confirma o mesmo estado) e
+      idempotência forçando `QUEUE_CONNECTION=database` só nessa chamada (sem `queue:work` — só o
+      `dispatch()`, pra pegar o estado genuinamente `PENDING` antes do job rodar).
 
-## FASE 5 — Frontend
+**Achado real (bug de verdade, corrigido) — commit `497f3d0`:** com `QUEUE_CONNECTION=sync`, quando
+o job precisa esgotar tentativas e lança exceção, `Illuminate\Queue\SyncQueue::handleException()`
+chama `$job->failed()` corretamente (a `Analise` fica no estado `FAILED` certo) **mas relança a
+exceção em seguida** — sem tratamento, isso quebraria a requisição com um 500 cru do handler padrão
+do Laravel em vez da resposta explicada que `failed()` já tinha deixado pronta. Corrigido com um
+catch silencioso ao redor do `dispatch()` (só acontece com `sync` — com fila de verdade, `dispatch()`
+só enfileira, nunca lança dali).
 
-- [ ] **5.1** `types/graphicalAnalysis.ts`: `GraphicalAnalysisResult.status` deixa de ser só o literal
-      `'COMPLETED'` — precisa aceitar `'PENDING' | 'COMPLETED' | 'REJECTED_IMAGE' | 'FAILED'`.
-- [ ] **5.2** `services/geminiService.ts::analyzeChart()`: muda de "1 fetch que espera" pra "POST
-      dispara, depois poll". Novo helper de poll **não reusa** `hooks/useAlertas.ts`/
-      `useRadarNewsAlerts.ts` como estão (são polling de feed com cursor incremental, esse caso é
-      "consultar 1 job específico até estado terminal" — forma diferente, escrever helper novo,
-      simples: intervalo curto, para no primeiro estado terminal, timeout de poll no cliente também
-      (ex.: desiste depois de N minutos com mensagem clara, não fica polling pra sempre)).
-- [ ] **5.3** Tratamento de erro por status code: hoje `analyzeChart()` não distingue 422/402/409/503
-      entre si (achado da exploração, gap pré-existente) — no fluxo novo, a resposta do POST inicial
-      (falha de validação/crédito) e a resposta do poll (`FAILED`) vêm de pontos diferentes; vale
-      corrigir esse gap agora já que os dois caminhos precisam de tratamento explícito de qualquer
-      forma.
-- [ ] **5.4** `pages/GenesisPage.tsx::handleAnalyze()`: `isAnalyzing` (boolean) vira um estado com mais
-      fases (ex.: `'idle' | 'queued' | 'processing' | 'done' | 'error'`) pra UI poder mostrar algo
-      melhor que "Processando Dados" fixo por até 3 minutos. O botão "CANCELAR ANÁLISE" (hoje só
-      visual, sem `onClick`) pode ganhar função de verdade aqui: parar o polling (não cancela o job no
-      servidor, só para de esperar por ele no cliente).
-- [ ] **5.5** Prova: teste manual/e2e do fluxo completo na tela — disparo, tela de processando, chegada
-      do resultado via poll, e um caso de falha mostrando mensagem clara.
+**Achado real (decisão que a Fase 2.4 tinha deixado em aberto de propósito) — commit `12339c0`:**
+confirmado por grep que nenhum código do frontend hoje chama `GET /analises/{id}` (só a lista) — sem
+risco de quebrar consumidor real, `COMPLETED` não-legado passou a usar o formato rico
+(`AnalysisPublicResponseBuilder`) em vez do `AnaliseTransformer` achatado, tanto no POST quanto no
+polling. Sem isso, um poll que terminasse de verdade assíncrono devolveria bem menos dado do que uma
+análise síncrona sempre devolveu — `mapGraphicalToLegacy()` (frontend) só sabe consumir o formato
+rico. Linha legado continua com `AnaliseTransformer` (nunca teve `decision_payload` preenchido).
+
+Testes existentes: só `GraphicalAnalysisSpotRejectionTest` quebrou de verdade (esperava `422`
+direto, agora é `200` + `status`/`reason_code` — a rejeição acontece dentro do job). Confirmado
+rodando que `GraphicalAnalysisImageValidationTest`/`GraphicalAnalysisLoadTest` **não precisaram de
+nenhuma mudança** (nenhum dos dois dependia do formato antigo). Suíte completa (Unit 203 +
+Feature/Integration 48) rodada de novo — limpa.
+
+## FASE 5 — Frontend ✅ concluída (11/08/2026)
+
+- [x] **5.1** `types/graphicalAnalysis.ts`: união discriminada nova
+      (`GraphicalAnalysisPendingResult`/`TerminalWithoutDataResult`/`PollResult`/`TerminalResult`)
+      em vez de simplesmente alargar `GraphicalAnalysisResult.status` — os outros 3 estados não têm
+      nenhum dos campos ricos, exigi-los preenchidos seria enganoso.
+- [x] **5.2** `services/geminiService.ts::analyzeChart()` virou "POST dispara, depois poll se
+      preciso" — `pollAnalysisUntilTerminal()` (helper novo, não reusa `hooks/useAlertas.ts`/
+      `useRadarNewsAlerts.ts` como previsto). Timeout de poll no cliente: 5 minutos, mensagem clara.
+- [x] **5.3** `GraphicalAnalysisRequestError` (classe nova, mesmo padrão de `ChartMetadataBlockedError`
+      já usado no scan): erros carregam `statusCode`/`reasonCode` do backend, não só a mensagem —
+      tanto os síncronos (422/402/409, antes do dispatch) quanto os do poll (`FAILED`/
+      `REJECTED_IMAGE`, mapeados pra 503/422 respectivamente).
+- [x] **5.4** **Decisão de escopo, registrada aqui**: `isAnalyzing` continua `boolean`, não virou o
+      enum de estados sugerido no plano original — a UI já tem vários condicionais amarrados nesse
+      boolean (cores, animações, spinner) em `GenesisPage.tsx`; reescrever pra um enum seria uma
+      mudança de UI bem maior sem ganho funcional além do que o `AbortController` já entrega. O que
+      *foi* implementado de verdade: "CANCELAR ANÁLISE" (antes só hover visual, sem `onClick` —
+      clicar durante a análise só retornava sem fazer nada) agora aborta o poll em andamento de
+      verdade via `AbortController` — não cancela o job no servidor (crédito já debitado continua
+      sendo processado lá), só para o cliente de continuar esperando.
+- [x] **5.5** Verificação real: `tsc --noEmit` (`npm run lint` neste projeto) limpo, `npm run build`
+      limpo (só o aviso pré-existente de chunk >500kB). Prova manual/e2e na tela real (clicar
+      Analisar, ver o resultado chegar, cancelar no meio) não foi feita nesta sessão — precisa de
+      sessão de navegador real, mesma limitação já registrada nas Ondas anteriores da V6.7 (sem
+      ferramenta de automação de navegador disponível).
+
+**Achado real ao compilar (TypeScript):** `if (status === 'A' || status === 'B') throw; return X;`
+não estreitava a união discriminada corretamente depois do `throw` (o compilador mantinha o tipo
+mais largo mesmo excluindo os dois literais possíveis) — `if (status !== 'C') throw; return X;`
+(match positivo, invertido) resolveu. Não investigado a fundo o motivo exato (possível particularidade
+desta versão do TypeScript com union narrowing depois de reatribuição de `let`/expressão ternária
+combinada com `throw` dentro de `if`) — registrado aqui como referência caso reapareça em outro lugar
+do código.
 
 ## FASE 6 — Migração seguindo o risco operacional (ver seção no topo)
 
@@ -263,18 +293,25 @@ Suíte completa (Unit 203 + Feature/Integration 46) rodada de novo depois de tod
 
 ---
 
-## Testes existentes que quebram e precisam de rework
+## Testes existentes que quebravam — resultado real (confirmado rodando, não só previsto)
 
-- `tests/Feature/GraphicalAnalysisLoadTest.php` e `GraphicalAnalysisSpotRejectionTest.php` (únicos que
-  fazem round-trip completo com `Http::fake`) — assumem resposta síncrona completa no POST. Com
-  `QUEUE_CONNECTION=sync` no ambiente de teste isso deve continuar funcionando quase sem mudança
-  (job roda inline na mesma requisição de teste), só as asserções de shape/status code do POST
-  (202 + PENDING, em vez do resultado final) precisam atualizar.
-- `GraphicalAnalysisImageValidationTest.php`: caso de aceite (`test_accepts_mobile_portrait_screenshot_dimensions`)
-  só verifica `status() !== 422` — vai continuar válido (still not 422, agora é 202), sem mudança.
-- Os outros 3 arquivos de teste do pacote (`GraphicalAnalysisOrchestratorPlanoPersistenceTest`,
-  `VersionTest`, `MarketPriceTest`) testam lógica pós-persistência via reflection direta — não
-  dependem do fluxo HTTP, não deveriam quebrar.
+- `GraphicalAnalysisSpotRejectionTest.php`: **quebrou de verdade**, atualizado. Esperava `422` direto
+  no POST; agora a rejeição acontece dentro do job (assíncrono) — resposta virou `200` +
+  `{status: 'REJECTED_IMAGE', reason_code: 'IMAGE_REJECTED'}`.
+- `GraphicalAnalysisLoadTest.php`: **não quebrou, confirmado rodando sem mudança nenhuma** — os 3
+  testes que importavam (`double_click`, `concurrent_requests`, `failure_after_repair_attempts`)
+  testam `CreditReservationService`/`DecisionCache`/`GraphicalAnalysisOrchestrator::analyze()`
+  diretamente, nunca passam pelo controller HTTP.
+- `GraphicalAnalysisImageValidationTest.php`: **não quebrou, confirmado rodando sem mudança
+  nenhuma** — `test_accepts_mobile_portrait_screenshot_dimensions` só verifica `!== 422` (segue
+  válido, agora normalmente `200`/`202`); `test_rejects_extreme_strip_image` falha na validação do
+  Form Request, antes do controller rodar, também inalterado.
+- `GraphicalAnalysisOrchestratorPlanoPersistenceTest`/`VersionTest`/`MarketPriceTest`: não quebraram
+  (testam via reflection/chamada direta, não HTTP) — mas 2 deles (`VersionTest`, `MarketPriceTest`)
+  e o primeiro precisaram de um ajuste **não relacionado a HTTP**: a extração de
+  `publicResponse()`/`persistPlanos()` do orchestrator pra `AnalysisPublicResponseBuilder`/
+  `AnalysisPersistenceService` (Fase 2) tornou esses métodos públicos em outra classe — reflection
+  sobre o método privado antigo parou de existir, trocado por chamada direta ao método público novo.
 
 ## Fora de escopo deste spec
 
