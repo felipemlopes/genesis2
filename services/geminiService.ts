@@ -3,7 +3,7 @@ const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
 import { GenesisAnalysisResult, TradeDirection, ChartMetadata, CandidateSetup, ExecutionStatus, PlanoSetup } from "../types";
 import { ExchangeData, fetchWithProxy } from "./cryptoApi";
 import { normalizarPar } from "./normalizarPar";
-import type { GraphicalAnalysisResult } from "../types/graphicalAnalysis";
+import type { GraphicalAnalysisResult, GraphicalAnalysisPollResult, GraphicalAnalysisTerminalResult } from "../types/graphicalAnalysis";
 
 // V6.5 (G10-G11): antes importado de services/graphicalAnalysisService.ts (o cliente duplicado
 // deletado neste item) — única exportação daquele arquivo que o cliente real (analyzeChart, abaixo)
@@ -13,6 +13,78 @@ function newAnalysisIdempotencyKey(): string {
     return `ga_${crypto.randomUUID()}`;
   }
   return `ga_${Date.now()}_${Math.random().toString(36).slice(2)}_${Math.random().toString(36).slice(2)}`;
+}
+
+// Spec genesis-analise-grafica-fila-assincrona (Fase 5.3): analyzeChart() não distinguia 422/402/409
+// entre si — todo mundo virava o mesmo Error genérico, então quem chamasse não tinha como reagir
+// diferente (ex.: mostrar "comprar mais créditos" só no 402). O texto em `.message` continua igual
+// (mesmo `alert(error.message)` de sempre em GenesisPage.tsx não precisa mudar), mas agora também
+// carrega o status HTTP e o reason_code do backend pra quem quiser tratar de forma específica.
+export class GraphicalAnalysisRequestError extends Error {
+  constructor(message: string, public readonly statusCode: number, public readonly reasonCode?: string | null) {
+    super(message);
+    this.name = 'GraphicalAnalysisRequestError';
+  }
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// Spec genesis-analise-grafica-fila-assincrona (Fase 5.2): a análise agora roda num job de fila, fora
+// da requisição do POST — em produção (fila de verdade), o POST devolve `PENDING` quase sempre, e é
+// preciso consultar GET /analises/{uuid} até chegar num estado terminal. Não reusa o padrão de
+// hooks/useAlertas.ts/useRadarNewsAlerts.ts (singleton de app inteiro, cursor incremental de feed) —
+// aqui é "1 análise específica até resolver", forma bem mais simples: intervalo curto, para no
+// primeiro estado terminal, desiste depois de um tempo com mensagem clara (não fica esperando pra
+// sempre se o worker de fila cair em produção).
+const POLL_INTERVAL_MS = 3000;
+const POLL_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutos
+
+// Spec genesis-analise-grafica-fila-assincrona (Fase 5.4): `signal` opcional — o botão "CANCELAR
+// ANÁLISE" (antes só visual, sem onClick nenhum) ganha função de verdade parando de esperar pelo
+// poll no cliente. Não cancela o job no servidor (ele continua rodando lá, crédito não é
+// estornado só por isso) — só para o membro de ficar preso esperando uma resposta que não quer
+// mais ver.
+async function pollAnalysisUntilTerminal(
+  analysisId: string,
+  token: string,
+  signal?: AbortSignal,
+): Promise<GraphicalAnalysisTerminalResult> {
+  const startedAt = Date.now();
+
+  while (true) {
+    if (signal?.aborted) {
+      throw new DOMException('Análise cancelada pelo usuário.', 'AbortError');
+    }
+    if (Date.now() - startedAt > POLL_TIMEOUT_MS) {
+      throw new Error('A análise está demorando mais que o esperado. Tente novamente em instantes.');
+    }
+
+    await sleep(POLL_INTERVAL_MS);
+    if (signal?.aborted) {
+      throw new DOMException('Análise cancelada pelo usuário.', 'AbortError');
+    }
+
+    const res = await fetch(`${API_BASE}/v1/analises/${analysisId}`, {
+      headers: { Accept: 'application/json', Authorization: `Bearer ${token}` },
+      signal,
+    });
+
+    if (!res.ok) {
+      // Falha de rede/servidor durante o poll em si (não é o resultado da análise) — mesma
+      // tolerância silenciosa que useAlertas/useRadarNewsAlerts já usam pra chamadas de poll:
+      // tenta de novo no próximo ciclo em vez de desistir na primeira falha passageira.
+      continue;
+    }
+
+    const body = (await res.json()) as GraphicalAnalysisPollResult;
+    if (body.status === 'PENDING') {
+      continue;
+    }
+
+    return body;
+  }
 }
 
 /* INIT: API Key injection */
@@ -300,7 +372,12 @@ export const analyzeChart = async (
   activeExchange: string,
   userLeverage: number,
   cvdDataParam: { delta: number, priceChangePercent: number } | null,
-  entryValue: number | '' = ''
+  entryValue: number | '' = '',
+  // Spec genesis-analise-grafica-fila-assincrona (Fase 5.4): opcional de propósito — só afeta a fase
+  // de poll (depois que o job já foi despachado e o crédito já foi debitado). Cancelar o POST em si
+  // não faz sentido: nesse ponto o crédito já pode ter sido reservado no backend, abortar o fetch só
+  // deixaria o cliente sem saber o resultado, sem realmente desfazer nada do lado do servidor.
+  signal?: AbortSignal,
 ): Promise<GenesisAnalysisResult> => {
   // R3.2 — Adendo Secao 28: sem defaults silenciosos. Par e timeframe
   // precisam ter sido resolvidos antes de enviar a analise.
@@ -335,6 +412,9 @@ export const analyzeChart = async (
   });
 
   if (!res.ok) {
+    // Erros síncronos (validação do formulário, crédito insuficiente, Idempotency-Key já encerrada)
+    // — acontecem ANTES do job ser despachado, resposta HTTP de erro de verdade (422/402/409),
+    // igual sempre foi.
     const errData = await res.json().catch(() => ({}));
     // V6.6 (D01): num 422 o Laravel devolve { message, errors }, não { error } — a leitura antiga
     // sempre caía no fallback genérico e o membro nunca descobria qual campo falhou (ex.: timeframe
@@ -343,9 +423,32 @@ export const analyzeChart = async (
       errData.error ??
       errData.message ??
       (errData.errors ? Object.values(errData.errors).flat().join(' ') : null);
-    throw new Error(detalhe || `Falha ao processar a análise técnica (HTTP ${res.status})`);
+    throw new GraphicalAnalysisRequestError(
+      detalhe || `Falha ao processar a análise técnica (HTTP ${res.status})`,
+      res.status,
+      errData.reason_code ?? null,
+    );
   }
 
-  const result = (await res.json()) as GraphicalAnalysisResult;
-  return mapGraphicalToLegacy(result);
+  // Spec genesis-analise-grafica-fila-assincrona (Fase 5.2): a análise passou a rodar num job de
+  // fila, fora desta requisição — a resposta do POST pode já vir resolvida (`COMPLETED`/
+  // `REJECTED_IMAGE`/`FAILED`, comum em dev com fila síncrona) ou `PENDING` (comum em produção com
+  // fila de verdade, até o worker processar), caso em que aguardamos via poll. `const` + ternário
+  // em vez de reatribuir `let` — o TypeScript perde o estreitamento de `status` depois de uma
+  // reatribuição dentro de um `if`, então `resolved` nunca chegaria tipado como só os estados
+  // finais lá embaixo.
+  const initial = (await res.json()) as GraphicalAnalysisPollResult;
+  const resolved: GraphicalAnalysisTerminalResult = initial.status === 'PENDING'
+    ? await pollAnalysisUntilTerminal(initial.analysis_id, token, signal)
+    : initial;
+
+  if (resolved.status !== 'COMPLETED') {
+    throw new GraphicalAnalysisRequestError(
+      resolved.motivo || 'Não foi possível concluir a análise.',
+      resolved.status === 'REJECTED_IMAGE' ? 422 : 503,
+      resolved.reason_code,
+    );
+  }
+
+  return mapGraphicalToLegacy(resolved);
 };

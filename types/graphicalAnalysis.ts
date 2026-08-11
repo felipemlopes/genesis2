@@ -321,6 +321,42 @@ export interface ExecutionPipelineResult {
   stop_ancora: { tipo: string; valor: number } | null;
 }
 
+// Spec genesis-analise-grafica-fila-assincrona (Fase 5.1): POST /v1/graphical-analysis deixou de
+// devolver sempre o resultado completo — o backend roda a análise fora da requisição agora (job em
+// fila), então a resposta pode vir em qualquer um dos 4 estados abaixo, dependendo de quando a
+// chegamos a checar (com fila de verdade em produção, quase sempre PENDING logo após o POST; com
+// QUEUE_CONNECTION=sync em dev, o job já rodou e a resposta já vem resolvida). União discriminada
+// por `status` em vez de simplesmente alargar o tipo do campo em GraphicalAnalysisResult — os
+// outros 3 estados não têm nenhum dos campos ricos (direction/score/execution/etc.), então exigir
+// esses campos preenchidos pra eles seria enganoso.
+export interface GraphicalAnalysisPendingResult {
+  analysis_id: string;
+  status: 'PENDING';
+}
+
+// FAILED (tentativas esgotadas) e REJECTED_IMAGE (corretora errada, gráfico ilegível etc.) têm o
+// mesmo shape enxuto — nenhum dos dois tem decision_payload/evidence_manifest preenchido no
+// backend (ver AsyncAnalysisResponse.php).
+export interface GraphicalAnalysisTerminalWithoutDataResult {
+  analysis_id: string;
+  status: 'FAILED' | 'REJECTED_IMAGE';
+  reason_code: string | null;
+  motivo: string | null;
+}
+
+// Só os 2 estados finais (nunca PENDING) — o shape real de retorno de quem faz o poll até resolver
+// (services/geminiService.ts::pollAnalysisUntilTerminal()). Separado de GraphicalAnalysisPollResult
+// pra o TypeScript conseguir estreitar `status` corretamente depois de um poll (sem isso, o
+// compilador não sabe que a função nunca devolve 'PENDING' de verdade e reintroduz esse caso depois
+// de qualquer reatribuição de variável).
+export type GraphicalAnalysisTerminalResult =
+  | GraphicalAnalysisTerminalWithoutDataResult
+  | GraphicalAnalysisResult;
+
+export type GraphicalAnalysisPollResult =
+  | GraphicalAnalysisPendingResult
+  | GraphicalAnalysisTerminalResult;
+
 export interface GraphicalAnalysisResult {
   analysis_id: string;
   status: 'COMPLETED';

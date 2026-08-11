@@ -128,6 +128,10 @@ const GenesisPage: React.FC = () => {
   const [quoteIndex, setQuoteIndex] = useState(0);
   const [radarId, setRadarId] = useState<string | null>(null);
   const analysisFormRef = useRef<HTMLDivElement>(null);
+  // Spec genesis-analise-grafica-fila-assincrona (Fase 5.4): "CANCELAR ANÁLISE" era só visual (hover
+  // state, sem onClick) — agora aborta de verdade o poll em andamento (não cancela o job no
+  // servidor, só para o cliente de continuar esperando por uma resposta que o membro não quer mais).
+  const analysisAbortControllerRef = useRef<AbortController | null>(null);
 
   // Pre-fill form from URL query params (e.g. after reveal redirect from AlertCard)
   useEffect(() => {
@@ -221,6 +225,8 @@ const GenesisPage: React.FC = () => {
 
     setIsAnalyzing(true);
     setResult(null);
+    const abortController = new AbortController();
+    analysisAbortControllerRef.current = abortController;
 
     try {
       const analysisMetadata: ChartMetadata = {
@@ -237,7 +243,8 @@ const GenesisPage: React.FC = () => {
         exchangeToUse,
         leverage,
         cvdData,
-        entryValue
+        entryValue,
+        abortController.signal
       );
 
       if (data) {
@@ -256,9 +263,18 @@ const GenesisPage: React.FC = () => {
 
       setResult(data);
     } catch (error: any) {
-      console.error('Analysis Error:', error);
-      alert(error.message || 'Falha ao processar análise técnica. Tente novamente.');
+      // Cancelamento deliberado (botão "CANCELAR ANÁLISE") — não é uma falha real, não precisa de
+      // alerta assustando o membro. O job continua rodando no servidor; se terminar, o crédito já
+      // foi debitado normalmente (cancelar aqui só para de esperar, não desfaz nada do lado do
+      // backend).
+      if (error?.name === 'AbortError') {
+        console.info('Análise cancelada pelo usuário (poll interrompido no cliente).');
+      } else {
+        console.error('Analysis Error:', error);
+        alert(error.message || 'Falha ao processar análise técnica. Tente novamente.');
+      }
     } finally {
+      analysisAbortControllerRef.current = null;
       setIsAnalyzing(false);
     }
   };
@@ -629,7 +645,17 @@ const GenesisPage: React.FC = () => {
             </div>
 
             <button
-              onClick={() => handleAnalyze()}
+              onClick={() => {
+                // Spec genesis-analise-grafica-fila-assincrona (Fase 5.4): antes, clicar durante
+                // isAnalyzing só chamava handleAnalyze() de novo, que retornava sem fazer nada
+                // (guard `if (isAnalyzing && !fileOverride) return;`) — o botão "CANCELAR ANÁLISE"
+                // nunca cancelava nada de verdade. Agora aborta o poll em andamento.
+                if (isAnalyzing) {
+                  analysisAbortControllerRef.current?.abort();
+                  return;
+                }
+                handleAnalyze();
+              }}
               onMouseEnter={() => setHoverAnalyze(true)}
               onMouseLeave={() => setHoverAnalyze(false)}
               disabled={isScanning}
