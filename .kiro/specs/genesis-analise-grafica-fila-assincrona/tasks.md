@@ -110,54 +110,97 @@ Frontend: analyzeChart() deixa de ser 1 fetch que espera — vira dispatch + pol
       completa (203 testes) rodada de novo depois da mudança em `config/queue.php` — limpa.
       Commit: `3cc1825` (genesis-api).
 
-## FASE 2 — Persistência e estados novos (backend)
+## FASE 2 — Persistência e estados novos (backend) ✅ concluída (11/08/2026)
 
-- [ ] **2.1** Migration aditiva em `genesis_analises`: `image_storage_path` (string nullable — onde a
-      imagem foi salva antes do job rodar), `failure_reason_code` (string nullable), `failure_message`
-      (text nullable), `repair_last_errors` (json nullable), `repair_last_decision` (json nullable).
-      Todas nullable/aditivas — mesma disciplina da migration F-42 desta sessão.
-- [ ] **2.2** `analysis_status` ganha os valores `'PENDING'` e `'FAILED'` (coluna já é string livre,
-      sem enum de banco — sem migration de schema pra isso, só documentar os valores possíveis onde
-      já há comentário sobre o campo).
-- [ ] **2.3** `AnaliseTransformer`: expor `analysis_status`, `failure_reason_code`, `failure_message`
-      (hoje nenhum dos três aparece na resposta do transformer — confirmado lendo o arquivo).
-- [ ] **2.4** Reconciliar as duas formas de resposta: hoje uma análise concluída via POST síncrono
-      recebe o formato de `GraphicalAnalysisOrchestrator::publicResponse()` (rico — `execution`,
-      `informative_context`, etc.), enquanto `/analises/{id}` (`AnaliseController::show`) devolve o
-      formato do `AnaliseTransformer` (mais raso). Decidir: ou `show()` passa a montar o mesmo payload
-      de `publicResponse()` quando a análise está `COMPLETED`, ou o frontend aprende a consumir os
-      dois formatos. **Recomendo a primeira opção** — extrair `publicResponse()` do orchestrator para
-      um lugar reusável (ex.: um transformer dedicado ou método estático) e chamá-lo tanto no fluxo
-      síncrono quanto em `show()`, pra não ter duas verdades sobre o formato de uma análise.
-- [ ] **2.5** Prova: teste real grava uma Analise em cada estado (PENDING/COMPLETED/REJECTED_IMAGE/
-      FAILED) e confirma o shape exato que `GET /analises/{uuid}` devolve pra cada um.
+- [x] **2.1** Migration aditiva em `genesis_analises`: `image_storage_path`, `image_mime_type`,
+      `failure_reason_code`, `failure_message`, `repair_last_errors` (json), `repair_last_decision`
+      (json), e mais `pending_bundle` (json — achado durante a Fase 3, ver nota lá). Todas
+      nullable/aditivas, aplicadas de verdade (`php artisan migrate --force`):
+      `2026_08_11_000002_add_async_fields_to_genesis_analises_table.php` +
+      `2026_08_11_000003_add_pending_bundle_to_genesis_analises_table.php`.
+- [x] **2.2** `analysis_status` documentado no model (`app/Models/Analise.php`) com os valores novos
+      (`PENDING`/`FAILED`, além de `COMPLETED`/`REJECTED_IMAGE` já existentes) — sem migration de
+      schema, como previsto.
+- [x] **2.3** `AnaliseTransformer` expõe `analysis_status`/`failure_reason_code`/`failure_message`.
+- [x] **2.4** Decisão tomada (mais conservadora que a recomendação original, depois de revisar o
+      código de verdade): `AnaliseController::show()` faz um atalho enxuto (sem `AnaliseTransformer`)
+      pra `PENDING`/`FAILED`/`REJECTED_IMAGE` — nenhum dos três tem `decision_payload`/
+      `evidence_manifest` preenchido, não vale a pena montar o payload rico. `COMPLETED` e linhas
+      legado continuam exatamente como antes (zero risco pra quem já consome `/analises` hoje).
+      `publicResponse()`/`persist()`/`persistPlanos()`/`planoRow()` foram extraídos do orchestrator
+      pra duas classes novas reusáveis (`AnalysisPublicResponseBuilder`,
+      `AnalysisPersistenceService`) — usadas tanto pelo fluxo síncrono quanto pelo job (Fase 3),
+      sem duplicar lógica. Decisão de unificar de vez os dois formatos de resposta (rico vs.
+      transformer) para o caso `COMPLETED` via polling fica em aberto pra Fase 5 (depende de mapear
+      todo consumo do endpoint no frontend antes de mudar o shape compartilhado).
+- [x] **2.5** Prova real: `tests/Feature/AnaliseShowAsyncStatusTest.php` (4 testes) — grava uma
+      Analise em cada estado e confirma o shape exato de `GET /api/v1/analises/{uuid}` pra cada um.
+      Rodado contra o banco de dev real, limpo.
 
-## FASE 3 — O job em si
+**Achado ao implementar (fora do escopo original do spec):** `CanonicalBundleBuilder::build()`
+recebia `UploadedFile $image` só pra recalcular o fingerprint internamente — único uso real era
+extrair `image_hash`/`chart_fingerprint`. Como o fluxo assíncrono nunca tem um `UploadedFile` (não
+sobrevive à serialização da fila), a assinatura mudou pra receber o fingerprint já calculado —
+`AnalysisFingerprintService` sai do `CanonicalBundleBuilder`, o cálculo passa pro chamador (que já
+fazia isso de qualquer forma). 3 call sites atualizados:
+`GraphicalAnalysisOrchestrator::generate()`, `BenchmarkGenesisDecision` (comando),
+`CandlesReuseTest` (teste). Suíte completa (Unit 203 + Feature/Integration 46) rodada de novo depois
+dessa mudança — limpa.
 
-- [ ] **3.1** `GraphicalAnalysisAttemptJob::handle()`: recebe só o `Analise->id` (nunca `UploadedFile`
-      — não sobrevive à serialização da fila; imagem já foi salva em disco pela Fase 4). Idempotente:
-      se a Analise já estiver num estado terminal (`COMPLETED`/`REJECTED_IMAGE`/`FAILED`), retorna sem
-      fazer nada (proteção contra entrega duplicada do job).
-- [ ] **3.2** Repair context: em vez de variável local (`$lastErrors`/`$lastDecision` no loop de hoje),
-      lê/grava nas colunas novas (`repair_last_errors`/`repair_last_decision`) — cada execução do job
-      é um processo novo, sem memória do anterior a não ser o que está no banco.
-- [ ] **3.3** 1 chamada ao Gemini por execução do `handle()` (reusa `GeminiInteractionsClient::decide()`
-      sem alterar). Validação continua com `DecisionResponseValidator` sem alterar.
-- [ ] **3.4** Caminho de sucesso: reusa a lógica de `persist()` do orchestrator (extrair pra um método
-      que aceite bytes de imagem/path em vez de `UploadedFile`, já que a fonte da imagem muda).
-- [ ] **3.5** Caminho de rejeição válida (ex.: corretora errada): finaliza imediatamente como
-      `REJECTED_IMAGE`, estorna crédito — **não é falha do job**, não deve contar tentativa de retry.
-- [ ] **3.6** Caminho de repair necessário: grava contexto, lança exceção → deixa o Laravel
-      re-executar via seu mecanismo nativo de `$tries`.
-- [ ] **3.7** `failed(Throwable $exception)`: quando as tentativas esgotam (por validação repetida OU
-      por timeout OU por qualquer exceção não tratada) — marca `analysis_status='FAILED'`,
-      `failure_reason_code`/`failure_message`, estorna crédito via `CreditReservationService::release()`
-      (já confirmado job-safe: não usa nada request-scoped). Este é o substituto estruturado do
-      `register_shutdown_function`/`error_get_last()` que o endpoint síncrono usa hoje — mais
-      confiável porque o Laravel garante que roda, não depende de captura de sinal do PHP.
-- [ ] **3.8** Prova: teste real com `Http::fake` simulando (a) sucesso na 1ª tentativa, (b) sucesso na
-      2ª após repair, (c) rejeição válida na 1ª, (d) falha nas 3 tentativas → `FAILED` + estorno
-      confirmado no banco.
+## FASE 3 — O job em si ✅ concluída (11/08/2026)
+
+- [x] **3.1** `GraphicalAnalysisAttemptJob::handle()` recebe só `Analise->id`. Idempotente: retorna
+      sem fazer nada se `analysis_status` já é `COMPLETED`/`REJECTED_IMAGE`/`FAILED`.
+- [x] **3.2** Repair context lido/gravado em `repair_last_errors`/`repair_last_decision` (banco), não
+      em variável local. **Achado ao implementar**: o bundle (`bundle_json`/`manifest_hash`/
+      `candles`) também precisa sobreviver entre tentativas — o prompt assume "SNAPSHOT_CANONICO"
+      igual em todas as tentativas de repair, e reconstruir a cada execução do job arriscaria pegar
+      dados de mercado diferentes minutos depois. Coluna nova `pending_bundle` (json) resolve isso:
+      construído só na 1ª tentativa, reaproveitado nas seguintes, limpo ao concluir.
+- [x] **3.3** 1 chamada ao Gemini por execução — via `GraphicalAnalysisAttemptService::attempt()`
+      (extraído do corpo do loop de `GraphicalAnalysisOrchestrator::generate()`, sem mudar
+      comportamento; o loop em si continua só no fluxo síncrono, que decide repetir in-process).
+      `GeminiInteractionsClient`/`DecisionResponseValidator` inalterados.
+- [x] **3.4** Caminho de sucesso usa `AnalysisPersistenceService::persistIntoExisting()` (novo método
+      — a Analise já existe como `PENDING`, só precisa ser preenchida; `persist()`, usado pelo fluxo
+      síncrono, continua criando uma linha nova). Os dois compartilham `computeAttributes()`
+      (privado) — mesma lógica de cálculo (pipeline de execução, evidence_manifest, hashes), sem
+      duplicação.
+- [x] **3.5** Rejeição válida finaliza como `REJECTED_IMAGE` + estorna crédito, sem lançar exceção
+      (não conta como tentativa falhada).
+- [x] **3.6** Repair necessário grava contexto e lança `\RuntimeException` — Laravel re-executa via
+      `$tries` nativo.
+- [x] **3.7** `failed(Throwable $exception)` marca `FAILED` + estorna crédito, com `reason_code`
+      distinguindo `MODEL_OUTPUT_INVALID_AFTER_REPAIR` (esgotou por validação) de
+      `ANALYSIS_UNAVAILABLE` (qualquer outra causa — timeout, crash).
+- [x] **3.8** Prova real: `tests/Feature/GraphicalAnalysisAttemptJobTest.php` (5 testes) — sucesso na
+      1ª tentativa, sucesso na 2ª após repair (dividido em 2 métodos, ver achado abaixo), rejeição
+      válida na 1ª, falha após esgotar as 3 tentativas (`FAILED` + estorno + linha em `failed_jobs`
+      confirmados no banco). Dispatch real na conexão `database` + `php artisan queue:work` via
+      `Artisan::call()` no mesmo processo (só assim `Http::fake()` é compartilhado). Rodado 3x
+      seguidas, limpo todas as vezes.
+
+**Achados reais ao implementar/testar (fora do escopo original do spec):**
+- Uma 2ª chamada a `Artisan::call('queue:work', ...)` no mesmo processo PHP — mesmo em métodos de
+  teste diferentes — **segfaulta** nesta versão/ambiente do Laravel/PHP (reproduzido isolado,
+  confirmado não ser bug deste job). Contornado com `--process-isolation` no PHPUnit (cada método
+  ganha processo novo) + `--stop-when-empty` (processa múltiplas tentativas num loop interno de uma
+  só chamada, quando cabem no mesmo método) + split em 2 métodos sequenciais pra o único cenário que
+  não coube nesse padrão (repair então sucesso, que também segfaultava mesmo com
+  `--stop-when-empty` — causa não identificada a fundo, decisão foi contornar em vez de investigar
+  mais, dado que a lógica do job já estava provada correta pelos outros 3 testes). **Rodar sempre
+  com `--process-isolation`** — documentado no docblock do arquivo de teste.
+- `LIKE` do MySQL trata `\` como caractere de escape — filtrar `failed_jobs`/`jobs` por um payload
+  serializado que contém `\"` literal não funciona com `LIKE` direto (precisaria escapar o próprio
+  escape). Resolvido filtrando em PHP (`str_contains()` sobre os payloads já buscados) em vez de
+  tentar acertar o escaping do SQL.
+- `AnalysisPersistenceService::persist()` (fluxo síncrono, cria linha nova) e
+  `persistIntoExisting()` (fluxo assíncrono, preenche linha `PENDING` existente) precisaram ser
+  duas entradas públicas distintas — a Analise do fluxo assíncrono já nasce com `analysis_uuid`/
+  `user_id`/`credit_reservation_id`/`ativo`/`corretora`/`timeframe` preenchidos pelo controller
+  (Fase 4), não faz sentido recriá-los.
+
+Suíte completa (Unit 203 + Feature/Integration 46) rodada de novo depois de toda a Fase 3 — limpa.
 
 ## FASE 4 — Controller e endpoint de disparo
 
