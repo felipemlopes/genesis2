@@ -291,6 +291,86 @@ do código.
       automático configurado nesse projeto hoje, precisa ser checado manualmente ou o usuário decidir
       se quer configurar algo (fora do escopo deste spec).
 
+### Runbook real — worker via Supervisor no Ubuntu (CloudPanel)
+
+Servidor real (informado pelo usuário 11/08/2026): `srv1257388`, site `testeapi.genesislabs.com.br`,
+caminho `/home/genesislabs-testeapi/htdocs/testeapi.genesislabs.com.br/`, usuário do sistema
+`genesislabs-testeapi` (padrão de isolamento por site do CloudPanel — **não** `www-data`).
+
+**1. Instalar o Supervisor:**
+```bash
+sudo apt update && sudo apt install -y supervisor
+```
+
+**2. Confirmar o binário PHP real do site** (CloudPanel gerencia várias versões de PHP por site — o
+`php` do `$PATH` pode não ser o mesmo que o painel configurou pra esse domínio):
+```bash
+su - genesislabs-testeapi -s /bin/bash -c 'which php'
+```
+Se devolver um caminho versionado (ex.: `/usr/bin/php8.2`), usar esse caminho completo no `command=`
+abaixo em vez de só `php`.
+
+**3. Config** — `/etc/supervisor/conf.d/genesis-queue-worker.conf`:
+```ini
+[program:genesis-queue-worker]
+process_name=%(program_name)s_%(process_num)02d
+command=php /home/genesislabs-testeapi/htdocs/testeapi.genesislabs.com.br/artisan queue:work database --queue=default --sleep=3 --tries=3 --timeout=120 --max-time=3600
+directory=/home/genesislabs-testeapi/htdocs/testeapi.genesislabs.com.br
+autostart=true
+autorestart=true
+stopasgroup=true
+killasgroup=true
+user=genesislabs-testeapi
+numprocs=2
+redirect_stderr=true
+stdout_logfile=/home/genesislabs-testeapi/htdocs/testeapi.genesislabs.com.br/storage/logs/queue-worker.log
+stopwaitsecs=130
+```
+
+Valores calculados a partir da config real do job (`GraphicalAnalysisAttemptJob::__construct()`):
+timeout por tentativa = `timeout_seconds(60) + connect_timeout_seconds(10) + 20`s de margem = 90s.
+- `--timeout=120`: teto do worker, com folga sobre os 90s que o job já declara sozinho.
+- `stopwaitsecs=130`: precisa ser maior que `--timeout`, senão o Supervisor mata à força no meio de
+  uma tentativa em vez de deixar o Laravel fechar graciosamente.
+- `numprocs=2`: ponto de partida — Laravel já trata concorrência com lock na tabela `jobs` (sem risco
+  de duas cópias do worker pegarem a mesma análise), o número certo depende do rate limit real da
+  conta Gemini. Subir se `jobs` acumular fila.
+- `--max-time=3600`: reinicia o processo a cada 1h (evita memory leak de worker de longa duração).
+
+**4. Aplicar e subir:**
+```bash
+sudo supervisorctl reread
+sudo supervisorctl update
+sudo supervisorctl start genesis-queue-worker:*
+sudo supervisorctl status genesis-queue-worker:*
+```
+
+**5. Validar (6.3) antes de virar a chave** — com `QUEUE_CONNECTION` ainda em `sync`:
+```bash
+su - genesislabs-testeapi -s /bin/bash -c 'php /home/genesislabs-testeapi/htdocs/testeapi.genesislabs.com.br/artisan queue:work database --once --queue=default'
+```
+Confirmar que processa um job de teste real sem erro antes do passo 6.4.
+
+**6. Cutover (6.4)** — `.env` de produção: `QUEUE_CONNECTION=database`, depois:
+```bash
+php artisan config:clear
+sudo supervisorctl restart genesis-queue-worker:*
+```
+
+**Operação do dia a dia:**
+- Depois de todo deploy (o worker mantém código antigo em memória até reiniciar):
+  ```bash
+  php artisan queue:restart
+  ```
+  Sinaliza os workers a terminarem o job atual e reiniciarem — Supervisor sobe de novo sozinho
+  (`autorestart=true`).
+- Monitorar (6.5, sem alerta automático configurado):
+  ```bash
+  sudo supervisorctl status genesis-queue-worker:*
+  tail -f /home/genesislabs-testeapi/htdocs/testeapi.genesislabs.com.br/storage/logs/queue-worker.log
+  php artisan tinker --execute="echo DB::table('failed_jobs')->count();"
+  ```
+
 ---
 
 ## Testes existentes que quebravam — resultado real (confirmado rodando, não só previsto)
