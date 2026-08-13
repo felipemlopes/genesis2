@@ -22,11 +22,15 @@ import pymysql
 from dotenv import load_dotenv
 from rapidfuzz import fuzz
 
+# load_dotenv() PRECISA rodar antes de importar ai_classifier: esse módulo lê
+# GENESIS_AI_URL/GENESIS_AI_TOKEN do ambiente no nível de módulo (na hora do
+# import), então se o .env ainda não tiver sido carregado essas constantes
+# ficam travadas em '' pelo resto do processo (Python não relê o valor depois).
+load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env'))
+
 from rss_collector import RSSCollector, CICLOS_SEM_ENTRADA_PARA_ALERTA
 from ai_classifier import AIClassifier, load_carteira_tokens, GENESIS_AI_URL, CATEGORIAS_NOMES
 from telegram_dispatcher import TelegramDispatcher
-
-load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env'))
 
 # ─── Variáveis de ambiente ────────────────────────────────────────────────────
 

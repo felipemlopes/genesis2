@@ -13,10 +13,18 @@ import unicodedata
 
 import pymysql
 import requests
+from dotenv import load_dotenv
 
 from eventos_graves import piso_de_severidade
 
 logger = logging.getLogger('radar-news')
+
+# Carrega o .env aqui também (independente de quem importa este módulo e em
+# que ordem) para nunca depender de um load_dotenv() externo rodar antes das
+# leituras de os.getenv() abaixo — ver bug de ordem de import em
+# worker_radar_news.py (GENESIS_AI_URL ficava travado em '' se este módulo
+# fosse importado antes do load_dotenv() do script principal).
+load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env'))
 
 # ─── Ordem de severidade (Bloco C — piso só promove, nunca rebaixa) ────────────
 
