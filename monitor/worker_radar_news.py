@@ -1,6 +1,6 @@
 """
 Worker Radar News — Gênesis Labs V1.0
-Coleta notícias de RSS a cada 3 minutos, classifica via Gemini (API interna Genesis),
+Coleta notícias de RSS a cada 3 minutos, classifica via Gemini (API pública do Google),
 persiste no MySQL, roteia por nível (C4) e despacha para o Telegram por fila
 persistente (C8) com orçamento/cooldown por tema (C9). Envia o resumo diário
 às 20h horário de Brasília (seção 5.1).
@@ -668,7 +668,7 @@ class RadarNewsWorker:
         return '\n'.join(linhas)
 
     def _gerar_conclusao_do_dia(self, top10: list[dict]) -> str:
-        """Pede ao Gemini (via API interna Genesis) uma leitura objetiva do tom do mercado."""
+        """Pede ao Gemini (API pública do Google) uma leitura objetiva do tom do mercado."""
         resumo_itens = "\n".join(
             f"- [{self._categoria_nome(item)}] {item.get('title') or ''}: {(item.get('impact_summary') or '')[:200]}"
             for item in top10

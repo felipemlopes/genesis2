@@ -104,6 +104,14 @@ ponta a ponta (rodando contra o worker real) fica pendente até essas migrations
 nem sugiro criar essas migrations sem autorização explícita — mexer no banco do `genesis-api` (mesmo
 o de dev) exige perguntar antes, por acordo já registrado com você.
 
+**Atualização de 13/08/2026 (autorizado por você):** criada a migration
+`genesis-api/database/migrations/2026_08_13_000001_alter_genesis_radar_news_add_v1_1_fields.php`,
+adicionando as 4 colunas desta lista (`title_original`, `supressao`, `adiado_ate`, `piso_aplicado`) em
+`genesis_radar_news`. **Arquivo criado, `php artisan migrate` ainda NÃO rodado** — falta você confirmar
+a execução contra o banco (`genesisteste`) separadamente. `genesis_radar_dispatch`,
+`genesis_radar_resumo` e `genesis_radar_telemetria` continuam não criadas (fora do escopo desta
+migration pontual).
+
 ## Dependências técnicas internas (não podem ser invertidas)
 
 - **A3 → A4.** A3 tira a checagem de `title_hash`/similaridade de dentro de `persist_classified` e
@@ -148,6 +156,18 @@ provável da perda silenciosa de notícias está aqui. Nenhuma outra fase começ
     `thinking_budget: 0`; resposta lida como `{"text": "..."}`) — o próprio documento marca esse
     formato como espaço reservado para confirmação. Não vai funcionar contra a API interna de verdade
     até alguém confirmar o contrato real.
+  - **Superado em 13/08/2026 (decisão sua, reverte o Aviso 2):** produção nunca teve gateway interno —
+    `GENESIS_AI_URL` já apontava pra `generativelanguage.googleapis.com` com esse payload de espaço
+    reservado, dando HTTP 401 em produção (log real: `Expected OAuth 2 access token...`).
+    `_call_gemini` reescrito pro contrato real do Google v1beta (`POST
+    {GENESIS_AI_URL}/v1beta/models/{model}:generateContent`, header `x-goog-api-key`, corpo
+    `contents`/`generationConfig`, resposta `candidates[0].content.parts[0].text`).
+    `GENESIS_AI_URL`/`GENESIS_AI_TOKEN` continuam os nomes de variável (host + API key do Google,
+    respectivamente) — só o formato da chamada mudou. `.env.example` e `monitor/.env` local
+    atualizados. `pytest` — 97/97 verdes depois da mudança (nenhum teste existente cobria o shape
+    HTTP literal, então nada quebrou). **Chamada real contra a API do Google ainda não testada nesta
+    sessão** — token de produção colado no log (`AQ.Ab8...`) não tem o formato usual de API key do
+    Google (`AIza...`); pode precisar de uma key nova.
   - Depende de: nada.
   - Verificação feita: `python -c "import ai_classifier"` limpo; `python -m pytest
     tests/test_radar_news_v1.py` — 28/28 verdes. P01 rodado: `grep -rn "generativelanguage" monitor/`

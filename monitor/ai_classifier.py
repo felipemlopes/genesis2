@@ -1,6 +1,6 @@
 """
 AI Classifier — Gênesis Labs Radar News V1.0
-Classifica notícias via Gemini (API interna Genesis), calcula nível/impact_score
+Classifica notícias via Gemini (API pública do Google, generativelanguage), calcula nível/impact_score
 por regra determinística e persiste por identidade de FATO (event_key).
 """
 
@@ -30,13 +30,18 @@ load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env'))
 
 ORDEM_SEV = {'LOW': 0, 'MEDIUM': 1, 'HIGH': 2, 'CRITICAL': 3}
 
-# ─── Configuração da chamada Gemini (API interna Genesis, nunca a API do Google) ──
-# Aviso 2 da V1.0/V1.1: chamada direta ao Google é proibida por custo — e o efeito
-# colateral (lote inteiro descartado quando a chamada falha) é pior que o custo (A1).
+# ─── Configuração da chamada Gemini (API pública do Google, generativelanguage) ──
+# Decisão de 13/08/2026 (Felipe, PO): reverte o Aviso 2 da V1.0/V1.1. O "gateway
+# interno Genesis" nunca chegou a existir — GENESIS_AI_URL de produção já apontava
+# para generativelanguage.googleapis.com, só que com o payload/endpoint do
+# gateway interno (nunca confirmado), o que sempre ia dar HTTP 401. Chamada direta
+# ao Google fica autorizada; GENESIS_AI_URL/GENESIS_AI_TOKEN continuam sendo os
+# nomes de variável (só o formato da chamada em _call_gemini mudou para o
+# contrato real do Google — ver método).
 
 # .env (obrigatorio)
-# GENESIS_AI_URL=            <- ESPACO RESERVADO: endpoint da API interna Genesis
-# GENESIS_AI_TOKEN=          <- ESPACO RESERVADO: token da API interna
+# GENESIS_AI_URL=https://generativelanguage.googleapis.com   <- só o host, sem path
+# GENESIS_AI_TOKEN=          <- API key do Google (AIza...)
 # GEMINI_ANALYSIS_MODEL=gemini-3.6-flash
 
 GENESIS_AI_URL = os.getenv('GENESIS_AI_URL', '').rstrip('/')
@@ -316,15 +321,14 @@ def normalizar_event_key(raw: str | None) -> str | None:
 
 
 class AIClassifier:
-    """Classifica notícias de RSS usando Gemini (API interna Genesis)."""
+    """Classifica notícias de RSS usando Gemini (API pública do Google, generativelanguage)."""
 
     def __init__(self, api_key: str | None = None):
         """
         Args:
             api_key: aceito por compatibilidade de assinatura; não é mais usado —
-                a chamada ao Gemini passou a ser feita pela API interna Genesis
-                (GENESIS_AI_URL/GENESIS_AI_TOKEN do ambiente), nunca com API key
-                do Google (Aviso 2).
+                a chamada ao Gemini lê GENESIS_AI_URL (host) e GENESIS_AI_TOKEN
+                (API key do Google) do ambiente, não deste parâmetro.
         """
         self._alias_map: dict[str, str] = {}
         # Bloco G (telemetria): contadores do ciclo atual, em memória. Persistir
@@ -344,7 +348,7 @@ class AIClassifier:
         }
 
     def classify(self, entries: list[dict], carteira: list[dict] | None = None) -> list[dict]:
-        """Classifica uma lista de entradas de notícias via Gemini (API interna Genesis).
+        """Classifica uma lista de entradas de notícias via Gemini (API pública do Google).
 
         Envia em batches de BATCH_SIZE (3). Injeta a carteira Cripto.ico no prompt
         para normalizar tickers/aliases (seção 2). Calcula nivel/impact_score por
@@ -558,7 +562,12 @@ class AIClassifier:
         return normalized or raw_clean.upper()
 
     def _call_gemini(self, prompt: str, max_output_tokens: int = MAX_OUTPUT_TOKENS) -> str | None:
-        """Chama o Gemini SEMPRE pela API interna Genesis. Nunca a API do Google (Aviso 2, A1).
+        """Chama a API pública do Gemini (Google generativelanguage, v1beta).
+
+        GENESIS_AI_URL é só o host (ex. https://generativelanguage.googleapis.com);
+        o path /v1beta/models/{model}:generateContent é montado aqui. GENESIS_AI_TOKEN
+        é a API key do Google, mandada no header x-goog-api-key (não Bearer — a API
+        pública não aceita OAuth Bearer para chave de API, só para service account).
 
         Returns:
             Texto da resposta ou None em caso de falha.
@@ -569,31 +578,33 @@ class AIClassifier:
             logger.critical('[AI] GENESIS_AI_URL nao configurada. Classificacao abortada.')
             return None
 
+        url = f'{GENESIS_AI_URL}/v1beta/models/{GEMINI_MODEL}:generateContent'
         payload = {
-            'model': GEMINI_MODEL,
-            'prompt': prompt,
-            'temperature': 0,
-            'response_mime_type': 'application/json',
-            'max_output_tokens': max_output_tokens,
-            'thinking_budget': 0,   # o raciocinio nao pode consumir o orcamento de saida
+            'contents': [{'parts': [{'text': prompt}]}],
+            'generationConfig': {
+                'temperature': 0,
+                'maxOutputTokens': max_output_tokens,
+                'responseMimeType': 'application/json',
+                'thinkingConfig': {'thinkingBudget': 0},   # o raciocinio nao pode consumir o orcamento de saida
+            },
         }
         headers = {
             'Content-Type': 'application/json',
-            'Authorization': f'Bearer {GENESIS_AI_TOKEN}',
+            'x-goog-api-key': GENESIS_AI_TOKEN,
         }
 
         for attempt in range(3):
             try:
-                r = requests.post(GENESIS_AI_URL, json=payload, headers=headers, timeout=GEMINI_TIMEOUT)
+                r = requests.post(url, json=payload, headers=headers, timeout=GEMINI_TIMEOUT)
                 if r.status_code == 200:
-                    texto = (r.json() or {}).get('text') or ''
-                    if texto.strip():
+                    texto = self._extrair_texto_gemini(r.json() or {})
+                    if texto and texto.strip():
                         return texto
-                    logger.error('[AI] API interna devolveu 200 com corpo vazio.')
+                    logger.error('[AI] Gemini devolveu 200 sem texto utilizavel.')
                 elif r.status_code in (429, 500, 502, 503, 504):
-                    logger.warning(f'[AI] API interna HTTP {r.status_code}, tentativa {attempt + 1}.')
+                    logger.warning(f'[AI] Gemini HTTP {r.status_code}, tentativa {attempt + 1}.')
                 else:
-                    logger.error(f'[AI] API interna HTTP {r.status_code}: {r.text[:200]}')
+                    logger.error(f'[AI] Gemini HTTP {r.status_code}: {r.text[:200]}')
                     return None
             except requests.exceptions.Timeout:
                 logger.warning(f'[AI] Timeout ({GEMINI_TIMEOUT}s) na tentativa {attempt + 1}.')
@@ -604,6 +615,19 @@ class AIClassifier:
                 time.sleep(5 * (2 ** attempt))   # 5s, 10s
 
         return None
+
+    @staticmethod
+    def _extrair_texto_gemini(data: dict) -> str | None:
+        """Extrai o texto de uma resposta generateContent (formato real do Google).
+
+        Shape esperado: {"candidates": [{"content": {"parts": [{"text": "..."}]}}]}.
+        Qualquer desvio (bloqueio de safety, candidates vazio, etc.) devolve None
+        em vez de estourar KeyError/IndexError.
+        """
+        try:
+            return data['candidates'][0]['content']['parts'][0]['text']
+        except (KeyError, IndexError, TypeError):
+            return None
 
     def _parse_response(self, raw_text: str) -> list[dict] | None:
         """Parseia resposta JSON do Gemini, tratando markdown code fences.
