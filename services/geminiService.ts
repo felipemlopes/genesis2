@@ -39,7 +39,27 @@ function sleep(ms: number): Promise<void> {
 // primeiro estado terminal, desiste depois de um tempo com mensagem clara (não fica esperando pra
 // sempre se o worker de fila cair em produção).
 const POLL_INTERVAL_MS = 3000;
-const POLL_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutos
+// Spec genesis-devolucao-v6-7-e-migracao-openai, Fase 9 (P1-02, 12/08/2026): 5 minutos era menor
+// que o pior prazo real do backend — o frontend desistia e mostrava "demorando" enquanto o backend
+// ainda podia concluir a análise e capturar o crédito, sem o membro nunca ver o resultado (só
+// atualizando a página por conta própria descobriria).
+// Recalculado com os números reais pós Fases 2/5 deste spec (timeout do job passou a ser por
+// provedor ATIVO, ver GraphicalAnalysisAttemptJob::__construct() no backend) — o frontend não sabe
+// qual provedor está ativo, então precisa cobrir o pior caso dos dois:
+//   Gemini:  3 tentativas × ~105s (timeout do job)  = ~315s (~5,25min)
+//   OpenAI:  3 tentativas × ~215s (timeout do job)  = ~645s (~10,75min)  ← pior caso real hoje
+// 15 minutos dá margem real sobre o pior caso legítimo (OpenAI, ~10,75min) sem esperar
+// indefinidamente. O caminho de "análise travada" (worker de fila caiu — ver
+// FinalizarAnalisesTravadas.php, agendado a cada 2min) pode passar dessa margem num cenário de
+// falha de infraestrutura real; nesse caso o membro vê a mensagem de demora e pode atualizar depois
+// — aceitável, é um caminho de falha de infra, não o caso normal.
+// Alternativa melhor considerada e adiada de propósito (Fase 9.2): o backend devolver um prazo
+// (`poll_expires_at`) no payload PENDING, calculado a partir do provedor/timeout REAIS de cada
+// análise, em vez do frontend manter essa conta duplicada e desatualizável independentemente do
+// backend. Não implementado nesta entrega — mudaria o contrato do endpoint
+// (AsyncAnalysisResponse::lightweightBody()) e o consumo aqui, escopo maior que só ajustar a
+// constante. Registrado como item futuro explícito, não esquecido.
+const POLL_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutos
 
 // Spec genesis-analise-grafica-fila-assincrona (Fase 5.4): `signal` opcional — o botão "CANCELAR
 // ANÁLISE" (antes só visual, sem onClick nenhum) ganha função de verdade parando de esperar pelo
