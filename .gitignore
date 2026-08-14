@@ -7,6 +7,11 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
+# V6.8 (spec genesis-v6-8-correcao-tecnica, Fase 9, 14/08/2026): vitest-errors.txt na raiz é log de
+# execução transiente (movido pra docs/sql-historico/ como registro histórico, este ignore evita
+# que um novo apareça de novo commitado por acidente).
+/vitest-errors.txt
+
 node_modules
 dist
 dist-ssr
