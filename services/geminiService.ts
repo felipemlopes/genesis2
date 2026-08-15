@@ -115,6 +115,56 @@ let macroGovernanceCache = {
 // Isolated cache per asset for sentiment
 let sentimentCache: Record<string, any> = {};
 
+// V6.8 (achado real, 15/08/2026): estas duas chamadas existiam desde antes desta spec
+// (MacroController, backend — busca de verdade via Google Search, não a memória de treino do
+// Gemini nem o Radar News) mas o código que as chamava tinha sido removido do front antes desta
+// sessão, deixando macroGovernanceCache/sentimentCache (acima) órfãos — a rota ficou viva, sem
+// consumidor, até ser removida por engano na Fase 10 (parecia morta). Restaurada: religa o cache
+// já existente às rotas restauradas (routes/api.php). Best-effort de propósito — se falhar (rede,
+// 401 por token expirado, etc.), a tela cai de volta no texto do Radar News/EvidenceCatalog que já
+// vem em `resolved.informative_context`, nunca quebra a análise em si.
+const fetchMacroToday = async (token: string): Promise<{ resumo: string } | null> => {
+  const hoje = new Date().toLocaleDateString('pt-BR');
+  if (macroGovernanceCache.date === hoje && macroGovernanceCache.content) {
+    return { resumo: macroGovernanceCache.content };
+  }
+  try {
+    const res = await fetch(`${API_BASE}/v1/macro/today`, {
+      method: 'POST',
+      headers: { Accept: 'application/json', Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) return null;
+    const body = await res.json();
+    const content = typeof body?.content === 'string' ? body.content.trim() : '';
+    if (!content) return null;
+    macroGovernanceCache = { date: hoje, content };
+    return { resumo: content };
+  } catch {
+    return null;
+  }
+};
+
+const fetchSentimento = async (token: string, symbol: string): Promise<{ narrativa: string } | null> => {
+  const horaAtual = new Date().toISOString().slice(0, 13);
+  const cacheKey = `${symbol}_${horaAtual}`;
+  if (sentimentCache[cacheKey]) {
+    return { narrativa: sentimentCache[cacheKey] };
+  }
+  try {
+    const res = await fetch(`${API_BASE}/v1/macro/sentimento?symbol=${encodeURIComponent(symbol)}`, {
+      headers: { Accept: 'application/json', Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) return null;
+    const body = await res.json();
+    const narrativa = typeof body?.sentimento === 'string' ? body.sentimento.trim() : '';
+    if (!narrativa) return null;
+    sentimentCache[cacheKey] = narrativa;
+    return { narrativa };
+  } catch {
+    return null;
+  }
+};
+
 const fileToGenerativePart = async (file: File): Promise<string> => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -371,9 +421,14 @@ const mapGraphicalToLegacy = (v64: GraphicalAnalysisResult): GenesisAnalysisResu
       avisos: [],
       stop_ancora: null,
     },
+    // V6.8 (achado real, 15/08/2026): macroNarrative/sentimentNarrative são strings (vem de
+    // `.value`, texto puro) — `{...umaString}` espalha os CARACTERES da string como chaves
+    // numéricas (`{0:'S',1:'e',...}`), nunca produz `{resumo: '...'}`/`{narrativa: '...'}`. Isso
+    // fazia AnalysisResult.tsx (que lê `macroInfo?.resumo`/`sentimento?.narrativa`) sempre cair no
+    // fallback "Contexto informativo indisponível...", mesmo com a IA tendo respondido normalmente.
     contexto_informativo: (macroTemDado || sentimentoTemDado) ? {
-      macro: macroTemDado ? { ...(macroNarrative ?? {}), ...macroStats } : null,
-      sentimento: sentimentoTemDado ? { ...(sentimentNarrative ?? {}), ...sentimentStats } : null,
+      macro: macroTemDado ? { resumo: macroNarrative, ...macroStats } : null,
+      sentimento: sentimentoTemDado ? { narrativa: sentimentNarrative, ...sentimentStats } : null,
     } : null,
     ai_meta: {},
     indicadores: {
@@ -516,5 +571,28 @@ export const analyzeChart = async (
     );
   }
 
-  return mapGraphicalToLegacy(resolved);
+  const result = mapGraphicalToLegacy(resolved);
+
+  // V6.8 (achado real, 15/08/2026): sobrepõe o resumo/narrativa de busca real (Google Search, via
+  // MacroController) por cima do que já veio da análise (Radar News/EvidenceCatalog) — mantém os
+  // números crus (VIX/DXY/S&P500/Fear&Greed/dominância) que já vieram da análise, só troca o texto.
+  // Best-effort, em paralelo, nunca bloqueia nem derruba a análise já concluída.
+  const [macroReal, sentimentoReal] = await Promise.all([
+    fetchMacroToday(token),
+    fetchSentimento(token, metadata.pair),
+  ]);
+  if (macroReal || sentimentoReal) {
+    const ctxAtual = (result.contexto_informativo ?? {}) as Record<string, unknown>;
+    const macroAtual = (ctxAtual.macro ?? {}) as Record<string, unknown>;
+    const sentimentoAtual = (ctxAtual.sentimento ?? {}) as Record<string, unknown>;
+    result.contexto_informativo = {
+      ...ctxAtual,
+      macro: macroReal ? { ...macroAtual, resumo: macroReal.resumo } : (ctxAtual.macro ?? null),
+      sentimento: sentimentoReal
+        ? { ...sentimentoAtual, narrativa: sentimentoReal.narrativa }
+        : (ctxAtual.sentimento ?? null),
+    };
+  }
+
+  return result;
 };

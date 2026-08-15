@@ -267,6 +267,29 @@ describe('analyzeChart preserva evidências antes descartadas (Fase 7)', () => {
     expect(ctx.sentimento.btc_dominance).toBe(56.46);
   });
 
+  // V6.8 (achado real, 15/08/2026, análise de583d95-...): `{...umaString}` espalha os CARACTERES
+  // da narrativa como chaves numéricas em vez de virar `{resumo: '...'}` — o fixture acima sempre
+  // testou narrative:null (bug nunca disparava com string ausente), então passou despercebido até
+  // uma análise real com narrativa presente mostrar sempre o fallback genérico na tela.
+  it('preserva o texto da narrativa de macro/sentimento como string, não espalhada em caracteres', async () => {
+    const resposta = respostaCompleta();
+    (resposta.informative_context as any).macro.narrative = { value: 'Sem eventos macro verificados nesta janela.', unit: null, status: 'AVAILABLE' };
+    (resposta.informative_context as any).sentiment.narrative = { value: 'Sem sentimento verificado para este ativo.', unit: null, status: 'AVAILABLE' };
+
+    const { analyzeChart } = await import('../services/geminiService');
+    globalThis.fetch = vi.fn(async () => new Response(JSON.stringify(resposta), { status: 200 })) as any;
+
+    const mockFile = new File(['test'], 'chart.png', { type: 'image/png' });
+    const metadata = { pair: 'BTCUSDT', exchange: 'Binance', timeframe: '4h' } as any;
+    const result = await analyzeChart(mockFile, metadata, '', {} as any, 'Binance', 10, null);
+
+    const ctx = result.contexto_informativo as any;
+    expect(ctx.macro.resumo).toBe('Sem eventos macro verificados nesta janela.');
+    expect(ctx.sentimento.narrativa).toBe('Sem sentimento verificado para este ativo.');
+    expect(ctx.macro['0']).toBeUndefined();
+    expect(ctx.sentimento['0']).toBeUndefined();
+  });
+
   it('preserva derivatives_context e visual_observations.objects/fibonacci/vrvp', async () => {
     const { analyzeChart } = await import('../services/geminiService');
     globalThis.fetch = vi.fn(async () => new Response(JSON.stringify(respostaCompleta()), { status: 200 })) as any;
