@@ -28,6 +28,9 @@ interface Props {
   // antes só o líquido (rr) era mostrado, sem dizer que já descontava taxas/spread/slippage, sob o
   // rótulo genérico "Risco e retorno" (quem conferia na régua encontrava o bruto e via o líquido na
   // tela). Não há erro de cálculo, só de rótulo — os dois números já existiam no payload.
+  // V6.8 (CODE-P1-11, Adendo A.2): a nota de custos migrou da legenda do líquido para a do bruto —
+  // "líquido" já se explica pelo próprio nome, o bruto é que precisa dizer por que está mais alto.
+  // Layout, hierarquia, cor e ordem inalterados, por determinação explícita do PO.
   rrBruto?: number | null;
   // V6.6 (F01, DF-02): risco e retorno passa a existir só aqui — dentro do mínimo, mostra só o
   // número; abaixo do mínimo, o número ganha a observação entre parênteses. rrMinimo/rrAbaixoDoMinimo
@@ -96,13 +99,18 @@ export const BlocoConviccaoQualidade: React.FC<Props> = ({ score, rr, rrBruto, r
               {rrBruto != null && (
                 <div className="flex items-baseline gap-1.5 flex-wrap">
                   <strong className="text-sm font-mono text-gray-300">1:{rrBruto.toFixed(2)}</strong>
-                  <span className="text-[9px] text-gray-500">bruto</span>
+                  {/* V6.8 (CODE-P1-11, Adendo A.2, determinação do PO): a observação sobre custos
+                      sai do líquido e vem para o bruto. "Líquido" já significa, por definição,
+                      valor com tudo descontado — a legenda ali só repetia a palavra. Quem precisa
+                      de explicação é o bruto: o membro vê 1:0,72 acima de 1:0,65 e a legenda diz
+                      por quê. */}
+                  <span className="text-[9px] text-gray-500">bruto (não considera taxas, spread e slippage)</span>
                 </div>
               )}
               {rr != null && (
                 <div className="flex items-baseline gap-2 flex-wrap">
                   <strong className="text-lg font-mono text-white">1:{rr.toFixed(2)}</strong>
-                  <span className="text-[9px] text-gray-500">líquido (taxas, spread e slippage)</span>
+                  <span className="text-[9px] text-gray-500">líquido</span>
                   {rrAbaixoDoMinimo && (
                     <span className="text-[10px] text-amber-500">
                       (cuidado, risco retorno abaixo do recomendado, 1:{(rrMinimo ?? 0).toFixed(2)})
