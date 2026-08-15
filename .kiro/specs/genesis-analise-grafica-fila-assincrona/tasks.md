@@ -335,6 +335,17 @@ timeout por tentativa = `timeout_seconds(60) + connect_timeout_seconds(10) + 20`
 - `numprocs=2`: ponto de partida — Laravel já trata concorrência com lock na tabela `jobs` (sem risco
   de duas cópias do worker pegarem a mesma análise), o número certo depende do rate limit real da
   conta Gemini. Subir se `jobs` acumular fila.
+
+**Aviso futuro (spec `genesis-v6-8-correcao-tecnica`, Fase 1.6, 14/08/2026)**: `config/queue.php`
+teve o `retry_after` do driver `database` subido de 250 para 350 antecipando a Fase 4/5 daquele
+spec, que move a leitura visual e a coleta de contexto (hoje chamadas separadas/best-effort) para
+DENTRO do mesmo job síncrono, antes da decisão — o orçamento real do job sobe de ~90-215s para
+~300s. **Quando aquela fase for aplicada em produção, os valores REAIS deste runbook também
+precisam subir** — `--timeout=120` para algo como `--timeout=300` e `stopwaitsecs=130` para
+`stopwaitsecs=330` (ambos acima do novo orçamento, com a mesma folga proporcional que os valores
+atuais já têm sobre os 90s de hoje) — senão o Supervisor mata o worker no meio de uma tentativa que
+ainda está dentro do prazo esperado. Não alterado agora porque o job real ainda não mudou; fica
+registrado aqui para não ser esquecido no dia do deploy daquela fase.
 - `--max-time=3600`: reinicia o processo a cada 1h (evita memory leak de worker de longa duração).
 
 **4. Aplicar e subir:**

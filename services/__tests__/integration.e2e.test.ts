@@ -202,8 +202,10 @@ describe('13.1 Integration: Full Analysis Flow (Upload → Visual → Normalize 
           // Step 1: Normalize pair (simulates output from unified visual reading)
           const normalizedPair = normalizarPar(rawPair);
           
-          // Verify normalized pair is valid
-          expect(normalizedPair).toMatch(/^[A-Z]+USDT$/);
+          // Verify normalized pair is valid.
+          // V6.8 (CODE-P0-18): [A-Z0-9]+ em vez de [A-Z]+ — o arbitrary inclui pares com prefixo
+          // "1000" (1000PEPEUSDT, 1000SHIBUSDT), que agora é preservado por design, não removido.
+          expect(normalizedPair).toMatch(/^[A-Z0-9]+USDT$/);
           expect(normalizedPair).not.toMatch(/USDCUSDT|BUSDUSDT|USDUSDT|DAIUSDT|TUSDUSDT/);
           expect(normalizedPair).not.toContain('.P');
           expect(normalizedPair).not.toContain('PERP');
