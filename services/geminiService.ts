@@ -3,17 +3,14 @@ const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
 import { GenesisAnalysisResult, TradeDirection, ChartMetadata, CandidateSetup, ExecutionStatus, PlanoSetup } from "../types";
 import { ExchangeData, fetchWithProxy } from "./cryptoApi";
 import { normalizarPar } from "./normalizarPar";
+import { obterChaveIdempotencia, encerrarChaveIdempotencia, hashDaImagem, type SubmissaoAnalise } from "./analysisIdempotency";
 import type { GraphicalAnalysisResult, GraphicalAnalysisPollResult, GraphicalAnalysisTerminalResult } from "../types/graphicalAnalysis";
 
-// V6.5 (G10-G11): antes importado de services/graphicalAnalysisService.ts (o cliente duplicado
-// deletado neste item) — única exportação daquele arquivo que o cliente real (analyzeChart, abaixo)
-// de fato usava. Movida para cá para não perder a dependência real na deleção.
-function newAnalysisIdempotencyKey(): string {
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-    return `ga_${crypto.randomUUID()}`;
-  }
-  return `ga_${Date.now()}_${Math.random().toString(36).slice(2)}_${Math.random().toString(36).slice(2)}`;
-}
+// V6.8 (CODE-P0-19): newAnalysisIdempotencyKey() gerava uma chave nova a cada chamada — um retry
+// do membro (ou um erro de rede) produzia chave diferente e o backend tratava como submissão nova,
+// desarmando a proteção de idempotência por completo. Substituída por
+// services/analysisIdempotency.ts, cuja chave é derivada do CONTEÚDO da submissão (símbolo,
+// timeframe, alavancagem, hash da imagem) e sobrevive a retries até a análise terminar.
 
 // Spec genesis-analise-grafica-fila-assincrona (Fase 5.3): analyzeChart() não distinguia 422/402/409
 // entre si — todo mundo virava o mesmo Error genérico, então quem chamasse não tinha como reagir
@@ -286,6 +283,25 @@ const mapGraphicalToLegacy = (v64: GraphicalAnalysisResult): GenesisAnalysisResu
   const sentimentNarrative = ctx?.sentiment?.narrative?.value ?? null;
   const exec = v64.execution;
 
+  // V6.8 (spec genesis-v6-8-correcao-tecnica, Fase 7, CODE-P1-06/P1-08, 14/08/2026): este adaptador
+  // descartava VIX/DXY/S&P 500 (macro) e Fear&Greed/dominância do BTC (sentimento) — a API sempre
+  // devolveu esses números em informative_context.macro/sentiment (EvidenceValue), só a narrativa
+  // (macro.narrative/sentiment.narrative) chegava até a tela. Achado real: os dois nunca dependem um
+  // do outro (a narrativa pode faltar com os números presentes, e vice-versa), por isso os stats
+  // brutos entram como objeto próprio, mesclado com a narrativa quando ela existe, em vez de
+  // condicionados à presença dela.
+  const macroStats = {
+    vix: ctx?.macro?.vix?.value ?? null,
+    dxy_change_pct: ctx?.macro?.dxy_change_pct?.value ?? null,
+    sp500_change_pct: ctx?.macro?.sp500_change_pct?.value ?? null,
+  };
+  const sentimentStats = {
+    fear_greed: ctx?.sentiment?.fear_greed?.value ?? null,
+    btc_dominance: ctx?.sentiment?.btc_dominance?.value ?? null,
+  };
+  const macroTemDado = macroNarrative != null || Object.values(macroStats).some((v) => v != null);
+  const sentimentoTemDado = sentimentNarrative != null || Object.values(sentimentStats).some((v) => v != null);
+
   return {
     analysis_id: v64.analysis_id,
     pair: v64.pair,
@@ -355,19 +371,27 @@ const mapGraphicalToLegacy = (v64: GraphicalAnalysisResult): GenesisAnalysisResu
       avisos: [],
       stop_ancora: null,
     },
-    contexto_informativo: (macroNarrative || sentimentNarrative) ? {
-      macro: macroNarrative,
-      sentimento: sentimentNarrative,
+    contexto_informativo: (macroTemDado || sentimentoTemDado) ? {
+      macro: macroTemDado ? { ...(macroNarrative ?? {}), ...macroStats } : null,
+      sentimento: sentimentoTemDado ? { ...(sentimentNarrative ?? {}), ...sentimentStats } : null,
     } : null,
     ai_meta: {},
     indicadores: {
       rsi: ctx?.indicators?.rsi14?.value ?? null,
       adx: ctx?.indicators?.adx14?.value ?? null,
+      // V6.8 (Fase 7, CODE-P1-07): DMI completo — +DI/-DI/inclinação do ADX, publicados pelo
+      // backend desde a Fase 6.1 (AnalysisPublicResponseBuilder.php), nunca lidos aqui até agora.
+      plus_di: ctx?.indicators?.plus_di14?.value ?? null,
+      minus_di: ctx?.indicators?.minus_di14?.value ?? null,
+      adx_subindo: ctx?.indicators?.adx_rising?.value ?? null,
       atr: ctx?.indicators?.atr14?.value ?? null,
       ema21: ctx?.indicators?.ema21?.value ?? null,
       ema50: ctx?.indicators?.ema50?.value ?? null,
       ema200: ctx?.indicators?.ema200?.value ?? null,
     },
+    // V6.8 (Fase 7, CODE-P1-06): contexto de derivativos (força/risco de squeeze) sempre chegou
+    // pronto em GraphicalAnalysisResult.derivatives_context e nunca era repassado.
+    derivatives_context: v64.derivatives_context ?? null,
     wyckoff: (ctx?.indicators?.wyckoff?.value as Record<string, unknown> | null) ?? undefined,
     sessao: ctx?.indicators?.session?.value
       ? { nome: ctx.indicators.session.value.name, cor: 'text-white' }
@@ -377,8 +401,13 @@ const mapGraphicalToLegacy = (v64: GraphicalAnalysisResult): GenesisAnalysisResu
     score_basis: v64.score_basis,
     // V6.6 (A04): visual_observations.patterns chegava na resposta e era descartado aqui — nenhum
     // componente da tela renderizava figura, mesmo com o Gemini identificando um padrão claro.
+    // V6.8 (Fase 7, CODE-P1-06): objects/fibonacci/vrvp tinham o mesmo destino — descartados aqui,
+    // apesar de a API sempre devolvê-los prontos em visual_observations.
     visual_observations: {
       patterns: v64.visual_observations?.patterns ?? [],
+      objects: v64.visual_observations?.objects ?? [],
+      fibonacci: v64.visual_observations?.fibonacci ?? [],
+      vrvp: v64.visual_observations?.vrvp ?? null,
     },
   };
 };
@@ -421,12 +450,22 @@ export const analyzeChart = async (
   fd.append('leverage', String(userLeverage));
   if (equity && Number(equity) > 0) fd.append('equity', equity);
 
+  // V6.8 (CODE-P0-19): a chave é derivada do conteúdo da submissão, não gerada às cegas a cada
+  // chamada — um retry do MESMO gráfico (símbolo, timeframe, alavancagem, hash da imagem iguais)
+  // reutiliza a mesma chave em vez de abrir uma segunda análise/cobrança.
+  const submissao: SubmissaoAnalise = {
+    symbol: metadata.pair,
+    timeframe: metadata.timeframe,
+    alavancagem: userLeverage,
+    imagemHash: await hashDaImagem(file),
+  };
+
   const res = await fetch(`${API_BASE}/v1/graphical-analysis`, {
     method: 'POST',
     headers: {
       Accept: 'application/json',
       Authorization: `Bearer ${token}`,
-      'Idempotency-Key': newAnalysisIdempotencyKey(),
+      'Idempotency-Key': obterChaveIdempotencia(submissao),
     },
     body: fd,
   });
@@ -434,7 +473,10 @@ export const analyzeChart = async (
   if (!res.ok) {
     // Erros síncronos (validação do formulário, crédito insuficiente, Idempotency-Key já encerrada)
     // — acontecem ANTES do job ser despachado, resposta HTTP de erro de verdade (422/402/409),
-    // igual sempre foi.
+    // igual sempre foi. A chave NÃO é encerrada aqui de propósito: se o erro for de rede (fetch
+    // nunca chega a responder, cai no catch de quem chamou analyzeChart) ou um 5xx passageiro, o
+    // próximo envio do mesmo gráfico precisa cair na mesma chave — é exatamente o cenário que
+    // CODE-P0-19 existe para cobrir.
     const errData = await res.json().catch(() => ({}));
     // V6.6 (D01): num 422 o Laravel devolve { message, errors }, não { error } — a leitura antiga
     // sempre caía no fallback genérico e o membro nunca descobria qual campo falhou (ex.: timeframe
@@ -461,6 +503,10 @@ export const analyzeChart = async (
   const resolved: GraphicalAnalysisTerminalResult = initial.status === 'PENDING'
     ? await pollAnalysisUntilTerminal(initial.analysis_id, token, signal)
     : initial;
+
+  // V6.8 (CODE-P0-19): estado terminal atingido — sucesso ou falha, tanto faz. O ciclo de vida
+  // desta submissão acabou; reenviar o mesmo gráfico a partir daqui é uma análise NOVA.
+  encerrarChaveIdempotencia(submissao);
 
   if (resolved.status !== 'COMPLETED') {
     throw new GraphicalAnalysisRequestError(

@@ -827,6 +827,25 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, change24h, isPosi
                   <span className="text-[10px] text-white font-mono">{anyData.indicadores?.adx ? Number(anyData.indicadores.adx).toFixed(1) : "N/A"}</span>
                 </div>
 
+                {/* V6.8 (spec genesis-v6-8-correcao-tecnica, Fase 7, CODE-P1-07): DMI completo —
+                    antes só o ADX chegava à tela; +DI/-DI/inclinação ficam presos no gate de
+                    "zero não é null" (DP-11), mesmo padrão do resto do painel. */}
+                <div className="flex justify-between items-center group">
+                  <span className="text-[9px] text-gray-500 uppercase font-bold tracking-wider">+DI / -DI</span>
+                  <span className="text-[10px] text-white font-mono">
+                    {anyData.indicadores?.plus_di != null ? Number(anyData.indicadores.plus_di).toFixed(1) : "N/D"}
+                    {' / '}
+                    {anyData.indicadores?.minus_di != null ? Number(anyData.indicadores.minus_di).toFixed(1) : "N/D"}
+                  </span>
+                </div>
+
+                <div className="flex justify-between items-center group">
+                  <span className="text-[9px] text-gray-500 uppercase font-bold tracking-wider">ADX em elevação</span>
+                  <span className={`text-[10px] font-mono ${anyData.indicadores?.adx_subindo === true ? 'text-genesis-positive' : anyData.indicadores?.adx_subindo === false ? 'text-gray-400' : 'text-gray-500'}`}>
+                    {anyData.indicadores?.adx_subindo === true ? 'Sim' : anyData.indicadores?.adx_subindo === false ? 'Não' : 'N/D'}
+                  </span>
+                </div>
+
                 <div className="flex justify-between items-center group">
                   <div className="flex items-center gap-2">
                     <span className="text-[9px] text-gray-500 uppercase font-bold tracking-wider">ATR</span>
@@ -874,6 +893,37 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, change24h, isPosi
                   </span>
                 </div>
 
+                {/* DERIVATIVOS — V6.8 (Fase 7, CODE-P1-06): derivatives_context sempre chegou pronto
+                    da API (força/risco de squeeze) e nenhum componente da tela o exibia. */}
+                {anyData.derivatives_context && (
+                  <div className="mt-4 pt-4 border-t border-white/5">
+                    <div className="flex justify-between items-center mb-2">
+                      <span className="text-[9px] text-gray-500 uppercase font-bold tracking-wider">Derivativos</span>
+                      <span className={`text-[9px] font-mono font-bold px-2 py-0.5 rounded ${
+                        anyData.derivatives_context.strength === 'STRENGTHENS' ? 'text-genesis-positive bg-genesis-positive/10'
+                        : anyData.derivatives_context.strength === 'WEAKENS' ? 'text-genesis-negative bg-genesis-negative/10'
+                        : 'text-gray-400 bg-white/5'
+                      }`}>
+                        {anyData.derivatives_context.strength === 'STRENGTHENS' ? 'Reforça a leitura'
+                          : anyData.derivatives_context.strength === 'WEAKENS' ? 'Enfraquece a leitura'
+                          : anyData.derivatives_context.strength === 'NEUTRAL' ? 'Neutro'
+                          : 'Indisponível'}
+                      </span>
+                    </div>
+                    {anyData.derivatives_context.squeeze_risk && anyData.derivatives_context.squeeze_risk !== 'NONE' && anyData.derivatives_context.squeeze_risk !== 'UNAVAILABLE' && (
+                      <div className="mb-2 flex items-center gap-1.5 text-yellow-500">
+                        <AlertTriangle size={10} />
+                        <span className="text-[9px] font-mono uppercase">
+                          Risco de squeeze: {anyData.derivatives_context.squeeze_risk === 'BOTH' ? 'ambos os lados' : anyData.derivatives_context.squeeze_risk === 'LONG_SQUEEZE' ? 'long squeeze' : 'short squeeze'}
+                        </span>
+                      </div>
+                    )}
+                    {anyData.derivatives_context.summary && (
+                      <p className="text-[9.5px] text-gray-400 leading-relaxed">{anyData.derivatives_context.summary}</p>
+                    )}
+                  </div>
+                )}
+
                 {/* CONFLUÊNCIA TEMPORAL */}
                 {anyData.multiTimeframe && anyData.multiTimeframe.length > 0 && (
                   <div className="mt-4 pt-4 border-t border-white/5 col-span-full">
@@ -903,6 +953,28 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, change24h, isPosi
               <span className="text-[10px] text-genesis-positive font-bold uppercase tracking-widest mb-3 block pb-2 border-b border-white/5">
                 MACRO E GEOPOLÍTICO
               </span>
+              {/* V6.8 (Fase 7, CODE-P1-08): números brutos (VIX/DXY/S&P 500) ao lado da narrativa —
+                  antes só o texto resumido chegava à tela, os valores em si nunca apareciam. */}
+              {(macroInfo?.vix != null || macroInfo?.dxy_change_pct != null || macroInfo?.sp500_change_pct != null) && (
+                <div className="grid grid-cols-3 gap-2 mb-3">
+                  <div className="bg-black/40 rounded px-2 py-1.5 text-center">
+                    <span className="text-[8px] text-gray-600 uppercase font-bold block">VIX</span>
+                    <span className="text-[10px] text-white font-mono">{macroInfo?.vix != null ? Number(macroInfo.vix).toFixed(2) : 'N/D'}</span>
+                  </div>
+                  <div className="bg-black/40 rounded px-2 py-1.5 text-center">
+                    <span className="text-[8px] text-gray-600 uppercase font-bold block">DXY</span>
+                    <span className={`text-[10px] font-mono ${macroInfo?.dxy_change_pct == null ? 'text-white' : macroInfo.dxy_change_pct >= 0 ? 'text-genesis-positive' : 'text-genesis-negative'}`}>
+                      {macroInfo?.dxy_change_pct != null ? `${Number(macroInfo.dxy_change_pct) >= 0 ? '+' : ''}${Number(macroInfo.dxy_change_pct).toFixed(2)}%` : 'N/D'}
+                    </span>
+                  </div>
+                  <div className="bg-black/40 rounded px-2 py-1.5 text-center">
+                    <span className="text-[8px] text-gray-600 uppercase font-bold block">S&P 500</span>
+                    <span className={`text-[10px] font-mono ${macroInfo?.sp500_change_pct == null ? 'text-white' : macroInfo.sp500_change_pct >= 0 ? 'text-genesis-positive' : 'text-genesis-negative'}`}>
+                      {macroInfo?.sp500_change_pct != null ? `${Number(macroInfo.sp500_change_pct) >= 0 ? '+' : ''}${Number(macroInfo.sp500_change_pct).toFixed(2)}%` : 'N/D'}
+                    </span>
+                  </div>
+                </div>
+              )}
               <p className={`text-[10px] text-gray-400 leading-relaxed mb-4 mt-3 ${!macroInfo?.resumo ? 'italic' : ''}`}>
                   {macroInfo?.resumo || "Contexto informativo indisponível para esta análise (orçamento de IA esgotado ou serviço fora do ar)."}
               </p>
@@ -926,6 +998,21 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, change24h, isPosi
                 <span className="text-[10px] text-purple-400 font-bold uppercase tracking-widest block">Sentimento</span>
                 <span className={`text-[10px] font-bold font-mono px-2 rounded bg-white/5 ${sentimento?.score == null ? 'text-gray-500' : sentimento.score > 60 ? 'text-genesis-positive' : 'text-genesis-negative'}`}>{sentimento?.score == null ? 'Sem dado' : `${sentimento.score}/100`}</span>
               </div>
+              {/* V6.8 (Fase 7, CODE-P1-08): Fear & Greed (índice do mercado, alternative.me) e
+                  dominância do BTC — números distintos do score de narrativa acima, nunca chegavam
+                  à tela apesar de sempre virem prontos da API. */}
+              {(sentimento?.fear_greed != null || sentimento?.btc_dominance != null) && (
+                <div className="grid grid-cols-2 gap-2 mb-3">
+                  <div className="bg-black/40 rounded px-2 py-1.5 text-center">
+                    <span className="text-[8px] text-gray-600 uppercase font-bold block">Fear &amp; Greed</span>
+                    <span className="text-[10px] text-white font-mono">{sentimento?.fear_greed != null ? `${sentimento.fear_greed}/100` : 'N/D'}</span>
+                  </div>
+                  <div className="bg-black/40 rounded px-2 py-1.5 text-center">
+                    <span className="text-[8px] text-gray-600 uppercase font-bold block">Dominância BTC</span>
+                    <span className="text-[10px] text-white font-mono">{sentimento?.btc_dominance != null ? `${Number(sentimento.btc_dominance).toFixed(1)}%` : 'N/D'}</span>
+                  </div>
+                </div>
+              )}
               <p className="text-[10px] text-gray-400 leading-relaxed mb-4  pb-3 mt-3">
                   {sentimento?.narrativa || "Contexto informativo indisponível para esta análise."}
               </p>

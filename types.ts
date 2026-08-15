@@ -1,7 +1,12 @@
 // V6.7 (G-44): ExecutionPlanB e ScoreBasis vêm do contrato real do backend (types/graphicalAnalysis.ts)
 // em vez de Record<string, unknown>/Record<string, string> genéricos — eram esses dois "achatamentos"
 // que forçavam o adaptador (geminiService.ts) a usar "as unknown as" pra preencher os campos.
-import type { VisualPattern, ExecutionPlanB, ScoreBasis, StopStatus, StopAncora, StopBuffer } from './types/graphicalAnalysis';
+// V6.8 (spec genesis-v6-8-correcao-tecnica, Fase 7): `DerivativesContext` importado com alias —
+// já existe uma interface LOCAL de mesmo nome neste arquivo (linha abaixo, formato antigo da era
+// "famílias votantes" pré-V6, classification/modifier/rule — não usada por nenhum componente real,
+// candidata a limpeza futura, não removida aqui por estar fora do escopo desta fase) que colidiria
+// com o nome do contrato real do backend.
+import type { VisualPattern, VisualObject, FibonacciObservation, VrvpObservation, DerivativesContext as GraphicalDerivativesContext, ExecutionPlanB, ScoreBasis, StopStatus, StopAncora, StopBuffer } from './types/graphicalAnalysis';
 
 // V6.7 (A-13): reexportados para quem importa de '../types' (a maioria dos componentes) em vez de
 // '../types/graphicalAnalysis' diretamente.
@@ -287,7 +292,14 @@ export interface GenesisAnalysisResult {
   score_basis?: ScoreBasis | null;
   // V6.6 (A04): figura gráfica identificada pelo decisor (visual_observations.patterns) — antes
   // chegava na resposta HTTP e era descartada no adaptador, sem nenhum componente exibindo.
-  visual_observations?: { patterns: VisualPattern[] };
+  // V6.8 (spec genesis-v6-8-correcao-tecnica, Fase 7/P1-06): objects/fibonacci/vrvp também chegam
+  // prontos da API e eram descartados junto — mesmo achado do P1-06 (VIX/DXY/S&P/Fear&Greed/
+  // dominância do BTC), agora preservados também aqui.
+  visual_observations?: { patterns: VisualPattern[]; objects: VisualObject[]; fibonacci: FibonacciObservation[]; vrvp: VrvpObservation | null };
+  // V6.8 (Fase 7/P1-06): contexto de derivativos (funding/OI implícito na leitura do decisor) —
+  // chegava pronto em GraphicalAnalysisResult.derivatives_context e nunca era repassado pelo
+  // adaptador; nenhum componente da tela o exibia.
+  derivatives_context?: GraphicalDerivativesContext | null;
 }
 
 export interface MarketSentiment {

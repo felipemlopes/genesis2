@@ -1,7 +1,7 @@
 import React from 'react';
 
 /**
- * Restauração pós-entrega (2026-07-27): recria o layout de 4 blocos (Técnico/Derivativos/Macro/
+ * Restauração pós-entrega (2026-07-27): recria o layout de blocos (Técnico/Derivativos/Macro/
  * Sentimento) que a tela sempre mostrou, mas sem recalcular nada em paralelo ao decisor único —
  * cada barra lê um dado que o Gemini (ou a chamada auxiliar de narrativa, já separada do decisor)
  * já devolve pronto:
@@ -9,6 +9,7 @@ import React from 'react';
  *     técnica) — mede coerência, não direção, por isso nunca muda de cor com LONG/SHORT.
  *   - Derivativos: score_basis.derivatives_confirmation, que já tem polaridade própria
  *     (apoia/contraria a direção escolhida).
+ *   - Qualidade dos Dados: score_basis.data_quality (V6.8, ver nota abaixo).
  *   - Macro / Sentimento: score 0-100 da chamada de narrativa (InformativeNarrativeService),
  *     puramente informativo (ver V6.6 F06 abaixo) — nunca comparado com a direção escolhida.
  *
@@ -28,54 +29,84 @@ import React from 'react';
  * nenhuma comparação com LONG/SHORT. Restrição (DP-06): os blocos de sentimento do ativo e de
  * macro/geopolítico (texto completo, em outro componente) não mudam em conteúdo — só esta barra de
  * resumo.
+ *
+ * V6.8 (spec genesis-v6-8-correcao-tecnica, Fase 7, CODE-P1-09, 14/08/2026): dois achados reais.
+ * 1) Técnico/Derivativos usavam um mapa fixo (VERY_LOW:20…VERY_HIGH:100) inventado pra desenhar uma
+ *    barra de progresso — o decisor nunca devolveu um número aí, só uma categoria. A barra sugeria
+ *    precisão (68% vs 72%) que os dados não têm. Substituído por um selo categórico (o próprio
+ *    rótulo, ex. "ALTA"), sem simular um percentual que não existe — mesmo princípio já aplicado ao
+ *    bloco de Derivativos em `AnalysisResult.tsx` (Fase 7 também) e às barras de qualidade de
+ *    entrada (`BlocoConviccaoQualidade`, sem nota composta nem % inventado, ver G15).
+ * 2) `score_basis.data_quality` (existe desde `CODE-P0-07`/Fase 4.5 deste spec) nunca era lido aqui
+ *    — terceiro bloco "que soma da tela" citado no plano. Adicionado como bloco próprio, mesmo
+ *    tratamento categórico dos outros dois (nunca comparado com LONG/SHORT, mede qualidade dos
+ *    dados de entrada, não a direção).
+ * Macro/Sentimento continuam com barra numérica — ali o número (0-100) é real, vem da própria
+ * chamada de narrativa, não é um mapa inventado por este componente.
  */
 
 type TechnicalCoherence = 'VERY_LOW' | 'LOW' | 'MODERATE' | 'HIGH' | 'VERY_HIGH' | undefined;
 type DerivativesConfirmation = 'OPPOSES' | 'NEUTRAL' | 'SUPPORTS' | 'STRONGLY_SUPPORTS' | 'UNAVAILABLE' | undefined;
+type DataQuality = 'LOW' | 'MODERATE' | 'HIGH' | 'VERY_HIGH' | undefined;
 
-const COHERENCE_PCT: Record<string, number> = {
-  VERY_LOW: 20, LOW: 40, MODERATE: 60, HIGH: 80, VERY_HIGH: 100,
+const COHERENCE_LABEL: Record<string, string> = {
+  VERY_LOW: 'Muito baixa', LOW: 'Baixa', MODERATE: 'Moderada', HIGH: 'Alta', VERY_HIGH: 'Muito alta',
 };
 
-const CONFIRMATION_PCT: Record<string, number> = {
-  OPPOSES: 25, NEUTRAL: 50, SUPPORTS: 75, STRONGLY_SUPPORTS: 100, UNAVAILABLE: 0,
+const DATA_QUALITY_LABEL: Record<string, string> = {
+  LOW: 'Baixa', MODERATE: 'Moderada', HIGH: 'Alta', VERY_HIGH: 'Muito alta',
+};
+
+const CONFIRMATION_LABEL: Record<string, string> = {
+  OPPOSES: 'Contraria', NEUTRAL: 'Neutro', SUPPORTS: 'Apoia', STRONGLY_SUPPORTS: 'Apoia fortemente',
 };
 
 type Apoio = 'apoia' | 'contraria' | 'neutro';
 
-const COR: Record<Apoio, string> = {
-  apoia: 'bg-genesis-positive',
-  contraria: 'bg-genesis-negative',
-  neutro: 'bg-purple-500',
+const COR: Record<Apoio, { texto: string; fundo: string; barra: string }> = {
+  apoia: { texto: 'text-genesis-positive', fundo: 'bg-genesis-positive/10', barra: 'bg-genesis-positive' },
+  contraria: { texto: 'text-genesis-negative', fundo: 'bg-genesis-negative/10', barra: 'bg-genesis-negative' },
+  neutro: { texto: 'text-purple-400', fundo: 'bg-purple-500/10', barra: 'bg-purple-500' },
 };
 
 interface Props {
-  scoreBasis?: { technical_coherence?: string; derivatives_confirmation?: string } | null;
+  scoreBasis?: { technical_coherence?: string; derivatives_confirmation?: string; data_quality?: string } | null;
   direction: 'LONG' | 'SHORT' | 'INDISPONIVEL';
   macroScore: number | null;
   sentimentScore: number | null;
 }
 
-const Bloco: React.FC<{ nome: string; pct: number; cor: string; legenda: string }> = ({ nome, pct, cor, legenda }) => (
+// Bloco categórico — selo com o rótulo, sem simular um percentual que o decisor nunca devolveu.
+const BlocoCategorico: React.FC<{ nome: string; rotulo: string; apoio: Apoio; legenda: string }> = ({ nome, rotulo, apoio, legenda }) => (
+  <div className="bg-black/40 rounded p-3 border border-white/[0.05]">
+    <div className="flex justify-between items-center mb-2">
+      <span className="text-[9px] font-bold text-gray-500 uppercase tracking-wider">{nome}</span>
+      <span className={`text-[9px] font-bold uppercase px-2 py-0.5 rounded ${COR[apoio].texto} ${COR[apoio].fundo}`}>{rotulo}</span>
+    </div>
+    <p className="text-[8px] text-gray-500 mt-1">{legenda}</p>
+  </div>
+);
+
+// Bloco numérico — só pros dois casos (Macro/Sentimento) onde o percentual é um dado real, não
+// inventado por este componente.
+const BlocoNumerico: React.FC<{ nome: string; pct: number; legenda: string }> = ({ nome, pct, legenda }) => (
   <div className="bg-black/40 rounded p-3 border border-white/[0.05]">
     <div className="flex justify-between items-center mb-2">
       <span className="text-[9px] font-bold text-gray-500 uppercase tracking-wider">{nome}</span>
     </div>
     <div className="relative w-full bg-gray-900 rounded-full h-1.5 overflow-hidden">
-      <div className={`h-full ${cor}`} style={{ width: `${Math.max(0, Math.min(pct, 100))}%` }} />
+      <div className={`h-full ${COR.neutro.barra}`} style={{ width: `${Math.max(0, Math.min(pct, 100))}%` }} />
     </div>
     <p className="text-[8px] text-gray-500 mt-1">{legenda}</p>
   </div>
 );
 
 const ScoreBasisBars: React.FC<Props> = ({ scoreBasis, macroScore, sentimentScore }) => {
+  const dataQuality = scoreBasis?.data_quality as DataQuality;
   if (!scoreBasis && macroScore == null && sentimentScore == null) return null;
 
   const coherence = scoreBasis?.technical_coherence as TechnicalCoherence;
-  const tecnicoPct = coherence ? (COHERENCE_PCT[coherence] ?? 0) : 0;
-
   const confirmation = scoreBasis?.derivatives_confirmation as DerivativesConfirmation;
-  const derivativosPct = confirmation ? (CONFIRMATION_PCT[confirmation] ?? 0) : 0;
   const derivativosApoio: Apoio = confirmation === 'OPPOSES' ? 'contraria'
     : confirmation === 'SUPPORTS' || confirmation === 'STRONGLY_SUPPORTS' ? 'apoia'
     : 'neutro';
@@ -86,18 +117,21 @@ const ScoreBasisBars: React.FC<Props> = ({ scoreBasis, macroScore, sentimentScor
   // V6.6 (F06, DP-06): Macro e Sentimento são informativos — nunca comparados com a direção
   // escolhida (LONG/SHORT). Mesma cor neutra do bloco Técnico, legenda sem "favorece"/"contraria".
   return (
-    <div className="mb-5 relative z-10 grid grid-cols-2 lg:grid-cols-4 gap-4 mt-6">
+    <div className="mb-5 relative z-10 grid grid-cols-2 lg:grid-cols-5 gap-4 mt-6">
       {coherence && (
-        <Bloco nome="Técnico" pct={tecnicoPct} cor={COR.neutro} legenda="Coerência dos indicadores com a leitura" />
+        <BlocoCategorico nome="Técnico" rotulo={COHERENCE_LABEL[coherence] ?? coherence} apoio="neutro" legenda="Coerência dos indicadores com a leitura" />
       )}
       {confirmation && confirmation !== 'UNAVAILABLE' && (
-        <Bloco nome="Derivativos" pct={derivativosPct} cor={COR[derivativosApoio]} legenda={derivativosLegenda} />
+        <BlocoCategorico nome="Derivativos" rotulo={CONFIRMATION_LABEL[confirmation] ?? confirmation} apoio={derivativosApoio} legenda={derivativosLegenda} />
+      )}
+      {dataQuality && (
+        <BlocoCategorico nome="Qualidade dos Dados" rotulo={DATA_QUALITY_LABEL[dataQuality] ?? dataQuality} apoio="neutro" legenda="Cobertura e confiabilidade das evidências usadas" />
       )}
       {macroScore != null && (
-        <Bloco nome="Macro" pct={macroScore} cor={COR.neutro} legenda="Contexto macro/geopolítico — informativo" />
+        <BlocoNumerico nome="Macro" pct={macroScore} legenda="Contexto macro/geopolítico — informativo" />
       )}
       {sentimentScore != null && (
-        <Bloco nome="Sentimento" pct={sentimentScore} cor={COR.neutro} legenda="Sentimento do ativo — informativo" />
+        <BlocoNumerico nome="Sentimento" pct={sentimentScore} legenda="Sentimento do ativo — informativo" />
       )}
     </div>
   );

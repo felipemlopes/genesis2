@@ -93,6 +93,13 @@ export interface InformativeContext {
   indicators: {
     rsi14: EvidenceValue;
     adx14: EvidenceValue;
+    // V6.8 (spec genesis-v6-8-correcao-tecnica, Fase 6.1/CODE-P1-01, Fase 7.1/P1-07): DMI completo —
+    // AnalysisPublicResponseBuilder.php (backend) já publica os três ao lado de adx14; só faltava o
+    // contrato do front conhecê-los. EvidenceValue<boolean> porque adx_rising é booleano
+    // (ausência=null/UNAVAILABLE, valor real pode ser `false`, nunca confundir os dois).
+    plus_di14: EvidenceValue;
+    minus_di14: EvidenceValue;
+    adx_rising: EvidenceValue<boolean>;
     atr14: EvidenceValue;
     ema21: EvidenceValue;
     ema50: EvidenceValue;
