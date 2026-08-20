@@ -3,6 +3,17 @@ import React, { useEffect, useState } from 'react';
 import { ShieldCheck, AlertTriangle, TrendingUp, TrendingDown, Zap, Activity } from 'lucide-react';
 import { fetchWithProxy } from '../services/cryptoApi';
 
+/**
+ * A10 (V6.9) — EXCEÇÃO DELIBERADA à determinação "nenhum dado de Spot em nenhuma camada".
+ * Decisão do Felipe (19/08/2026), depois de investigar este componente antes de aplicar o A10
+ * aqui: o "prêmio" mostrado por este widget (diagnóstico de squeeze, "Surfando com as Baleias"
+ * etc.) É a diferença entre o preço à vista (Spot) e o mark price de Futuros — zerar o Spot não
+ * ajustaria a fonte, apagaria a métrica inteira (a diferença sempre daria ~0). O A10 mira dado
+ * de Spot usado na ANÁLISE do Gênesis (que decide direção/entrada/stop/alvo); este componente
+ * não alimenta a decisão — é um indicador auxiliar de estrutura de mercado (base/contango) que
+ * só existe comparando os dois mercados. Mantido como está.
+ */
+
 interface TrendQualityProps {
   symbol: string;
   exchange: string;

@@ -191,12 +191,13 @@ describe('analyzeChart preserva evidências antes descartadas (Fase 7)', () => {
     score_basis: {
       technical_coherence: 'HIGH',
       structure_clarity: 'CLEAR',
-      derivatives_confirmation: 'SUPPORTS',
       contradiction_level: 'LOW',
       data_quality: 'HIGH',
     },
     technical_analysis: 'texto',
     derivatives_context: { strength: 'STRENGTHENS', squeeze_risk: 'NONE', summary: 'resumo derivativos' },
+    // E1 (V6.9): DirectionCoherenceGate — contradição objetiva real precisa sobreviver ao adaptador.
+    contradicoes: [{ tipo: 'DMI', detalhe: 'DMI aponta predominância vendedora, contrário à direção LONG.' }],
     visual_observations: {
       patterns: [],
       objects: [{ type: 'trendline', confidence: 0.9, bbox: { x: 0, y: 0, width: 1, height: 1 } }],
@@ -204,6 +205,8 @@ describe('analyzeChart preserva evidências antes descartadas (Fase 7)', () => {
       vrvp: { presente: true, confianca: 0.7, poc: 99, hvn: [98], lvn: [95] },
     },
     coverage_percent: 80,
+    // G5 (V6.9): nota de rastreabilidade — precisa sobreviver ao adaptador igual a coverage_percent.
+    nota_cobertura: 92,
     snapshot_observed_at: null,
     market_price: 100,
     display_only: { long_short_ratio: null },
@@ -226,11 +229,16 @@ describe('analyzeChart preserva evidências antes descartadas (Fase 7)', () => {
         vix: { value: 18.58, unit: 'index', status: 'AVAILABLE' },
         dxy_change_pct: { value: -0.49, unit: '%', status: 'AVAILABLE' },
         sp500_change_pct: { value: -1.16, unit: '%', status: 'AVAILABLE' },
+        // A2 (V6.9): fear_greed/btc_dominance saíram de sentiment — mercado global, não do ativo.
+        fear_greed: { value: 26, unit: 'index', status: 'AVAILABLE' },
+        btc_dominance: { value: 56.46, unit: '%', status: 'AVAILABLE' },
+        score: { value: 45, unit: 'index', status: 'AVAILABLE' },
         narrative: { value: null, unit: null, status: 'UNAVAILABLE' },
       },
       sentiment: {
-        fear_greed: { value: 26, unit: 'index', status: 'AVAILABLE' },
-        btc_dominance: { value: 56.46, unit: '%', status: 'AVAILABLE' },
+        score: { value: 72, unit: 'index', status: 'AVAILABLE' },
+        gatilhos_positivos: { value: ['Adoção institucional crescente'], unit: 'array', status: 'AVAILABLE' },
+        gatilhos_negativos: { value: [], unit: 'array', status: 'AVAILABLE' },
         narrative: { value: null, unit: null, status: 'UNAVAILABLE' },
       },
     },
@@ -263,8 +271,53 @@ describe('analyzeChart preserva evidências antes descartadas (Fase 7)', () => {
     expect(ctx.macro.vix).toBe(18.58);
     expect(ctx.macro.dxy_change_pct).toBe(-0.49);
     expect(ctx.macro.sp500_change_pct).toBe(-1.16);
-    expect(ctx.sentimento.fear_greed).toBe(26);
-    expect(ctx.sentimento.btc_dominance).toBe(56.46);
+    // A2 (V6.9): fear_greed/btc_dominance agora vêm de macro, não de sentimento.
+    expect(ctx.macro.fear_greed).toBe(26);
+    expect(ctx.macro.btc_dominance).toBe(56.46);
+  });
+
+  // A2 (V6.9): score de macro/sentimento e gatilhos voltam ao contrato — alimentam os cards
+  // Macro/Sentimento de ScoreBasisBars (A7) e a lista de gatilhos já renderizada (H6).
+  // E1 (V6.9): contradicoes chega pronto da API (DirectionCoherenceGate) — precisa sobreviver ao
+  // adaptador mapGraphicalToLegacy() igual a derivatives_context, mesmo achado do P1-06.
+  it('preserva a lista de contradicoes objetivas', async () => {
+    const { analyzeChart } = await import('../services/geminiService');
+    globalThis.fetch = vi.fn(async () => new Response(JSON.stringify(respostaCompleta()), { status: 200 })) as any;
+
+    const mockFile = new File(['test'], 'chart.png', { type: 'image/png' });
+    const metadata = { pair: 'BTCUSDT', exchange: 'Binance', timeframe: '4h' } as any;
+    const result = await analyzeChart(mockFile, metadata, '', {} as any, 'Binance', 10, null);
+
+    expect(result.contradicoes).toEqual([
+      { tipo: 'DMI', detalhe: 'DMI aponta predominância vendedora, contrário à direção LONG.' },
+    ]);
+  });
+
+  // G5 (V6.9): nota_cobertura chega pronta da API — precisa sobreviver ao adaptador.
+  it('preserva a nota de rastreabilidade (nota_cobertura)', async () => {
+    const { analyzeChart } = await import('../services/geminiService');
+    globalThis.fetch = vi.fn(async () => new Response(JSON.stringify(respostaCompleta()), { status: 200 })) as any;
+
+    const mockFile = new File(['test'], 'chart.png', { type: 'image/png' });
+    const metadata = { pair: 'BTCUSDT', exchange: 'Binance', timeframe: '4h' } as any;
+    const result = await analyzeChart(mockFile, metadata, '', {} as any, 'Binance', 10, null);
+
+    expect((result.analysis as any)?.nota_cobertura).toBe(92);
+  });
+
+  it('preserva score de macro/sentimento e os gatilhos de sentimento', async () => {
+    const { analyzeChart } = await import('../services/geminiService');
+    globalThis.fetch = vi.fn(async () => new Response(JSON.stringify(respostaCompleta()), { status: 200 })) as any;
+
+    const mockFile = new File(['test'], 'chart.png', { type: 'image/png' });
+    const metadata = { pair: 'BTCUSDT', exchange: 'Binance', timeframe: '4h' } as any;
+    const result = await analyzeChart(mockFile, metadata, '', {} as any, 'Binance', 10, null);
+
+    const ctx = result.contexto_informativo as any;
+    expect(ctx.macro.score).toBe(45);
+    expect(ctx.sentimento.score).toBe(72);
+    expect(ctx.sentimento.gatilhos_positivos).toEqual(['Adoção institucional crescente']);
+    expect(ctx.sentimento.gatilhos_negativos).toEqual([]);
   });
 
   // V6.8 (achado real, 15/08/2026, análise de583d95-...): `{...umaString}` espalha os CARACTERES

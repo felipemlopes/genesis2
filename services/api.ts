@@ -296,6 +296,35 @@ export async function fetchPrice(symbol: string): Promise<{ price: number; excha
   }
 }
 
+// A11 (V6.9): mapa de liquidação estimado (LiquidationMapService, backend) — substitui o
+// endpoint descontinuado allForceOrders que LiquidationHeatmap.tsx chamava direto.
+export interface LiquidationMapZona {
+  preco_de: number;
+  preco_ate: number;
+  nocional: number;
+  intensidade: number;
+  lados: string[];
+}
+
+export interface LiquidationMapResponse {
+  disponivel: boolean;
+  motivo?: string;
+  estimado?: boolean;
+  janela_dias?: number;
+  preco_atual?: number;
+  zonas?: LiquidationMapZona[];
+}
+
+export async function fetchLiquidationMap(symbol: string, timeframe: string = '1d'): Promise<LiquidationMapResponse | null> {
+  try {
+    const res = await fetch(`${API_BASE}/v1/liquidation-map/${encodeURIComponent(symbol)}?timeframe=${encodeURIComponent(timeframe)}`, { headers: getAuthHeaders() });
+    if (!res.ok) return null;
+    return res.json();
+  } catch {
+    return null;
+  }
+}
+
 // ─── ESTATISTICAS ─────────────────────────────────────────────
 
 export async function fetchEstatisticas() {

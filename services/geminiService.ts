@@ -291,15 +291,16 @@ export const scanChartMetadata = async (file: File, selectedExchange?: string): 
 const emptyCandidateSetup: CandidateSetup = {
   entrada: null,
   stop: null,
-  tp1: null, tp1_fonte: null,
-  tp2: null, tp2_fonte: null, tp2_motivo: null,
-  tp3: null, tp3_fonte: null, tp3_motivo: null,
+  tp1: null, tp1_fonte: null, tp1_rotulo: null,
+  tp2: null, tp2_fonte: null, tp2_motivo: null, tp2_rotulo: null,
+  tp3: null, tp3_fonte: null, tp3_motivo: null, tp3_rotulo: null,
   alavancagem: null,
   alavancagem_info: null,
   liquidacao: null,
   liquidacao_rotulo: null,
   risco_preco_pct: null,
-  risco_margem_pct: null,
+  risco_pct_capital_base: null,
+  risco_pct_margem: null,
   risco_usd_estimado: null,
   nocional_estimado: null,
   quantidade_base_estimada: null,
@@ -320,6 +321,7 @@ const emptyCandidateSetup: CandidateSetup = {
   // V6.7 (B-20): idem, placeholder também precisa dos campos novos de verificação de liquidação.
   verificacao: null,
   verificacao_motivo: null,
+  liquidacao_classificacao: null,
 };
 
 // Adaptador (2026-07-27): traduz a resposta do motor V6.4 (rota /v1/graphical-analysis) para o
@@ -344,10 +346,18 @@ const mapGraphicalToLegacy = (v64: GraphicalAnalysisResult): GenesisAnalysisResu
     vix: ctx?.macro?.vix?.value ?? null,
     dxy_change_pct: ctx?.macro?.dxy_change_pct?.value ?? null,
     sp500_change_pct: ctx?.macro?.sp500_change_pct?.value ?? null,
+    // A2 (V6.9): fear_greed/btc_dominance saíram de sentiment — são indicadores de mercado
+    // global, não do ativo. score volta ao contrato (alimenta o card Macro em ScoreBasisBars).
+    fear_greed: ctx?.macro?.fear_greed?.value ?? null,
+    btc_dominance: ctx?.macro?.btc_dominance?.value ?? null,
+    score: ctx?.macro?.score?.value ?? null,
   };
   const sentimentStats = {
-    fear_greed: ctx?.sentiment?.fear_greed?.value ?? null,
-    btc_dominance: ctx?.sentiment?.btc_dominance?.value ?? null,
+    // A2 (V6.9): score do ativo alimenta o card Sentimento em ScoreBasisBars; gatilhos
+    // alimentam a lista já renderizada em AnalysisResult.tsx (H6 — contrato nunca os preenchia).
+    score: ctx?.sentiment?.score?.value ?? null,
+    gatilhos_positivos: ctx?.sentiment?.gatilhos_positivos?.value ?? null,
+    gatilhos_negativos: ctx?.sentiment?.gatilhos_negativos?.value ?? null,
   };
   const macroTemDado = macroNarrative != null || Object.values(macroStats).some((v) => v != null);
   const sentimentoTemDado = sentimentNarrative != null || Object.values(sentimentStats).some((v) => v != null);
@@ -357,6 +367,8 @@ const mapGraphicalToLegacy = (v64: GraphicalAnalysisResult): GenesisAnalysisResu
     pair: v64.pair,
     analysis_version: v64.analysis_version,
     market_price: v64.market_price,
+    // F9 (V6.9): chega pronto da API — mesmo padrão de market_price acima.
+    candle_change_pct: v64.candle_change_pct,
     snapshot_observed_at: v64.snapshot_observed_at,
     analysis: {
       direction: v64.direction,
@@ -381,6 +393,8 @@ const mapGraphicalToLegacy = (v64: GraphicalAnalysisResult): GenesisAnalysisResu
       // correção antes do gate final (seção 25)**, não uma medição própria (não rodei análise real
       // nesta sessão).
       cobertura_baixa: v64.coverage_percent != null ? v64.coverage_percent < 75 : undefined,
+      // G5 (V6.9): nota de rastreabilidade pro rodapé — chega pronta da API.
+      nota_cobertura: v64.nota_cobertura ?? null,
     },
     execution: exec ? {
       status: exec.status as ExecutionStatus,
@@ -393,6 +407,8 @@ const mapGraphicalToLegacy = (v64: GraphicalAnalysisResult): GenesisAnalysisResu
       direction_reference: exec.direction_reference,
       reason_code: exec.reason_code,
       motivo: exec.motivo,
+      // A8 (V6.9): chega pronto da API — mesmo padrão dos outros campos deste bloco.
+      alvo_que_atende: exec.alvo_que_atende ?? null,
       // V6.7 (G-44): tipos unificados com o contrato real do backend (types/graphicalAnalysis.ts) —
       // ExecutionCandidateSetup/ExecutionPlanoSetup/ExecutionPlanB são estruturalmente compatíveis com
       // CandidateSetup/PlanoSetup/ExecutionPlanB (types.ts) depois da correção, sem precisar de cast.
@@ -439,6 +455,12 @@ const mapGraphicalToLegacy = (v64: GraphicalAnalysisResult): GenesisAnalysisResu
       plus_di: ctx?.indicators?.plus_di14?.value ?? null,
       minus_di: ctx?.indicators?.minus_di14?.value ?? null,
       adx_subindo: ctx?.indicators?.adx_rising?.value ?? null,
+      // F2 (V6.9): faixas de referência prontas — chegam já formatadas da API.
+      adx_faixa: ctx?.indicators?.adx_faixa ?? null,
+      di_faixa: ctx?.indicators?.di_faixa ?? null,
+      adx_em_elevacao_relevante: ctx?.indicators?.adx_em_elevacao_relevante ?? false,
+      rsi_faixa: ctx?.indicators?.rsi_faixa ?? null,
+      cmf_faixa: ctx?.indicators?.cmf_faixa ?? null,
       atr: ctx?.indicators?.atr14?.value ?? null,
       ema21: ctx?.indicators?.ema21?.value ?? null,
       ema50: ctx?.indicators?.ema50?.value ?? null,
@@ -447,6 +469,9 @@ const mapGraphicalToLegacy = (v64: GraphicalAnalysisResult): GenesisAnalysisResu
     // V6.8 (Fase 7, CODE-P1-06): contexto de derivativos (força/risco de squeeze) sempre chegou
     // pronto em GraphicalAnalysisResult.derivatives_context e nunca era repassado.
     derivatives_context: v64.derivatives_context ?? null,
+    // E1 (V6.9): contradições objetivas (DMI/ADX/Supertrend/figura/tempos maiores) chegam prontas
+    // em GraphicalAnalysisResult.contradicoes — mesmo padrão de derivatives_context acima.
+    contradicoes: v64.contradicoes ?? [],
     wyckoff: (ctx?.indicators?.wyckoff?.value as Record<string, unknown> | null) ?? undefined,
     sessao: ctx?.indicators?.session?.value
       ? { nome: ctx.indicators.session.value.name, cor: 'text-white' }

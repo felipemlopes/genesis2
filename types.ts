@@ -6,7 +6,7 @@
 // "famílias votantes" pré-V6, classification/modifier/rule — não usada por nenhum componente real,
 // candidata a limpeza futura, não removida aqui por estar fora do escopo desta fase) que colidiria
 // com o nome do contrato real do backend.
-import type { VisualPattern, VisualObject, FibonacciObservation, VrvpObservation, DerivativesContext as GraphicalDerivativesContext, ExecutionPlanB, ScoreBasis, StopStatus, StopAncora, StopBuffer } from './types/graphicalAnalysis';
+import type { VisualPattern, VisualObject, FibonacciObservation, VrvpObservation, DerivativesContext as GraphicalDerivativesContext, DirectionContradiction, ExecutionPlanB, ScoreBasis, StopStatus, StopAncora, StopBuffer } from './types/graphicalAnalysis';
 
 // V6.7 (A-13): reexportados para quem importa de '../types' (a maioria dos componentes) em vez de
 // '../types/graphicalAnalysis' diretamente.
@@ -112,20 +112,28 @@ export interface CandidateSetup {
   stop: number | null;
   tp1: number | null;
   tp1_fonte: string | null;
+  // C7 (V6.9): rótulo em linguagem de trader (AlvoService::rotuloDeTrader()).
+  tp1_rotulo: string | null;
   tp2: number | null;
   tp2_fonte: string | null;
   // V6.6 (C06): motivo da ausência quando tp2/tp3 vem null — sem barreira dentro do horizonte do
   // timeframe. Permite a tela explicar em vez de só mostrar traço/sumir o campo.
   tp2_motivo: string | null;
+  tp2_rotulo: string | null;
   tp3: number | null;
   tp3_fonte: string | null;
   tp3_motivo: string | null;
+  tp3_rotulo: string | null;
   alavancagem: number | null;
   alavancagem_info: AlavancagemInfo | null;
   liquidacao: number | null;
   liquidacao_rotulo: 'estimada' | null;
   risco_preco_pct: number | null;
-  risco_margem_pct: number | null;
+  // D7 (V6.9): renomeado de 'risco_margem_pct' — sempre foi risco sobre o CAPITAL-BASE (saldo
+  // total), nunca a margem de fato comprometida nesta posição especificamente.
+  risco_pct_capital_base: number | null;
+  // D7 (V6.9): novo — risco / margem desta posição (nocional/alavancagem), o número que faltava.
+  risco_pct_margem: number | null;
   risco_usd_estimado: number | null;
   nocional_estimado: number | null;
   // V6.5 (E11): substituem tamanho_sugerido_texto — o texto ("0.05 BTCUSDT") usava o par inteiro como
@@ -152,6 +160,8 @@ export interface CandidateSetup {
   // V6.7 (B-20): verificação de segurança de liquidação — null quando não há stop.
   verificacao: 'SEGURO' | 'INSEGURO' | null;
   verificacao_motivo: string | null;
+  // D1 (V6.9): distingue LIQ_ANTES_DO_STOP de LIQ_FOLGA_CURTA quando verificacao === 'INSEGURO'.
+  liquidacao_classificacao: 'LIQ_ANTES_DO_STOP' | 'LIQ_FOLGA_CURTA' | null;
 }
 
 // V6.5 (E08): Plano A e Plano B chegavam com formatos diferentes — CandidateSetup completo para A,
@@ -164,18 +174,22 @@ export interface PlanoSetup {
   stop: number | null;
   tp1: number | null;
   tp1_fonte: string | null;
+  tp1_rotulo: string | null;
   tp2: number | null;
   tp2_fonte: string | null;
   tp2_motivo: string | null;
+  tp2_rotulo: string | null;
   tp3: number | null;
   tp3_fonte: string | null;
   tp3_motivo: string | null;
+  tp3_rotulo: string | null;
   alavancagem: number | null;
   alavancagem_info: AlavancagemInfo | null;
   liquidacao: number | null;
   liquidacao_rotulo: string | null;
   risco_preco_pct: number | null;
-  risco_margem_pct: number | null;
+  risco_pct_capital_base: number | null;
+  risco_pct_margem: number | null;
   risco_usd_estimado: number | null;
   nocional_estimado: number | null;
   quantidade_base_estimada: number | null;
@@ -213,6 +227,7 @@ export interface PlanoSetup {
   // calculado contra o próprio stop.
   verificacao: 'SEGURO' | 'INSEGURO' | null;
   verificacao_motivo: string | null;
+  liquidacao_classificacao: 'LIQ_ANTES_DO_STOP' | 'LIQ_FOLGA_CURTA' | null;
 }
 
 export interface GenesisAnalysisResult {
@@ -220,6 +235,8 @@ export interface GenesisAnalysisResult {
   pair: string;
   analysis_version?: string | null;
   market_price?: number | null;
+  // F9 (V6.9): variação do PRÓPRIO candle analisado — GraphicalAnalysisResult.candle_change_pct.
+  candle_change_pct?: number | null;
   snapshot_observed_at?: string | null;
   analysis: {
     direction: AnalysisDirection;
@@ -239,6 +256,8 @@ export interface GenesisAnalysisResult {
     // reintroduzia o conceito de convicção-base separada (a V6 aboliu isso, é só o score final de
     // novo). cobertura_baixa é derivado de verdade a partir de coverage_percent — nunca chumbado.
     cobertura_baixa?: boolean;
+    // G5 (V6.9): nota de rastreabilidade pro rodapé — GraphicalAnalysisResult.nota_cobertura.
+    nota_cobertura?: number | null;
     family_scores?: GraphicalFamilyScores;
     score_justification?: string;
     technical_analysis?: string;
@@ -256,6 +275,9 @@ export interface GenesisAnalysisResult {
     direction_reference: 'LONG' | 'SHORT' | null;
     reason_code: string | null;
     motivo: string;
+    // A8 (V6.9): "TP2"/"TP3" quando um alvo posterior já atende o R/R mínimo mesmo com o plano
+    // não recomendado — types/graphicalAnalysis.ts::ExecutionResult.alvo_que_atende.
+    alvo_que_atende?: string | null;
     candidate_setup: CandidateSetup | null;
     executable_setup: CandidateSetup | null;
     planoB: ExecutionPlanB | null;
@@ -300,6 +322,9 @@ export interface GenesisAnalysisResult {
   // chegava pronto em GraphicalAnalysisResult.derivatives_context e nunca era repassado pelo
   // adaptador; nenhum componente da tela o exibia.
   derivatives_context?: GraphicalDerivativesContext | null;
+  // E1 (V6.9): contradições objetivas entre a direção e DMI/ADX/Supertrend/figura/tempos maiores —
+  // chega pronto em GraphicalAnalysisResult.contradicoes (DirectionCoherenceGate, backend).
+  contradicoes?: DirectionContradiction[];
 }
 
 export interface MarketSentiment {
@@ -364,7 +389,10 @@ export interface ActiveTrade {
   currentPriceStr?: string; // New: Display real-time price in table
   targetPrice: number;
   financialTarget?: number; // New: Specific Profit Target in USD
-  liquidationPrice: number;
+  // D10 (V6.9): nullable — sem o número real do backend (candidate_setup.liquidacao), a liquidação
+  // fica indisponível, nunca recalculada no cliente por uma fórmula própria (ver
+  // services/futuresCalculations.ts, calculateLiquidationPrice() removida).
+  liquidationPrice: number | null;
   amount: number;
 }
 

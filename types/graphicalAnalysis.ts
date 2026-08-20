@@ -100,6 +100,13 @@ export interface InformativeContext {
     plus_di14: EvidenceValue;
     minus_di14: EvidenceValue;
     adx_rising: EvidenceValue<boolean>;
+    // F2 (V6.9): faixas de referência prontas em português (FaixasIndicador, backend) — texto já
+    // pronto pra tela, não um EvidenceValue (não é evidência do bundle, é derivado dela).
+    adx_faixa: string | null;
+    di_faixa: string | null;
+    adx_em_elevacao_relevante: boolean;
+    rsi_faixa: string | null;
+    cmf_faixa: string | null;
     atr14: EvidenceValue;
     ema21: EvidenceValue;
     ema50: EvidenceValue;
@@ -112,11 +119,16 @@ export interface InformativeContext {
     vix: EvidenceValue;
     dxy_change_pct: EvidenceValue;
     sp500_change_pct: EvidenceValue;
+    // A2 (V6.9): fear_greed/btc_dominance saíram de sentiment — mercado global, não do ativo.
+    fear_greed: EvidenceValue;
+    btc_dominance: EvidenceValue;
+    score: EvidenceValue;
     narrative: EvidenceValue<MacroNarrative>;
   };
   sentiment: {
-    fear_greed: EvidenceValue;
-    btc_dominance: EvidenceValue;
+    score: EvidenceValue;
+    gatilhos_positivos: EvidenceValue<string[]>;
+    gatilhos_negativos: EvidenceValue<string[]>;
     narrative: EvidenceValue<SentimentNarrative>;
   };
 }
@@ -124,12 +136,22 @@ export interface InformativeContext {
 // Restauração pós-entrega (2026-07-27): justificativa estruturada que o próprio decisor já devolve
 // junto da decisão — não é um cálculo novo, só nunca tinha sido exposto na resposta pública. Usado
 // pra colorir os blocos Técnico/Derivativos sem recalcular nada em paralelo ao Gemini.
+// A9 (V6.9): derivatives_confirmation saiu daqui — a Etapa 1 (que produz score_basis) nunca mais
+// recebe evidência de derivativos. O equivalente agora é `DerivativesContext.strength`, resposta da
+// Etapa 2 (chamada separada, nunca decide direção — ver GenesisDecisionStage2Schema no backend).
 export interface ScoreBasis {
   technical_coherence: 'VERY_LOW' | 'LOW' | 'MODERATE' | 'HIGH' | 'VERY_HIGH';
   structure_clarity: 'UNCLEAR' | 'PARTIAL' | 'CLEAR' | 'VERY_CLEAR';
-  derivatives_confirmation: 'OPPOSES' | 'NEUTRAL' | 'SUPPORTS' | 'STRONGLY_SUPPORTS' | 'UNAVAILABLE';
   contradiction_level: 'NONE' | 'LOW' | 'MODERATE' | 'HIGH';
   data_quality: 'LOW' | 'MODERATE' | 'HIGH' | 'VERY_HIGH';
+}
+
+// E1 (V6.9): uma contradição objetiva entre a direção decidida e um indicador que o pipeline já
+// calcula (DMI, ADX fraco, Supertrend, viés de figura, tempos maiores) — ver
+// DirectionCoherenceGate no backend, única fonte desta lista.
+export interface DirectionContradiction {
+  tipo: 'DMI' | 'ADX_FRACO' | 'SUPERTREND' | 'FIGURA' | 'MULTI_TIMEFRAME';
+  detalhe: string;
 }
 
 // Restauração pós-entrega (2026-07-27): pipeline de execução (entrada/stop/TP/tamanho/risco-retorno),
@@ -187,18 +209,27 @@ export interface ExecutionCandidateSetup {
   stop: number | null;
   tp1: number | null;
   tp1_fonte: string | null;
+  // C7 (V6.9): rótulo em linguagem de trader (AlvoService::rotuloDeTrader()) — nunca "suporte/
+  // resistência visual" genérico, descreve a origem real (fundo de swing, parede do book, etc.).
+  tp1_rotulo: string | null;
   tp2: number | null;
   tp2_fonte: string | null;
   tp2_motivo: string | null;
+  tp2_rotulo: string | null;
   tp3: number | null;
   tp3_fonte: string | null;
   tp3_motivo: string | null;
+  tp3_rotulo: string | null;
   alavancagem: number;
   alavancagem_info: AlavancagemInfo | null;
   liquidacao: number | null;
   liquidacao_rotulo: 'estimada' | null;
   risco_preco_pct: number | null;
-  risco_margem_pct: number | null;
+  // D7 (V6.9): renomeado de 'risco_margem_pct' — sempre foi risco sobre o capital-base (saldo
+  // total), nunca a margem de fato comprometida nesta posição especificamente.
+  risco_pct_capital_base: number | null;
+  // D7 (V6.9): novo — risco / margem desta posição (nocional/alavancagem).
+  risco_pct_margem: number | null;
   risco_usd_estimado: number | null;
   nocional_estimado: number | null;
   quantidade_base_estimada: number | null;
@@ -220,6 +251,8 @@ export interface ExecutionCandidateSetup {
   // null quando não há stop (STOP_UNAVAILABLE), mesmo padrão de alavancagem_info/liquidacao acima.
   verificacao: 'SEGURO' | 'INSEGURO' | null;
   verificacao_motivo: string | null;
+  // D1 (V6.9): distingue LIQ_ANTES_DO_STOP de LIQ_FOLGA_CURTA quando verificacao === 'INSEGURO'.
+  liquidacao_classificacao: 'LIQ_ANTES_DO_STOP' | 'LIQ_FOLGA_CURTA' | null;
 }
 
 // V6.7 (G-44): faltavam zona_de/zona_ate/fonte — MotorExecucaoService::gerarPlanoB() sempre devolveu
@@ -233,14 +266,18 @@ export interface ExecutionPlanB {
   zona_ate: number | null;
   fonte: string | null;
   tp1: number | null;
+  tp1_rotulo: string | null;
   tp2: number | null;
+  tp2_rotulo: string | null;
   tp3: number | null;
+  tp3_rotulo: string | null;
   alavancagem: number;
   liquidacao: number | string | null;
   riscoPct: number;
   rr1: number;
   verificacao: 'SEGURO' | 'INSEGURO';
   verificacao_motivo: string | null;
+  liquidacao_classificacao: 'LIQ_ANTES_DO_STOP' | 'LIQ_FOLGA_CURTA' | null;
   tipo: string;
   descricao: string;
   // V6.7 (A-13): stop próprio do Plano B — gerarPlanoB() devolve null (Plano B indisponível) em vez
@@ -261,20 +298,26 @@ export interface ExecutionPlanoSetup {
   stop: number | null;
   tp1: number | null;
   tp1_fonte: string | null;
+  // C7 (V6.9): mesmo campo de ExecutionCandidateSetup acima — execution.planos[] é o formato
+  // completo que a tela usa pra alternar entre Plano A e B, precisa carregar tudo que o outro tem.
+  tp1_rotulo: string | null;
   tp2: number | null;
   tp2_fonte: string | null;
   // V6.7 (G-44): faltavam — ExecucaoService::montar() sempre inclui tp2_motivo/tp3_motivo em cada
   // item de 'planos' (linhas 429/432 do Plano A, 378/381 do Plano B, ambos podendo ser null).
   tp2_motivo: string | null;
+  tp2_rotulo: string | null;
   tp3: number | null;
   tp3_fonte: string | null;
   tp3_motivo: string | null;
+  tp3_rotulo: string | null;
   alavancagem: number | null;
   alavancagem_info: AlavancagemInfo | null;
   liquidacao: number | null;
   liquidacao_rotulo: string | null;
   risco_preco_pct: number | null;
-  risco_margem_pct: number | null;
+  risco_pct_capital_base: number | null;
+  risco_pct_margem: number | null;
   risco_usd_estimado: number | null;
   nocional_estimado: number | null;
   quantidade_base_estimada: number | null;
@@ -306,6 +349,7 @@ export interface ExecutionPlanoSetup {
   // calculado contra o próprio stop (B-21: Plano B não reaproveita mais o do Plano A).
   verificacao: 'SEGURO' | 'INSEGURO' | null;
   verificacao_motivo: string | null;
+  liquidacao_classificacao: 'LIQ_ANTES_DO_STOP' | 'LIQ_FOLGA_CURTA' | null;
 }
 
 export interface ExecutionPipelineResult {
@@ -318,6 +362,9 @@ export interface ExecutionPipelineResult {
   direction_reference: AnalysisDirection | null;
   reason_code: string | null;
   motivo: string;
+  // A8 (V6.9): "TP2"/"TP3" quando um alvo posterior já atende o R/R mínimo mesmo com o plano não
+  // recomendado (TP1 abaixo do mínimo) — null quando nenhum atende ou o plano é recomendado.
+  alvo_que_atende: string | null;
   candidate_setup: ExecutionCandidateSetup | null;
   executable_setup: ExecutionCandidateSetup | null;
   planoB: ExecutionPlanB | null;
@@ -378,10 +425,19 @@ export interface GraphicalAnalysisResult {
   score_basis: ScoreBasis | null;
   technical_analysis: string;
   derivatives_context: DerivativesContext;
+  // E1 (V6.9): contradições objetivas entre a direção e DMI/ADX/Supertrend/figura/tempos maiores —
+  // [] quando nenhuma foi encontrada (DirectionCoherenceGate, backend).
+  contradicoes: DirectionContradiction[];
   visual_observations: VisualObservations;
   coverage_percent: number | null;
+  // G5 (V6.9): nota de rastreabilidade pro rodapé — válidos/esperados de TODO o manifesto
+  // (qualquer papel), não só o que decide direção (coverage_percent acima é decision_percent).
+  nota_cobertura: number | null;
   snapshot_observed_at: string | null;
   market_price: number | null;
+  // F9 (V6.9): variação do PRÓPRIO candle analisado (fechamento vs fechamento anterior real) —
+  // diferente do ticker de 24h.
+  candle_change_pct: number | null;
   display_only: {
     long_short_ratio: unknown;
   };

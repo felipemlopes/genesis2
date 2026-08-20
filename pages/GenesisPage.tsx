@@ -24,7 +24,6 @@ import { analyzeChart, scanChartMetadata, ChartMetadataBlockedError } from '../s
 import { normalizarPar } from '../services/normalizarPar';
 import { GenesisAnalysisResult, ChartMetadata, UnifiedChartResult, PlanoSetup } from '../types';
 import { fetchBinanceData, fetchBybitData, fetchBitgetData, fetchOkxData, formatPrice, ExchangeData } from '../services/cryptoApi';
-import { calculateLiquidationPrice } from '../services/futuresCalculations';
 
 const TRADING_QUOTES = [
   "Lucro bom é lucro no bolso.",
@@ -79,13 +78,36 @@ const TRADING_QUOTES = [
   "O sucesso deixa rastros no gráfico."
 ];
 
-const toNullableNumber = (value: unknown): number | null => {
+// D9 (V6.9): antes trocava a PRIMEIRA vírgula por ponto, cegamente — "63.523,00" (formato BR,
+// ponto=milhar, vírgula=decimal) virava "63.523.00", e parseFloat() para no segundo ponto,
+// devolvendo 63.523 em vez de 63523 (erro de fator mil). Agora identifica qual separador é o
+// DECIMAL pela posição: o último vírgula/ponto que aparece no texto é o decimal (convenção BR e US
+// concordam nisso — só discordam em qual símbolo usam pra cada papel); tudo antes dele é separador
+// de milhar e é descartado.
+// D9 (V6.9): exportado (só pra teste, nunca importado por outro componente) — antes um detalhe
+// interno do arquivo, precisa ser testável isoladamente pelos 7 casos obrigatórios do critério de
+// aceite.
+export const toNullableNumber = (value: unknown): number | null => {
   if (value === null || value === undefined || value === '') return null;
   if (typeof value === 'number') return Number.isFinite(value) ? value : null;
-  const normalized = String(value)
-    .split('\n')[0]
-    .replace(/[^0-9,.-]+/g, '')
-    .replace(',', '.');
+
+  const cru = String(value).split('\n')[0].replace(/[^0-9,.-]+/g, '');
+  if (cru === '') return null;
+
+  const ultimaVirgula = cru.lastIndexOf(',');
+  const ultimoPonto = cru.lastIndexOf('.');
+
+  let normalized: string;
+  if (ultimaVirgula === -1 && ultimoPonto === -1) {
+    normalized = cru;
+  } else if (ultimaVirgula > ultimoPonto) {
+    // Vírgula é o separador decimal (formato BR: milhar=ponto, decimal=vírgula).
+    normalized = cru.replace(/\./g, '').replace(',', '.');
+  } else {
+    // Ponto é o separador decimal (formato US: milhar=vírgula, decimal=ponto).
+    normalized = cru.replace(/,/g, '');
+  }
+
   const parsed = Number.parseFloat(normalized);
   return Number.isFinite(parsed) ? parsed : null;
 };
@@ -415,9 +437,12 @@ const GenesisPage: React.FC = () => {
     // silêncio) — o fallback pra `leverage` (estado do formulário) continua só por segurança
     // defensiva, para o caso raro de um setup sem o campo preenchido.
     const levVal = setup.alavancagem ?? leverage;
-    const liqPrice = setup.liquidacao != null
-      ? setup.liquidacao
-      : calculateLiquidationPrice(entryP, levVal, direction, exchange);
+    // D10 (V6.9): calculateLiquidationPrice() (futuresCalculations.ts) era uma SEGUNDA autoridade de
+    // liquidação, com fórmula própria (MMR fixo por corretora) e independente da real
+    // (MotorExecucaoService::calcularLiquidacao(), que usa manutenção real por bracket quando
+    // disponível — ver D3) — podia divergir do número já calculado e publicado pelo backend. Sem
+    // dado do backend, a liquidação fica indisponível (null), nunca recalculada no cliente.
+    const liqPrice = setup.liquidacao ?? null;
 
     const newTrade = {
       id: Date.now().toString(),
@@ -633,7 +658,7 @@ const GenesisPage: React.FC = () => {
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.4, delay: 2 * 0.08, ease: 'easeOut' }}
               >
-                <LiquidationHeatmap />
+                <LiquidationHeatmap symbol={selectedPair} />
               </motion.div>
               <motion.div
                 initial={{ opacity: 0, y: 10 }}
@@ -715,8 +740,6 @@ const GenesisPage: React.FC = () => {
             ) : result ? (
               <AnalysisResult
                 data={result}
-                change24h={change24h}
-                isPositiveChange={!!isPositiveChange}
                 onSaveTrade={handleSaveTrade}
                 onReset={handleResetAnalysis}
                 analiseId={currentAnaliseId}

@@ -17,8 +17,6 @@ import BlocoFiguraGrafica from './BlocoFiguraGrafica';
 
 interface AnalysisResultProps {
   data: GenesisAnalysisResult;
-  change24h?: string;
-  isPositiveChange?: boolean;
   // V6.7 (B-24): antes não recebia argumento nenhum — o chamador (GenesisPage) não tinha como saber
   // qual plano (A ou B) estava selecionado na tela, e sempre gravava o Plano A (executable_setup),
   // mesmo com o Plano B visivelmente selecionado. Agora recebe o plano ativo no momento do clique.
@@ -26,6 +24,14 @@ interface AnalysisResultProps {
   onReset?: () => void;
   analiseId?: string | null;
 }
+
+// D8 (V6.9): teto de referência da barra de "Risco de Capital" — antes a barra escalava contra
+// literal 100% (largura quase sempre invisível, já que risco_pct_capital_base real fica na casa de
+// 1-2% na prática, o teto configurado de risco por análise) enquanto o rótulo ao lado usava limiares
+// (25%/50%) calibrados pra uma escala 0-100 que a barra nunca alcançava — os dois nunca concordavam
+// visualmente sobre o que é "alto". Agora os dois usam o MESMO teto (2%, a referência usual de risco
+// por análise) como 100% da barra.
+const TETO_RISCO = 2;
 
 const WYCKOFF_LABEL: Record<string, string> = {
   DISTRIBUICAO_RANGE: 'Distribuição em range',
@@ -44,12 +50,49 @@ const directionLabel: Record<AnalysisDirection, string> = {
   INDISPONIVEL: 'INDISPONÍVEL',
 };
 
+// G7 (V6.9): bias de tempo maior (multiTimeframe) chegava cru em inglês na tela ("BULLISH"/
+// "BEARISH"/"MIXED") — único ponto do arquivo que ainda mostrava o valor bruto do backend sem
+// passar por um dicionário (Wyckoff já tinha o dele, WYCKOFF_LABEL acima).
+const BIAS_LABEL: Record<string, string> = {
+  BULLISH: 'ALTA',
+  BEARISH: 'BAIXA',
+  MIXED: 'MISTO',
+};
+
+// A8 (V6.9): manchete deixa de ser fixa "Plano não recomendado" — quando existe um alvo posterior
+// (TP2/TP3) que já atende o R/R mínimo, nomeia esse alvo em vez de soar como reprovação total do
+// plano (execution.alvo_que_atende, ExecucaoService::primeiroAlvoAcimaDoMinimo() no backend).
+const manchetePlano = (alvoQueAtende: string | null | undefined): string =>
+  alvoQueAtende ? `Plano atende o ${alvoQueAtende}` : 'Plano não recomendado';
+
+// G12 (V6.9): Fear & Greed chegava só como número (0-100), sem a faixa qualitativa que dá
+// significado a ele (a maioria dos membros não decora os limiares do índice de cor).
+const faixaFearGreed = (valor: number): string => {
+  if (valor <= 24) return 'Medo extremo';
+  if (valor <= 44) return 'Medo';
+  if (valor <= 55) return 'Neutro';
+  if (valor <= 75) return 'Ganância';
+  return 'Ganância extrema';
+};
+
+// G7 (V6.9): sessão de mercado (MarketSnapshotService::marketSession(), backend) devolve o nome
+// cru em inglês (ASIA/LONDON/NEW_YORK/OVERNIGHT) — mesmo tratamento dos outros dicionários acima.
+const SESSAO_LABEL: Record<string, string> = {
+  ASIA: 'Ásia',
+  LONDON: 'Londres',
+  NEW_YORK: 'Nova York',
+  OVERNIGHT: 'Overnight',
+};
+
 const limparTexto = (t: string) =>
   t.replace(/[ \t]{2,}/g, ' ').replace(/[ \t]+\n/g, '\n').trim();
 
-const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, change24h, isPositiveChange, onSaveTrade, onReset, analiseId }) => {
+const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, onSaveTrade, onReset, analiseId }) => {
   const [showIndicators, setShowIndicators] = useState(false);
-  const [selectedZone, setSelectedZone] = useState<'A' | 'B' | null>(null);
+  // G13 (V6.9): Plano A pré-selecionado — o backend já publica os dois planos completos e
+  // paritários (ExecucaoService::montar(), $planoBCompleto com os mesmos 9 campos de A), só a
+  // seleção inicial ficava em null, deixando "Selecione um Plano" mesmo com A pronto pra uso.
+  const [selectedZone, setSelectedZone] = useState<'A' | 'B' | null>('A');
   const [zoneSaveStatus, setZoneSaveStatus] = useState<'idle' | 'saving' | 'success' | 'error'>('idle');
   const [zoneSaveError, setZoneSaveError] = useState<string | null>(null);
 
@@ -60,7 +103,7 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, change24h, isPosi
   // decidido sem nenhuma ação do membro nesta análise. Reseta sempre que a identidade da análise muda.
   const analiseIdentidade = analiseId ?? data?.analysis_id ?? null;
   useEffect(() => {
-    setSelectedZone(null);
+    setSelectedZone('A');
     setZoneSaveStatus('idle');
     setZoneSaveError(null);
   }, [analiseIdentidade]);
@@ -201,13 +244,15 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, change24h, isPosi
     const quantidadeBase = planoAtivo?.quantidade_base_estimada ?? setup?.quantidade_base_estimada;
     const ativoBase = planoAtivo?.ativo_base ?? setup?.ativo_base;
     const riscoUsd = planoAtivo?.risco_usd_estimado ?? setup?.risco_usd_estimado;
-    const riscoMargemPct = planoAtivo?.risco_margem_pct ?? setup?.risco_margem_pct;
+    // D7 (V6.9): renomeado de 'risco_margem_pct' — sempre foi risco sobre o capital-base (saldo
+    // total), não sobre a margem desta posição. Texto atualizado pra dizer o nome certo.
+    const riscoPctCapitalBase = planoAtivo?.risco_pct_capital_base ?? setup?.risco_pct_capital_base;
     if (nocional == null || quantidadeBase == null || !ativoBase) return null;
     // V6.6 (F05): três formatos de valor monetário coexistiam na tela ($62,706.90 nos preços,
     // $73.06 aqui, $10 no risco de capital) — formatPrice() em todos os pontos, mesmo padrão.
     const base = `${formatPrice(nocional)} de nocional, equivalente a ${quantidadeBase} ${ativoBase}`;
-    if (riscoUsd == null || riscoMargemPct == null) return `${base}.`;
-    return `${base}. Risco estimado até o stop: ${formatPrice(riscoUsd)} (${riscoMargemPct}% da margem-base).`;
+    if (riscoUsd == null || riscoPctCapitalBase == null) return `${base}.`;
+    return `${base}. Risco estimado até o stop: ${formatPrice(riscoUsd)} (${riscoPctCapitalBase}% do capital-base).`;
   })();
 
   // V6.7 (C-27): TP2/TP3 não têm risco-retorno pronto no payload — só TP1 tem rr_bruto/
@@ -312,10 +357,14 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, change24h, isPosi
                 <span className="text-sm font-mono text-white tracking-wider">
                   {formatPrice(data.market_price)}
                 </span>
-                {change24h && (
-                    <div className={`flex items-center gap-1 text-[11px] font-bold ${isPositiveChange ? 'text-genesis-positive' : 'text-genesis-negative'}`}>
-                        {isPositiveChange ? <ArrowUp size={10} /> : <ArrowDown size={10} />}
-                        {change24h}%
+                {/* F9 (V6.9): variação do PRÓPRIO candle analisado (data.candle_change_pct,
+                    fechamento vs fechamento anterior real) — antes usava change24h (prop vinda do
+                    ticker de 24h ao vivo, sem relação com o timeframe/candle desta análise, ao
+                    lado de um preço — market_price acima — que já era o da própria análise). */}
+                {data.candle_change_pct != null && (
+                    <div className={`flex items-center gap-1 text-[11px] font-bold ${data.candle_change_pct >= 0 ? 'text-genesis-positive' : 'text-genesis-negative'}`}>
+                        {data.candle_change_pct >= 0 ? <ArrowUp size={10} /> : <ArrowDown size={10} />}
+                        {Math.abs(data.candle_change_pct).toFixed(2)}%
                     </div>
                 )}
             </div>
@@ -385,6 +434,7 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, change24h, isPosi
 
           <ScoreBasisBars
             scoreBasis={anyData.score_basis ?? null}
+            derivativesContext={anyData.derivatives_context ?? null}
             direction={direction}
             macroScore={macroInfo?.score ?? null}
             sentimentScore={sentimento?.score ?? null}
@@ -395,6 +445,15 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, change24h, isPosi
           {analysis.cobertura_baixa && (
             <p className="mb-4 text-xs text-yellow-400 bg-yellow-500/5 border border-yellow-500/30 rounded-lg p-3 relative z-10">
               Cobertura de dados em {analysis.coverage != null ? `${analysis.coverage.toFixed(0)}%` : 'nível reduzido'}. Parte dos indicadores não estava disponível no momento desta leitura.
+            </p>
+          )}
+
+          {/* G5 (V6.9): nota de rastreabilidade sempre visível — substitui o card "Qualidade dos
+              Dados" removido no A7. Número único, sem nomear indicador nenhum (o aviso amarelo
+              acima já cobre o caso de cobertura baixa; esta linha é a nota permanente). */}
+          {analysis.nota_cobertura != null && (
+            <p className="mb-4 text-[9px] text-gray-500 relative z-10">
+              Rastreabilidade dos dados desta leitura: {analysis.nota_cobertura}/100.
             </p>
           )}
 
@@ -452,6 +511,25 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, change24h, isPosi
           <BlocoFiguraGrafica figuras={anyData.visual_observations?.patterns ?? []} />
         </div>
 
+        {/* E1 (V6.9): contradições objetivas entre a direção decidida e DMI/ADX/Supertrend/figura/
+            tempos maiores (DirectionCoherenceGate, backend) — cada uma já custou 10 pontos reais do
+            score final; a tela precisa deixar claro por quê, não só mostrar o número menor. */}
+        {(anyData.contradicoes ?? []).length > 0 && (
+          <div className="bg-genesis-negative/10 border border-genesis-negative/30 rounded-lg p-3 mb-6">
+            <div className="flex items-center gap-2 mb-2">
+              <AlertTriangle size={14} className="text-genesis-negative shrink-0" />
+              <p className="text-[11px] font-bold text-genesis-negative uppercase tracking-wider">Pontos que pesam contra esta leitura</p>
+            </div>
+            <ul className="space-y-1.5">
+              {(anyData.contradicoes ?? []).map((c: { tipo: string; detalhe: string }, i: number) => (
+                <li key={i} className="text-[11px] text-gray-300 leading-relaxed pl-3 border-l-2 border-genesis-negative/40">
+                  {c.detalhe}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
         {/* R27: pipeline sempre visível (mesmo com candidate_setup vazio) — cada campo cai em
             "—"/"N/A" sozinho quando null; o gate operacional fica no botão de confirmação. */}
         {setup && (
@@ -460,18 +538,19 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, change24h, isPosi
             nenhum componente lia — SEM_BARREIRA_REAL, RR_LIQUIDO_ABAIXO_MINIMO e
             CONVICCAO_ABAIXO_MINIMO ficavam invisíveis para o membro. Restrição obrigatória (DP-03/
             DP-05): este bloco só avisa, nunca desabilita nada — podeInteragir continua amarrado
-            exclusivamente a execution.executable, não a execution.recommended. */}
+            exclusivamente a execution.executable, não a execution.recommended.
+            A8 (V6.9): reason_code (código interno tipo "RR_LIQUIDO_ABAIXO_MINIMO") saiu da tela —
+            continua no payload/banco para histórico e estatística, só não é mais exibido. Manchete
+            deixa de ser fixa "Plano não recomendado" quando existe um alvo posterior que já atende
+            o R/R mínimo — manchetePlano() nomeia esse alvo em vez de soar como reprovação total. */}
         {!execution.recommended && (
           <div className="bg-amber-950/20 border border-amber-600/30 rounded-lg p-3 mb-6 flex items-start gap-2.5">
             <AlertTriangle size={14} className="text-amber-400 shrink-0 mt-0.5" />
             <div>
-              <p className="text-[11px] font-bold text-amber-300 uppercase tracking-wider mb-1">Plano não recomendado</p>
+              <p className="text-[11px] font-bold text-amber-300 uppercase tracking-wider mb-1">{manchetePlano(execution.alvo_que_atende)}</p>
               <p className="text-[11px] text-amber-200/90 leading-relaxed">
                 {execution.motivo || 'Esta configuração não atingiu os limiares recomendados de risco-retorno ou convicção. A decisão de seguir é sua.'}
               </p>
-              {execution.reason_code && (
-                <p className="text-[9px] text-amber-500/60 font-mono mt-1 tracking-wide">{execution.reason_code}</p>
-              )}
             </div>
           </div>
         )}
@@ -501,22 +580,27 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, change24h, isPosi
           {/* V6.5 (E13, resolve também G07): antes rotulado "Perfil da Operação" — este é o risco de
               capital de verdade (% do saldo/margem-base efetivamente em jogo, não a distância geométrica
               até o stop). Rótulo explícito pra não confundir com o card de Distância até o Stop. */}
-          <div className="bg-[#050505]  rounded-[10px] p-[16px] flex flex-col justify-center col-span-2 md:col-span-1" title="Percentual do seu saldo/margem-base efetivamente em risco nesta operação — depende do tamanho da posição, diferente da distância até o stop.">
+          {/* D7 (V6.9): 'risco_margem_pct' renomeado pra 'risco_pct_capital_base' — o número sempre
+              foi risco sobre o CAPITAL-BASE (saldo total informado), nunca a margem de fato
+              comprometida nesta posição especificamente (nocional/alavancagem) — nome antigo
+              ("margem") confundia os dois. 'risco_pct_margem' (novo) é esse número que faltava. */}
+          <div className="bg-[#050505]  rounded-[10px] p-[16px] flex flex-col justify-center col-span-2 md:col-span-1" title="Risco sobre o capital-base (seu saldo total) e sobre a margem desta posição especificamente — os dois só coincidem sem alavancagem.">
             <span className="text-[9px] text-gray-500 font-bold uppercase tracking-widest mb-2 text-center md:text-left">Risco de Capital (real)</span>
             <div className="w-full bg-gray-900 rounded-full h-1.5 mb-2 overflow-hidden">
               <div
                 className="h-full bg-orange-400 opacity-80"
-                style={{ width: `${Math.min((planoAtivo?.risco_margem_pct ?? setup.risco_margem_pct ?? 0), 100)}%` }}
+                style={{ width: `${Math.min(((planoAtivo?.risco_pct_capital_base ?? setup.risco_pct_capital_base ?? 0) / TETO_RISCO) * 100, 100)}%` }}
               />
             </div>
             <span className="text-[9px] font-mono text-gray-400 text-center md:text-left">
               {(() => {
-                const riscoMargemPct = planoAtivo?.risco_margem_pct ?? setup.risco_margem_pct;
+                const riscoPctCapitalBase = planoAtivo?.risco_pct_capital_base ?? setup.risco_pct_capital_base;
+                const riscoPctMargem = planoAtivo?.risco_pct_margem ?? setup.risco_pct_margem;
                 const riscoUsd = planoAtivo?.risco_usd_estimado ?? setup.risco_usd_estimado;
-                if (riscoMargemPct == null) return 'Exposição não calculada';
-                const label = riscoMargemPct > 50 ? 'Alta Exposição' : riscoMargemPct > 25 ? 'Exposição Moderada' : 'Baixa Exposição';
-                const usdSufixo = riscoUsd != null ? ` — ${formatPrice(riscoUsd)}` : '';
-                return `${label} (${riscoMargemPct > 100 ? '>' : ''}${Math.min(riscoMargemPct, 100).toFixed(1)}% da margem${usdSufixo})`;
+                if (riscoPctCapitalBase == null) return 'Exposição não calculada';
+                const usdSufixo = riscoUsd != null ? ` (${formatPrice(riscoUsd)})` : '';
+                const margemTexto = riscoPctMargem != null ? ` · ${riscoPctMargem.toFixed(1)}% da margem desta posição` : '';
+                return `${riscoPctCapitalBase.toFixed(1)}% do capital-base${usdSufixo}${margemTexto}`;
               })()}
             </span>
           </div>
@@ -524,12 +608,17 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, change24h, isPosi
 
         {/* V6.7 (B-20): alerta explícito de liquidação — antes calculado (gerarPlanoB()) mas nunca
             publicado nem exibido. DP-03: é aviso, nunca bloqueio — o botão de confirmar continua
-            habilitado, a decisão de seguir é do membro. */}
+            habilitado, a decisão de seguir é do membro.
+            D1 (V6.9): a mensagem afirmava sempre "sua posição liquida antes do stop" pros dois
+            cenários de INSEGURO — mesmo quando o stop seria atingido primeiro (só sem a folga mínima
+            de segurança). liquidacao_classificacao distingue os dois casos reais. */}
         {(planoAtivo?.verificacao ?? setup.verificacao) === 'INSEGURO' && (
           <div className="mb-6 -mt-3 p-3 rounded-md bg-red-950/30 border border-red-500/30 flex items-start gap-2">
             <AlertTriangle size={14} className="text-red-500 shrink-0 mt-0.5" />
             <p className="text-[10px] text-red-400 leading-relaxed">
-              Nesta alavancagem, sua posição liquida antes do stop.
+              {(planoAtivo?.liquidacao_classificacao ?? setup.liquidacao_classificacao) === 'LIQ_FOLGA_CURTA'
+                ? 'Nesta alavancagem, o stop deve ser atingido primeiro, mas sem a folga mínima de segurança até a liquidação.'
+                : 'Nesta alavancagem, sua posição liquida antes do stop.'}
             </p>
           </div>
         )}
@@ -659,7 +748,8 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, change24h, isPosi
                     <span className="text-gray-500 text-[10px] font-bold">TP1</span>
                     <div className="text-right">
                       <span className="text-genesis-positive font-mono font-bold text-sm bg-genesis-positive/10 px-2 py-0.5 rounded">{(planoAtivo?.tp1 ?? setup.tp1) != null ? formatPrice(Number(planoAtivo?.tp1 ?? setup.tp1)) : '—'}</span>
-                      {(planoAtivo?.tp1_fonte ?? setup.tp1_fonte) && <div className="text-[8px] text-gray-500 mt-0.5">{rotularFonte(planoAtivo?.tp1_fonte ?? setup.tp1_fonte)}</div>}
+                      {/* C7 (V6.9): tp1_rotulo (linguagem de trader, com toques/confluências) tem prioridade — rotularFonte(tp1_fonte) so como fallback pra decisao cacheada anterior a este item. */}
+                      {(planoAtivo?.tp1_rotulo ?? setup.tp1_rotulo ?? rotularFonte(planoAtivo?.tp1_fonte ?? setup.tp1_fonte)) && <div className="text-[8px] text-gray-500 mt-0.5">{planoAtivo?.tp1_rotulo ?? setup.tp1_rotulo ?? rotularFonte(planoAtivo?.tp1_fonte ?? setup.tp1_fonte)}</div>}
                       {/* V6.7 (C-27): RR por alvo — antes só o RR do TP1 (geral) era visível na tela. */}
                       {rrPorAlvo.tp1.liquido != null && <div className="text-[8px] text-genesis-positive/80 font-mono mt-0.5">RR 1:{rrPorAlvo.tp1.liquido.toFixed(2)}</div>}
                     </div>
@@ -669,7 +759,7 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, change24h, isPosi
                     <div className="text-right">
                       <span className="text-genesis-positive font-mono font-bold text-sm bg-genesis-positive/10 px-2 py-0.5 rounded">{(planoAtivo?.tp2 ?? setup.tp2) != null ? formatPrice(Number(planoAtivo?.tp2 ?? setup.tp2)) : '—'}</span>
                       {(planoAtivo?.tp2 ?? setup.tp2) != null
-                        ? ((planoAtivo?.tp2_fonte ?? setup.tp2_fonte) && <div className="text-[8px] text-gray-500 mt-0.5">{rotularFonte(planoAtivo?.tp2_fonte ?? setup.tp2_fonte)}</div>)
+                        ? ((planoAtivo?.tp2_rotulo ?? setup.tp2_rotulo ?? rotularFonte(planoAtivo?.tp2_fonte ?? setup.tp2_fonte)) && <div className="text-[8px] text-gray-500 mt-0.5">{planoAtivo?.tp2_rotulo ?? setup.tp2_rotulo ?? rotularFonte(planoAtivo?.tp2_fonte ?? setup.tp2_fonte)}</div>)
                         : ((planoAtivo?.tp2_motivo ?? setup.tp2_motivo) && <div className="text-[8px] text-gray-500 mt-0.5">{planoAtivo?.tp2_motivo ?? setup.tp2_motivo}</div>)}
                       {rrPorAlvo.tp2.liquido != null && <div className="text-[8px] text-genesis-positive/80 font-mono mt-0.5">RR 1:{rrPorAlvo.tp2.liquido.toFixed(2)}</div>}
                     </div>
@@ -679,7 +769,7 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, change24h, isPosi
                     <div className="text-right">
                       <span className="text-genesis-positive font-mono font-bold text-sm bg-genesis-positive/10 px-2 py-0.5 rounded">{(planoAtivo?.tp3 ?? setup.tp3) != null ? formatPrice(Number(planoAtivo?.tp3 ?? setup.tp3)) : '—'}</span>
                       {(planoAtivo?.tp3 ?? setup.tp3) != null
-                        ? ((planoAtivo?.tp3_fonte ?? setup.tp3_fonte) && <div className="text-[8px] text-gray-500 mt-0.5">{rotularFonte(planoAtivo?.tp3_fonte ?? setup.tp3_fonte)}</div>)
+                        ? ((planoAtivo?.tp3_rotulo ?? setup.tp3_rotulo ?? rotularFonte(planoAtivo?.tp3_fonte ?? setup.tp3_fonte)) && <div className="text-[8px] text-gray-500 mt-0.5">{planoAtivo?.tp3_rotulo ?? setup.tp3_rotulo ?? rotularFonte(planoAtivo?.tp3_fonte ?? setup.tp3_fonte)}</div>)
                         : ((planoAtivo?.tp3_motivo ?? setup.tp3_motivo) && <div className="text-[8px] text-gray-500 mt-0.5">{planoAtivo?.tp3_motivo ?? setup.tp3_motivo}</div>)}
                       {rrPorAlvo.tp3.liquido != null && <div className="text-[8px] text-genesis-positive/80 font-mono mt-0.5">RR 1:{rrPorAlvo.tp3.liquido.toFixed(2)}</div>}
                     </div>
@@ -694,11 +784,16 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, change24h, isPosi
               <ArrowDown size={20} strokeWidth={1.5} />
             </div>
 
-            {/* Bloco 3: STOP LOSS — V6.7 (A-14): único ponto de renderização do stop da análise,
-                três estados (VALID/VALID_WIDE/STOP_UNAVAILABLE). Plano A e Plano B são avaliados
-                separadamente — pode existir A VALID com B STOP_UNAVAILABLE. */}
+            {/* Bloco 3: DEFESA DA OPERAÇÃO — V6.7 (A-14): único ponto de renderização do stop da
+                análise, três estados (VALID/VALID_WIDE/STOP_UNAVAILABLE). Plano A e Plano B são
+                avaliados separadamente — pode existir A VALID com B STOP_UNAVAILABLE.
+                D4 (V6.9): invalidação da tese e stop de proteção são dois conceitos DIFERENTES (a
+                tese perde validade num nível estrutural; o stop fica um colchão de segurança além
+                dele, pra não ser tirado por ruído) que a tela mostrava em duas caixas separadas, sem
+                dizer que um é derivado do outro — reorganizado num bloco só, com a relação explícita
+                (stop = invalidação + colchão de segurança). */}
             <div className="w-full lg:w-1/3 bg-white/[0.02]  rounded-lg p-5 border-l-genesis-negative hover:bg-red-950/20 transition-colors relative h-full min-h-[140px]">
-              <span className="text-[10px] font-bold text-genesis-negative uppercase tracking-widest block mb-3">Defesa (Stop Loss)</span>
+              <span className="text-[10px] font-bold text-genesis-negative uppercase tracking-widest block mb-3">Defesa da Operação</span>
 
               {stopStatusAtivo === 'STOP_UNAVAILABLE' ? (
                 // Sem stop, alavancagem/liquidação/tamanho/RR não existem (todos null no payload,
@@ -709,18 +804,32 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, change24h, isPosi
                 </p>
               ) : (
                 <>
-                  <div className="mb-2 mt-2">
+                  {/* D4: invalidação primeiro — é o nível estrutural que define tudo o resto (o
+                      "porquê"); o stop (abaixo) é a consequência prática dele (o "como operar"). */}
+                  <div className="bg-red-950/30 p-3 rounded border-red-900/50 mb-2">
+                    <span className="text-[9px] font-bold text-genesis-negative/80 block mb-1.5 uppercase tracking-wider">
+                      Invalidação da tese
+                    </span>
+                    <p className="text-[10px] text-gray-400 font-mono leading-relaxed">
+                      {invalidacaoAtiva || "Zona de invalidação não calculada."}
+                    </p>
+                    {stopAncoraAtiva && (
+                      <p className="text-[9px] text-gray-500 font-mono mt-1">
+                        Nível: {rotularFonte(stopAncoraAtiva.tipo)} em {formatPrice(stopAncoraAtiva.valor)}
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="mb-1 mt-2 flex items-baseline gap-2">
+                    <span className="text-[9px] font-bold text-gray-500 uppercase tracking-wider">Stop de proteção</span>
                     <span className="text-2xl font-mono text-genesis-negative font-bold drop--[0_0_8px_rgba(239,68,68,0.4)]">{(planoAtivo?.stop ?? setup.stop) != null ? formatPrice(Number(planoAtivo?.stop ?? setup.stop)) : '—'}</span>
                   </div>
 
-                  {stopAncoraAtiva && (
-                    <p className="text-[9px] text-gray-500 font-mono mb-0.5">
-                      {rotularFonte(stopAncoraAtiva.tipo)} em {formatPrice(stopAncoraAtiva.valor)}
-                    </p>
-                  )}
-                  {stopBufferAtivo && (
+                  {/* D4: relação explícita — o stop nunca é um número solto, é sempre a invalidação
+                      mais um colchão de segurança contra ruído/pavio. */}
+                  {stopAncoraAtiva && stopBufferAtivo && (
                     <p className="text-[9px] text-gray-500 font-mono mb-2">
-                      +{formatPrice(stopBufferAtivo.valor)}, {rotularComponenteBuffer(stopBufferAtivo.componente_vencedor)}
+                      = invalidação ({formatPrice(stopAncoraAtiva.valor)}) {invalidacaoDirecao === 'abaixo' ? '−' : '+'} colchão de {formatPrice(stopBufferAtivo.valor)} ({rotularComponenteBuffer(stopBufferAtivo.componente_vencedor)})
                     </p>
                   )}
 
@@ -730,16 +839,6 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, change24h, isPosi
                       <span className="text-[9px] text-amber-300 leading-relaxed">Stop mais largo que o normal. Reduza o tamanho e a alavancagem.</span>
                     </div>
                   )}
-
-                  {/* BLOCO 2 - INVALIDAÇÃO DA TESE */}
-                  <div className="bg-red-950/30 p-3 rounded border-red-900/50 mt-1 mb-2">
-                        <span className="text-[9px] font-bold text-genesis-negative/80 block mb-1.5 uppercase tracking-wider">
-                          INVALIDAÇÃO DA TESE
-                        </span>
-                        <p className="text-[10px] text-gray-400 font-mono leading-relaxed">
-                          {invalidacaoAtiva || "Zona de invalidação não calculada."}
-                        </p>
-                  </div>
                   {/* V6.6 (F08): "Condição de Disparo" mostrava executionLabel[execution.status] —
                       repetição do status pela terceira vez na tela (F01 já removeu as outras duas), e
                       nenhuma das duas frases do status ("Execução não recomendada...", "Condições
@@ -816,6 +915,11 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, change24h, isPosi
                   </div>
                   <span className="text-[10px] text-white font-mono">{anyData.indicadores?.rsi ? Number(anyData.indicadores.rsi).toFixed(1) : "N/A"}</span>
                 </div>
+                {/* F2 (V6.9): faixa de referência em português (FaixasIndicador, backend) — número
+                    cru não diz nada pra quem não decorou os limiares padrão do indicador. */}
+                {anyData.indicadores?.rsi_faixa && (
+                  <p className="text-[8px] text-gray-500 -mt-2">{anyData.indicadores.rsi_faixa}</p>
+                )}
 
                 <div className="flex justify-between items-center group">
                   <div className="flex items-center gap-2">
@@ -826,6 +930,9 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, change24h, isPosi
                   </div>
                   <span className="text-[10px] text-white font-mono">{anyData.indicadores?.adx ? Number(anyData.indicadores.adx).toFixed(1) : "N/A"}</span>
                 </div>
+                {anyData.indicadores?.adx_faixa && (
+                  <p className="text-[8px] text-gray-500 -mt-2">{anyData.indicadores.adx_faixa}</p>
+                )}
 
                 {/* V6.8 (spec genesis-v6-8-correcao-tecnica, Fase 7, CODE-P1-07): DMI completo —
                     antes só o ADX chegava à tela; +DI/-DI/inclinação ficam presos no gate de
@@ -838,13 +945,19 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, change24h, isPosi
                     {anyData.indicadores?.minus_di != null ? Number(anyData.indicadores.minus_di).toFixed(1) : "N/D"}
                   </span>
                 </div>
+                {anyData.indicadores?.di_faixa && (
+                  <p className="text-[8px] text-gray-500 -mt-2">{anyData.indicadores.di_faixa}</p>
+                )}
 
-                <div className="flex justify-between items-center group">
-                  <span className="text-[9px] text-gray-500 uppercase font-bold tracking-wider">ADX em elevação</span>
-                  <span className={`text-[10px] font-mono ${anyData.indicadores?.adx_subindo === true ? 'text-genesis-positive' : anyData.indicadores?.adx_subindo === false ? 'text-gray-400' : 'text-gray-500'}`}>
-                    {anyData.indicadores?.adx_subindo === true ? 'Sim' : anyData.indicadores?.adx_subindo === false ? 'Não' : 'N/D'}
-                  </span>
-                </div>
+                {/* F2 (V6.9): selo só aparece quando o ADX já está em tendência estabelecida
+                    (≥ 20) E subindo — antes mostrava "Sim"/"Não" mesmo com ADX 13, sugerindo
+                    relevância que o dado não tinha (FaixasIndicador::adxEmElevacaoRelevante()). */}
+                {anyData.indicadores?.adx_em_elevacao_relevante && (
+                  <div className="flex justify-between items-center group">
+                    <span className="text-[9px] text-gray-500 uppercase font-bold tracking-wider">ADX em elevação</span>
+                    <span className="text-[10px] font-mono text-genesis-positive">Sim</span>
+                  </div>
+                )}
 
                 <div className="flex justify-between items-center group">
                   <div className="flex items-center gap-2">
@@ -889,7 +1002,7 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, change24h, isPosi
                 <div className="flex justify-between items-center group">
                   <span className="text-[9px] text-gray-500 uppercase font-bold tracking-wider">Sessão</span>
                   <span className={`text-[10px] font-mono ${anyData.sessao?.cor || 'text-white'}`}>
-                    {anyData.sessao?.nome || 'N/A'}
+                    {(anyData.sessao?.nome && SESSAO_LABEL[anyData.sessao.nome]) || anyData.sessao?.nome || 'N/A'}
                   </span>
                 </div>
 
@@ -914,7 +1027,7 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, change24h, isPosi
                       <div className="mb-2 flex items-center gap-1.5 text-yellow-500">
                         <AlertTriangle size={10} />
                         <span className="text-[9px] font-mono uppercase">
-                          Risco de squeeze: {anyData.derivatives_context.squeeze_risk === 'BOTH' ? 'ambos os lados' : anyData.derivatives_context.squeeze_risk === 'LONG_SQUEEZE' ? 'long squeeze' : 'short squeeze'}
+                          Risco de squeeze: {anyData.derivatives_context.squeeze_risk === 'BOTH' ? 'ambos os lados' : anyData.derivatives_context.squeeze_risk === 'LONG_SQUEEZE' ? 'squeeze de comprados' : 'squeeze de vendidos'}
                         </span>
                       </div>
                     )}
@@ -938,7 +1051,7 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, change24h, isPosi
                         return (
                           <div key={idx} className={`flex items-center gap-2 px-3 py-1.5 rounded border ${biasColor}`}>
                             <span className="text-[9px] font-bold uppercase">{tf.timeframe}</span>
-                            <span className="text-[9px] font-mono font-bold">{tf.bias}</span>
+                            <span className="text-[9px] font-mono font-bold">{BIAS_LABEL[tf.bias] ?? '—'}</span>
                           </div>
                         );
                       })}
@@ -957,18 +1070,20 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, change24h, isPosi
                   antes só o texto resumido chegava à tela, os valores em si nunca apareciam. */}
               {(macroInfo?.vix != null || macroInfo?.dxy_change_pct != null || macroInfo?.sp500_change_pct != null) && (
                 <div className="grid grid-cols-3 gap-2 mb-3">
+                  {/* G11 (V6.9): VIX é nível (não variação) — ao lado de dois indicadores em %
+                      sem rótulo de grandeza, o número cru sugeria a mesma unidade dos outros dois. */}
                   <div className="bg-black/40 rounded px-2 py-1.5 text-center">
-                    <span className="text-[8px] text-gray-600 uppercase font-bold block">VIX</span>
+                    <span className="text-[8px] text-gray-600 uppercase font-bold block">VIX (nível)</span>
                     <span className="text-[10px] text-white font-mono">{macroInfo?.vix != null ? Number(macroInfo.vix).toFixed(2) : 'N/D'}</span>
                   </div>
                   <div className="bg-black/40 rounded px-2 py-1.5 text-center">
-                    <span className="text-[8px] text-gray-600 uppercase font-bold block">DXY</span>
+                    <span className="text-[8px] text-gray-600 uppercase font-bold block">DXY (var. 24h)</span>
                     <span className={`text-[10px] font-mono ${macroInfo?.dxy_change_pct == null ? 'text-white' : macroInfo.dxy_change_pct >= 0 ? 'text-genesis-positive' : 'text-genesis-negative'}`}>
                       {macroInfo?.dxy_change_pct != null ? `${Number(macroInfo.dxy_change_pct) >= 0 ? '+' : ''}${Number(macroInfo.dxy_change_pct).toFixed(2)}%` : 'N/D'}
                     </span>
                   </div>
                   <div className="bg-black/40 rounded px-2 py-1.5 text-center">
-                    <span className="text-[8px] text-gray-600 uppercase font-bold block">S&P 500</span>
+                    <span className="text-[8px] text-gray-600 uppercase font-bold block">S&P 500 (var. 24h)</span>
                     <span className={`text-[10px] font-mono ${macroInfo?.sp500_change_pct == null ? 'text-white' : macroInfo.sp500_change_pct >= 0 ? 'text-genesis-positive' : 'text-genesis-negative'}`}>
                       {macroInfo?.sp500_change_pct != null ? `${Number(macroInfo.sp500_change_pct) >= 0 ? '+' : ''}${Number(macroInfo.sp500_change_pct).toFixed(2)}%` : 'N/D'}
                     </span>
@@ -1005,7 +1120,9 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, change24h, isPosi
                 <div className="grid grid-cols-2 gap-2 mb-3">
                   <div className="bg-black/40 rounded px-2 py-1.5 text-center">
                     <span className="text-[8px] text-gray-600 uppercase font-bold block">Fear &amp; Greed</span>
-                    <span className="text-[10px] text-white font-mono">{sentimento?.fear_greed != null ? `${sentimento.fear_greed}/100` : 'N/D'}</span>
+                    <span className="text-[10px] text-white font-mono">
+                      {sentimento?.fear_greed != null ? `${sentimento.fear_greed}/100 · ${faixaFearGreed(sentimento.fear_greed)}` : 'N/D'}
+                    </span>
                   </div>
                   <div className="bg-black/40 rounded px-2 py-1.5 text-center">
                     <span className="text-[8px] text-gray-600 uppercase font-bold block">Dominância BTC</span>

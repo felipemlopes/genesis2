@@ -7,8 +7,9 @@ import React from 'react';
  * já devolve pronto:
  *   - Técnico: score_basis.technical_coherence (nível de confiança do próprio decisor na leitura
  *     técnica) — mede coerência, não direção, por isso nunca muda de cor com LONG/SHORT.
- *   - Derivativos: score_basis.derivatives_confirmation, que já tem polaridade própria
- *     (apoia/contraria a direção escolhida).
+ *   - Derivativos: derivatives_context.strength (V6.9, A9: saiu de score_basis — passou a ser
+ *     resposta da ETAPA 2, chamada separada que nunca decide direção, ver GenesisDecisionStage2Schema
+ *     no backend), que já tem polaridade própria (apoia/contraria a direção escolhida).
  *   - Qualidade dos Dados: score_basis.data_quality (V6.8, ver nota abaixo).
  *   - Macro / Sentimento: score 0-100 da chamada de narrativa (InformativeNarrativeService),
  *     puramente informativo (ver V6.6 F06 abaixo) — nunca comparado com a direção escolhida.
@@ -46,19 +47,14 @@ import React from 'react';
  */
 
 type TechnicalCoherence = 'VERY_LOW' | 'LOW' | 'MODERATE' | 'HIGH' | 'VERY_HIGH' | undefined;
-type DerivativesConfirmation = 'OPPOSES' | 'NEUTRAL' | 'SUPPORTS' | 'STRONGLY_SUPPORTS' | 'UNAVAILABLE' | undefined;
-type DataQuality = 'LOW' | 'MODERATE' | 'HIGH' | 'VERY_HIGH' | undefined;
+type DerivativesStrength = 'WEAKENS' | 'NEUTRAL' | 'STRENGTHENS' | 'UNAVAILABLE' | undefined;
 
 const COHERENCE_LABEL: Record<string, string> = {
   VERY_LOW: 'Muito baixa', LOW: 'Baixa', MODERATE: 'Moderada', HIGH: 'Alta', VERY_HIGH: 'Muito alta',
 };
 
-const DATA_QUALITY_LABEL: Record<string, string> = {
-  LOW: 'Baixa', MODERATE: 'Moderada', HIGH: 'Alta', VERY_HIGH: 'Muito alta',
-};
-
-const CONFIRMATION_LABEL: Record<string, string> = {
-  OPPOSES: 'Contraria', NEUTRAL: 'Neutro', SUPPORTS: 'Apoia', STRONGLY_SUPPORTS: 'Apoia fortemente',
+const STRENGTH_LABEL: Record<string, string> = {
+  WEAKENS: 'Enfraquece', NEUTRAL: 'Neutro', STRENGTHENS: 'Reforça',
 };
 
 type Apoio = 'apoia' | 'contraria' | 'neutro';
@@ -70,7 +66,8 @@ const COR: Record<Apoio, { texto: string; fundo: string; barra: string }> = {
 };
 
 interface Props {
-  scoreBasis?: { technical_coherence?: string; derivatives_confirmation?: string; data_quality?: string } | null;
+  scoreBasis?: { technical_coherence?: string; data_quality?: string } | null;
+  derivativesContext?: { strength?: string } | null;
   direction: 'LONG' | 'SHORT' | 'INDISPONIVEL';
   macroScore: number | null;
   sentimentScore: number | null;
@@ -101,34 +98,34 @@ const BlocoNumerico: React.FC<{ nome: string; pct: number; legenda: string }> = 
   </div>
 );
 
-const ScoreBasisBars: React.FC<Props> = ({ scoreBasis, macroScore, sentimentScore }) => {
-  const dataQuality = scoreBasis?.data_quality as DataQuality;
-  if (!scoreBasis && macroScore == null && sentimentScore == null) return null;
+const ScoreBasisBars: React.FC<Props> = ({ scoreBasis, derivativesContext, macroScore, sentimentScore }) => {
+  if (!scoreBasis && !derivativesContext && macroScore == null && sentimentScore == null) return null;
 
   const coherence = scoreBasis?.technical_coherence as TechnicalCoherence;
-  const confirmation = scoreBasis?.derivatives_confirmation as DerivativesConfirmation;
-  const derivativosApoio: Apoio = confirmation === 'OPPOSES' ? 'contraria'
-    : confirmation === 'SUPPORTS' || confirmation === 'STRONGLY_SUPPORTS' ? 'apoia'
+  const strength = derivativesContext?.strength as DerivativesStrength;
+  const derivativosApoio: Apoio = strength === 'WEAKENS' ? 'contraria'
+    : strength === 'STRENGTHENS' ? 'apoia'
     : 'neutro';
-  const derivativosLegenda = confirmation === 'OPPOSES' ? 'Contraria a leitura'
-    : confirmation === 'SUPPORTS' || confirmation === 'STRONGLY_SUPPORTS' ? 'Apoia a leitura'
+  const derivativosLegenda = strength === 'WEAKENS' ? 'Contraria a leitura'
+    : strength === 'STRENGTHENS' ? 'Apoia a leitura'
     : 'Neutro em relação à leitura';
 
+  // A7 (V6.9): Qualidade dos Dados sai da fileira — vira a nota de cobertura do rodapé (G5,
+  // Fase 7). A fileira passa a ser Técnico, Derivativos, Macro e Geopolítico, Sentimento.
+  // Grade ajustada de 5 pra 4 colunas — com Macro/Sentimento agora preenchidos pelo A2, a
+  // fileira de 4 fica cheia em vez de deixar um item sozinho na segunda linha.
   // V6.6 (F06, DP-06): Macro e Sentimento são informativos — nunca comparados com a direção
   // escolhida (LONG/SHORT). Mesma cor neutra do bloco Técnico, legenda sem "favorece"/"contraria".
   return (
-    <div className="mb-5 relative z-10 grid grid-cols-2 lg:grid-cols-5 gap-4 mt-6">
+    <div className="mb-5 relative z-10 grid grid-cols-2 lg:grid-cols-4 gap-4 mt-6">
       {coherence && (
         <BlocoCategorico nome="Técnico" rotulo={COHERENCE_LABEL[coherence] ?? coherence} apoio="neutro" legenda="Coerência dos indicadores com a leitura" />
       )}
-      {confirmation && confirmation !== 'UNAVAILABLE' && (
-        <BlocoCategorico nome="Derivativos" rotulo={CONFIRMATION_LABEL[confirmation] ?? confirmation} apoio={derivativosApoio} legenda={derivativosLegenda} />
-      )}
-      {dataQuality && (
-        <BlocoCategorico nome="Qualidade dos Dados" rotulo={DATA_QUALITY_LABEL[dataQuality] ?? dataQuality} apoio="neutro" legenda="Cobertura e confiabilidade das evidências usadas" />
+      {strength && strength !== 'UNAVAILABLE' && (
+        <BlocoCategorico nome="Derivativos" rotulo={STRENGTH_LABEL[strength] ?? strength} apoio={derivativosApoio} legenda={derivativosLegenda} />
       )}
       {macroScore != null && (
-        <BlocoNumerico nome="Macro" pct={macroScore} legenda="Contexto macro/geopolítico — informativo" />
+        <BlocoNumerico nome="Macro e Geopolítico" pct={macroScore} legenda="Contexto macro/geopolítico — informativo" />
       )}
       {sentimentScore != null && (
         <BlocoNumerico nome="Sentimento" pct={sentimentScore} legenda="Sentimento do ativo — informativo" />

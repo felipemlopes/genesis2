@@ -22,25 +22,32 @@ describe('ScoreBasisBars — selo categórico em vez de percentual inventado', (
     expect(fonte).not.toContain('CONFIRMATION_PCT');
   });
 
+  // A9 (V6.9): derivatives_confirmation saiu de score_basis (virou resposta da ETAPA 2, separada,
+  // que nunca decide direção) — o bloco Derivativos passa a ler derivatives_context.strength.
+  it('bloco derivativos le derivatives_context.strength, nao mais score_basis.derivatives_confirmation', () => {
+    expect(fonte).not.toContain('derivatives_confirmation');
+    expect(fonte).toContain('derivativesContext');
+    expect(fonte).toContain('STRENGTH_LABEL');
+  });
+
   it('publica os rótulos categóricos em português para technical_coherence', () => {
     expect(fonte).toContain("VERY_LOW: 'Muito baixa'");
     expect(fonte).toContain("HIGH: 'Alta'");
   });
 
-  it('lê score_basis.data_quality e publica um bloco próprio', () => {
-    expect(fonte).toContain('data_quality');
-    expect(fonte).toContain('Qualidade dos Dados');
-  });
-
   it('Macro e Sentimento continuam com barra numérica (o percentual ali é real, não inventado)', () => {
-    expect(fonte).toContain('BlocoNumerico nome="Macro"');
+    expect(fonte).toContain('BlocoNumerico nome="Macro e Geopolítico"');
     expect(fonte).toContain('BlocoNumerico nome="Sentimento"');
   });
 
-  it('data_quality nunca ganha polaridade LONG/SHORT — sempre apoio "neutro" (mesma regra DP-06 de macro/sentimento)', () => {
-    const indice = fonte.indexOf('nome="Qualidade dos Dados"');
-    expect(indice).toBeGreaterThan(-1);
-    const trecho = fonte.slice(Math.max(0, indice - 100), indice + 200);
-    expect(trecho).toContain('apoio="neutro"');
+  // A7 (V6.9): Qualidade dos Dados sai da fileira — vira a nota de cobertura do rodapé (G5,
+  // Fase 7). A fileira passa a ser só Técnico, Derivativos, Macro e Geopolítico, Sentimento.
+  it('não renderiza mais o card Qualidade dos Dados na fileira', () => {
+    expect(fonte).not.toContain('nome="Qualidade dos Dados"');
+    expect(fonte).not.toContain('DATA_QUALITY_LABEL');
+  });
+
+  it('fileira usa 4 colunas (Técnico, Derivativos, Macro e Geopolítico, Sentimento)', () => {
+    expect(fonte).toContain('lg:grid-cols-4');
   });
 });

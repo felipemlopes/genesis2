@@ -17,6 +17,13 @@ const ROTULOS_FONTE: Record<string, string> = {
   ema: 'Média móvel (EMA)',
   geometria: 'Fibonacci',
   projecao: 'Projeção (sem barreira real)',
+  // C1/C3/C4/C5 (V6.9): novas fontes de barreira de alvo — fallback pra quando tp*_rotulo (C7, o
+  // rótulo completo vindo do backend) não está presente (decisão cacheada antes deste item).
+  pivo_swing: 'Fundo/topo de swing',
+  lvn: 'Nó de baixo volume (LVN)',
+  figura_extremidade: 'Extremidade da figura identificada',
+  fibonacci: 'Fibonacci',
+  numero_redondo: 'Número redondo',
   // V6.7 (A-01/A-13): tipos do pool de âncoras de STOP (NivelService) — distintos das fontes de
   // ALVO acima (mesmo nome de arquivo, tabelas de peso diferentes, ver NivelService::PESO_TIPO_ANCORA).
   tese: 'Nível que definiu a direção (estrutura/rompimento)',

@@ -5,15 +5,6 @@ interface FuturesResult {
   roe: number;
 }
 
-// CONSTANTS: Maintenance Margin Rates (MMR) for Tier 1 (< 250k USDT usually)
-// Based on latest docs (2024/2025)
-const EXCHANGE_MMR: Record<string, number> = {
-  'Binance': 0.004, // 0.40%
-  'Bybit': 0.005,   // 0.50%
-  'Bitget': 0.005,  // 0.50%
-  'Default': 0.005
-};
-
 /**
  * Calculates the Position Size in COINS based on Margin and Leverage.
  * Formula: (Margin * Leverage) / Entry Price
@@ -152,33 +143,5 @@ export const calculateFuturesPnL = (
       return calculateBitgetFutures(entryPrice, currentPrice, margin, leverage, direction);
     default:
       return calculateBinanceFutures(entryPrice, currentPrice, margin, leverage, direction);
-  }
-};
-
-/**
- * Calculates PRECISE Liquidation Price (Isolated Margin)
- * Formula: 
- * LONG: Entry * (1 - (1/Lev) + MMR)
- * SHORT: Entry * (1 + (1/Lev) - MMR)
- */
-export const calculateLiquidationPrice = (
-  entryPrice: number,
-  leverage: number,
-  direction: 'LONG' | 'SHORT',
-  exchange: string = 'Binance'
-): number => {
-  if (leverage <= 0 || entryPrice <= 0) return 0;
-
-  // Get correct MMR for exchange, default to 0.5% if unknown
-  const mmr = EXCHANGE_MMR[exchange] || EXCHANGE_MMR['Default'];
-
-  if (direction === 'LONG') {
-    // Example: Entry 100, Lev 10, MMR 0.004
-    // 100 * (1 - 0.1 + 0.004) = 100 * 0.904 = 90.4
-    return entryPrice * (1 - (1 / leverage) + mmr);
-  } else {
-    // Example: Entry 100, Lev 10, MMR 0.004
-    // 100 * (1 + 0.1 - 0.004) = 100 * 1.096 = 109.6
-    return entryPrice * (1 + (1 / leverage) - mmr);
   }
 };
