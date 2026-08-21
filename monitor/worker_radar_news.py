@@ -29,7 +29,13 @@ from rapidfuzz import fuzz
 load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env'))
 
 from rss_collector import RSSCollector, CICLOS_SEM_ENTRADA_PARA_ALERTA
-from ai_classifier import AIClassifier, load_carteira_tokens, GENESIS_AI_URL, CATEGORIAS_NOMES
+from ai_classifier import (
+    AIClassifier,
+    load_carteira_tokens,
+    GENESIS_AI_URL,
+    GENESIS_AI_TOKEN,
+    CATEGORIAS_NOMES,
+)
 from telegram_dispatcher import TelegramDispatcher
 
 # ─── Variáveis de ambiente ────────────────────────────────────────────────────
@@ -145,6 +151,7 @@ class RadarNewsWorker:
             'TELEGRAM_BOT_TOKEN': TELEGRAM_BOT_TOKEN,
             'TELEGRAM_CHAT_ID': TELEGRAM_CHAT_ID,
             'GENESIS_AI_URL': GENESIS_AI_URL,
+            'GENESIS_AI_TOKEN': GENESIS_AI_TOKEN,
             'MYSQL_HOST': MYSQL_HOST,
             'MYSQL_USER': MYSQL_USER,
             'MYSQL_DATABASE': MYSQL_DATABASE,
@@ -153,6 +160,7 @@ class RadarNewsWorker:
         missing = [name for name, value in required_vars.items() if not value]
 
         if missing:
+            # Nunca logar o conteúdo dos tokens — só o nome da variável ausente.
             logger.critical(
                 f"Variáveis de ambiente obrigatórias ausentes: {', '.join(missing)}. Abortando."
             )
@@ -164,8 +172,61 @@ class RadarNewsWorker:
         if conn is None:
             logger.critical("Não foi possível conectar ao MySQL. Abortando.")
             sys.exit(1)
+
+        try:
+            self._validate_schema(conn)
+        except Exception as exc:
+            logger.critical(f'Schema incompatível com o Radar News: {exc}')
+            conn.close()
+            sys.exit(1)
+
+        self._reconcile_stale_dispatches(conn)
         conn.close()
-        logger.info("Conexão MySQL verificada com sucesso.")
+        logger.info("Conexão MySQL e schema verificados com sucesso.")
+
+        telegram_ok, telegram_error = self.telegram_dispatcher.validate_connection()
+        if not telegram_ok:
+            logger.critical(f'Telegram inválido: {telegram_error}. Abortando.')
+            sys.exit(1)
+
+        logger.info('Credenciais e destino do Telegram validados com sucesso.')
+
+    def _validate_schema(self, conn):
+        """Confere, antes de subir, que as tabelas/colunas que o worker usa existem
+        de verdade — sem isso o worker parecia saudável no Supervisor enquanto
+        classificações e despachos falhavam silenciosamente linha por linha."""
+        required_tables = {
+            'genesis_radar_news',
+            'genesis_radar_dispatch',
+            'genesis_radar_resumo',
+            'genesis_radar_telemetria',
+            'genesis_carteira_tokens',
+        }
+        required_news_columns = {
+            'title_original',
+            'supressao',
+            'adiado_ate',
+            'piso_aplicado',
+            'telegram_sent',
+            'telegram_sent_at',
+            'nivel',
+            'impact_score',
+        }
+
+        with conn.cursor() as cur:
+            cur.execute('SHOW TABLES')
+            tables = {next(iter(row.values())) for row in cur.fetchall()}
+
+            missing_tables = sorted(required_tables - tables)
+            if missing_tables:
+                raise RuntimeError(f"Tabelas ausentes: {', '.join(missing_tables)}")
+
+            cur.execute('SHOW COLUMNS FROM genesis_radar_news')
+            columns = {row['Field'] for row in cur.fetchall()}
+
+            missing_columns = sorted(required_news_columns - columns)
+            if missing_columns:
+                raise RuntimeError(f"Colunas ausentes: {', '.join(missing_columns)}")
 
     # ─── RSS cycle ────────────────────────────────────────────────────────────
 
@@ -368,32 +429,94 @@ class RadarNewsWorker:
         return None
 
     def _reservar_despacho(self, row: dict, conn) -> bool:
-        """Reserva a chave de despacho ANTES do POST (D2). False = já reservada, não envia.
+        """Reserva a chave de despacho ANTES do POST (D2/P0.5). False = não pode enviar
+        agora (reserva ativa de outra tentativa, ou terminal em SENT/UNCERTAIN, ou
+        FAILED sem retry_ready ainda).
 
-        NOTA: o documento descreve em prosa que um despacho FAILED (erro claro, ex.
-        400/403) deveria poder ser reenviado até 2 tentativas, mas o código literal
-        dado (INSERT + bloqueio por IntegrityError) bloqueia qualquer nova tentativa
-        pra sempre, porque a dispatch_key já existe na tabela — a mesma chave nunca
-        mais passa pelo INSERT com sucesso. Implementei o código literal (simples) e
-        sinalizo essa tensão aqui: falta decidir se `attempts` deveria liberar reenvio
-        via UPDATE em vez de depender do INSERT falhar, antes disso valer pra FAILED.
+        Máquina de estados de verdade: PENDING nunca reenvia sozinho (só o worker que
+        já reservou decide o desfecho); SENT/UNCERTAIN são terminais, nunca reenviam;
+        FAILED permite no máximo 1 nova tentativa (attempts < 2), e só depois de
+        next_attempt_at — isso resolve a tensão que a versão anterior deste método
+        deixava documentada e sem resolver (INSERT único bloqueava reenvio pra sempre).
         """
         base = row.get('event_key') or row.get('title_hash') or str(row['id'])
         dispatch_key = hashlib.sha256(f"{base}|nivel1".encode('utf-8')).hexdigest()
+
         try:
+            conn.begin()
             with conn.cursor() as cur:
                 cur.execute(
-                    "INSERT INTO genesis_radar_dispatch (news_id, dispatch_key, status) "
-                    "VALUES (%s, %s, 'PENDING')",
-                    (row['id'], dispatch_key),
+                    """
+                    SELECT id, status, attempts,
+                           (next_attempt_at IS NULL OR next_attempt_at <= NOW()) AS retry_ready
+                    FROM genesis_radar_dispatch
+                    WHERE dispatch_key = %s
+                    FOR UPDATE
+                    """,
+                    (dispatch_key,),
                 )
-            conn.commit()
-            row['_dispatch_key'] = dispatch_key
-            return True
-        except pymysql.err.IntegrityError:
+                current = cur.fetchone()
+
+                if current is None:
+                    cur.execute(
+                        """
+                        INSERT INTO genesis_radar_dispatch
+                            (news_id, dispatch_key, status, attempts, created_at, updated_at)
+                        VALUES (%s, %s, 'PENDING', 1, NOW(), NOW())
+                        """,
+                        (row['id'], dispatch_key),
+                    )
+                    conn.commit()
+                    row['_dispatch_key'] = dispatch_key
+                    return True
+
+                can_retry = (
+                    current['status'] == 'FAILED'
+                    and int(current['attempts'] or 0) < 2
+                    and bool(current['retry_ready'])
+                )
+
+                if can_retry:
+                    cur.execute(
+                        """
+                        UPDATE genesis_radar_dispatch
+                        SET status = 'PENDING',
+                            attempts = attempts + 1,
+                            last_error = NULL,
+                            next_attempt_at = NULL,
+                            updated_at = NOW()
+                        WHERE id = %s
+                        """,
+                        (current['id'],),
+                    )
+                    conn.commit()
+                    row['_dispatch_key'] = dispatch_key
+                    return True
+
             conn.rollback()
             logger.info(f"[Idempotencia] Despacho ja reservado para id={row['id']}, envio bloqueado.")
             return False
+        except Exception:
+            conn.rollback()
+            raise
+
+    def _reconcile_stale_dispatches(self, conn):
+        """Roda no startup (depois de _validate_schema): reservas PENDING antigas
+        (processo caiu entre o INSERT/UPDATE e o POST) viram UNCERTAIN — não é
+        possível provar se o envio ocorreu antes da queda, então nunca são
+        reenviadas (mesma regra fail-closed contra duplicação do resto do Bloco D)."""
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE genesis_radar_dispatch
+                SET status = 'UNCERTAIN',
+                    last_error = 'Reserva PENDING encontrada apos reinicio; envio nao repetido',
+                    updated_at = NOW()
+                WHERE status = 'PENDING'
+                  AND updated_at < NOW() - INTERVAL 5 MINUTE
+                """
+            )
+        conn.commit()
 
     # ─── Fila persistente do Telegram (C8) ────────────────────────────────────
 
@@ -419,13 +542,33 @@ class RadarNewsWorker:
                 # o valor operacional e sai da fila de tentativa. adiado_ate:
                 # notícia que esbarrou no orçamento espera 45min antes de tentar
                 # de novo, em vez de ser rebaixada na hora (ver bloco abaixo).
+                # P0.5: LEFT JOIN com genesis_radar_dispatch — sem isso, uma reserva
+                # terminal (SENT/UNCERTAIN, ou FAILED sem retry_ready ainda) ocupava o
+                # topo da fila pra sempre, porque a notícia continuava nivel=1 e
+                # telegram_sent=0. Não muda quem é Nível 1, a janela, o orçamento nem
+                # o cooldown — só impede a trava.
                 cur.execute(
-                    "SELECT * FROM genesis_radar_news "
-                    "WHERE nivel = 1 AND telegram_sent = 0 "
-                    "  AND created_at >= NOW() - INTERVAL %s HOUR "
-                    "  AND (adiado_ate IS NULL OR adiado_ate <= NOW()) "
-                    "ORDER BY (severity = 'CRITICAL') DESC, impact_score DESC, created_at DESC "
-                    "LIMIT 1",
+                    """
+                    SELECT n.*
+                    FROM genesis_radar_news n
+                    LEFT JOIN genesis_radar_dispatch d ON d.news_id = n.id
+                    WHERE n.nivel = 1
+                      AND n.telegram_sent = 0
+                      AND n.created_at >= NOW() - INTERVAL %s HOUR
+                      AND (n.adiado_ate IS NULL OR n.adiado_ate <= NOW())
+                      AND (
+                          d.id IS NULL
+                          OR (
+                              d.status = 'FAILED'
+                              AND d.attempts < 2
+                              AND (d.next_attempt_at IS NULL OR d.next_attempt_at <= NOW())
+                          )
+                      )
+                    ORDER BY (n.severity = 'CRITICAL') DESC,
+                             n.impact_score DESC,
+                             n.created_at DESC
+                    LIMIT 1
+                    """,
                     (JANELA_UTIL_HORAS,),
                 )
                 row = cur.fetchone()
@@ -487,8 +630,16 @@ class RadarNewsWorker:
             with conn.cursor() as cur:
                 if resultado['status'] == 'SENT':
                     cur.execute(
-                        "UPDATE genesis_radar_dispatch SET status = 'SENT', telegram_message_id = %s, "
-                        "confirmed_at = NOW() WHERE dispatch_key = %s",
+                        """
+                        UPDATE genesis_radar_dispatch
+                        SET status = 'SENT',
+                            telegram_message_id = %s,
+                            confirmed_at = NOW(),
+                            last_error = NULL,
+                            next_attempt_at = NULL,
+                            updated_at = NOW()
+                        WHERE dispatch_key = %s
+                        """,
                         (resultado.get('message_id'), row['_dispatch_key']),
                     )
                     cur.execute(
@@ -501,19 +652,32 @@ class RadarNewsWorker:
                     logger.info(f"[Telegram] Despachado id={row['id']}: {(row.get('title') or '')[:60]}")
                 elif resultado['status'] == 'FAILED':
                     cur.execute(
-                        "UPDATE genesis_radar_dispatch SET status = 'FAILED', attempts = attempts + 1 "
-                        "WHERE dispatch_key = %s",
-                        (row['_dispatch_key'],),
+                        """
+                        UPDATE genesis_radar_dispatch
+                        SET status = 'FAILED',
+                            last_error = %s,
+                            next_attempt_at = NOW() + INTERVAL 5 MINUTE,
+                            updated_at = NOW()
+                        WHERE dispatch_key = %s
+                        """,
+                        ((resultado.get('error') or 'Falha confirmada')[:1000], row['_dispatch_key']),
                     )
                     conn.commit()
                     logger.error(
                         f"[Telegram] Erro claro ao enviar id={row['id']}; despacho marcado FAILED "
-                        f"(telegram_sent permanece 0)."
+                        f"(telegram_sent permanece 0, 1 nova tentativa liberada em 5min)."
                     )
                 else:  # UNCERTAIN
                     cur.execute(
-                        "UPDATE genesis_radar_dispatch SET status = 'UNCERTAIN' WHERE dispatch_key = %s",
-                        (row['_dispatch_key'],),
+                        """
+                        UPDATE genesis_radar_dispatch
+                        SET status = 'UNCERTAIN',
+                            last_error = %s,
+                            next_attempt_at = NULL,
+                            updated_at = NOW()
+                        WHERE dispatch_key = %s
+                        """,
+                        ((resultado.get('error') or 'Desfecho incerto')[:1000], row['_dispatch_key']),
                     )
                     conn.commit()
                     logger.error(
@@ -542,20 +706,66 @@ class RadarNewsWorker:
         return inicio_utc, fim_utc
 
     def _reservar_resumo_do_dia(self, hoje, conn) -> bool:
-        """Reserva a linha do resumo do dia ANTES de enviar (D4). False = já
-        enviado hoje (por este processo ou por outro, antes de um restart)."""
+        """Reserva a linha do resumo do dia ANTES de montar/enviar (D4/P0.6). Mesma
+        máquina de estados do despacho (_reservar_despacho): PENDING/SENT/UNCERTAIN
+        nunca reenviam sozinhos, FAILED permite no máximo 1 nova tentativa. Resolve a
+        limitação que a versão anterior deixava documentada — INSERT único sem coluna
+        de status não tinha como distinguir "já enviado" de "reservado e falhou"."""
         try:
+            conn.begin()
             with conn.cursor() as cur:
                 cur.execute(
-                    "INSERT INTO genesis_radar_resumo (data_ref, itens) VALUES (%s, 0)",
+                    """
+                    SELECT id, status, attempts,
+                           (next_attempt_at IS NULL OR next_attempt_at <= NOW()) AS retry_ready
+                    FROM genesis_radar_resumo
+                    WHERE data_ref = %s
+                    FOR UPDATE
+                    """,
                     (hoje,),
                 )
-            conn.commit()
-            return True
-        except pymysql.err.IntegrityError:
+                current = cur.fetchone()
+
+                if current is None:
+                    cur.execute(
+                        """
+                        INSERT INTO genesis_radar_resumo
+                            (data_ref, status, attempts, itens, created_at, updated_at)
+                        VALUES (%s, 'PENDING', 1, 0, NOW(), NOW())
+                        """,
+                        (hoje,),
+                    )
+                    conn.commit()
+                    return True
+
+                can_retry = (
+                    current['status'] == 'FAILED'
+                    and int(current['attempts'] or 0) < 2
+                    and bool(current['retry_ready'])
+                )
+
+                if can_retry:
+                    cur.execute(
+                        """
+                        UPDATE genesis_radar_resumo
+                        SET status = 'PENDING',
+                            attempts = attempts + 1,
+                            last_error = NULL,
+                            next_attempt_at = NULL,
+                            updated_at = NOW()
+                        WHERE id = %s
+                        """,
+                        (current['id'],),
+                    )
+                    conn.commit()
+                    return True
+
             conn.rollback()
-            logger.info(f"[Resumo] Resumo de {hoje} já foi enviado, não reenviando.")
+            logger.info(f"[Resumo] Resumo de {hoje} já foi enviado ou aguarda retry, não reenviando agora.")
             return False
+        except Exception:
+            conn.rollback()
+            raise
 
     def _maybe_send_resumo_diario(self):
         agora = _agora_brt()
@@ -622,21 +832,82 @@ class RadarNewsWorker:
 
         if not top10:
             logger.info("Sem notícia relevante hoje — resumo diário não enviado.")
+            self._atualizar_estado_resumo(hoje, {'status': 'SENT', 'message_id': None, 'error': None}, 0)
             return True
 
         conclusao = self._gerar_conclusao_do_dia(top10)
         texto = self._formatar_resumo_diario(top10, conclusao)
 
-        if self.telegram_dispatcher.send_resumo_diario(texto):
+        resultado = self.telegram_dispatcher.send_resumo_diario(texto)
+        self._atualizar_estado_resumo(hoje, resultado, len(top10))
+
+        if resultado['status'] == 'SENT':
             logger.info("Resumo diário enviado com sucesso.")
-            return True
+        elif resultado['status'] == 'FAILED':
+            logger.error(f"Falha confirmada ao enviar o resumo diário: {resultado.get('error')}")
         else:
-            logger.error("Falha ao enviar o resumo diário.")
-            # A linha do dia já foi reservada em genesis_radar_resumo; se o envio
-            # falhou aqui, o resumo de hoje não tem mais uma segunda tentativa
-            # (limitação conhecida do desenho do documento — D4 não tem coluna de
-            # status como o D2 tem, só a existência da linha).
-            return False
+            logger.error(
+                f"Desfecho INCERTO ao enviar o resumo diário: {resultado.get('error')}. "
+                f"NÃO reenviando — pode já ter sido entregue."
+            )
+
+        # SENT/UNCERTAIN são tratados como "não reprocessar no próximo tick" (o
+        # cache local de _maybe_send_resumo_diario passa a considerar o dia
+        # fechado); só FAILED com retry_ready ainda vale reprocessar antes das 24h.
+        return resultado['status'] in ('SENT', 'UNCERTAIN')
+
+    def _atualizar_estado_resumo(self, hoje, resultado: dict, itens: int) -> None:
+        """Atualiza genesis_radar_resumo com o desfecho real do envio (P0.6). Reabre
+        conexão própria porque o SELECT do top10 já fechou a anterior — mesmo padrão
+        do documento (seção 12.3)."""
+        conn = self.conectar_bd()
+        if not conn:
+            logger.error('Resumo enviado ou tentado, mas sem conexão para atualizar o estado.')
+            return
+
+        try:
+            with conn.cursor() as cur:
+                if resultado['status'] == 'SENT':
+                    cur.execute(
+                        """
+                        UPDATE genesis_radar_resumo
+                        SET status = 'SENT',
+                            itens = %s,
+                            telegram_message_id = %s,
+                            enviado_em = NOW(),
+                            last_error = NULL,
+                            updated_at = NOW()
+                        WHERE data_ref = %s
+                        """,
+                        (itens, resultado.get('message_id'), hoje),
+                    )
+                elif resultado['status'] == 'FAILED':
+                    cur.execute(
+                        """
+                        UPDATE genesis_radar_resumo
+                        SET status = 'FAILED',
+                            last_error = %s,
+                            next_attempt_at = NOW() + INTERVAL 5 MINUTE,
+                            updated_at = NOW()
+                        WHERE data_ref = %s
+                        """,
+                        ((resultado.get('error') or 'Falha confirmada')[:1000], hoje),
+                    )
+                else:
+                    cur.execute(
+                        """
+                        UPDATE genesis_radar_resumo
+                        SET status = 'UNCERTAIN',
+                            last_error = %s,
+                            next_attempt_at = NULL,
+                            updated_at = NOW()
+                        WHERE data_ref = %s
+                        """,
+                        ((resultado.get('error') or 'Desfecho incerto')[:1000], hoje),
+                    )
+            conn.commit()
+        finally:
+            conn.close()
 
     @staticmethod
     def _categoria_nome(item: dict) -> str:
@@ -703,12 +974,20 @@ class RadarNewsWorker:
             try:
                 now = time.time()
 
+                # P1.2: drenar a fila e checar o resumo ANTES do ciclo RSS, não depois —
+                # correção mínima (documento, seção 13). Limite real, não escondido: isso
+                # evita que a fila fique presa esperando a *próxima* iteração do laço,
+                # mas não resolve o caso em que _run_rss_cycle() já está em execução
+                # (fetch de feed lento, retries do Gemini) — é uma única thread, então
+                # enquanto o ciclo RSS roda, nada mais roda neste processo. A correção
+                # definitiva (2 processos separados, produtor/consumidor) fica fora do
+                # escopo P0, como o próprio documento registra.
+                self._drain_telegram_queue()
+                self._maybe_send_resumo_diario()
+
                 if now - self._last_rss_cycle >= RSS_CYCLE_SECONDS:
                     self._run_rss_cycle()
                     self._last_rss_cycle = time.time()
-
-                self._drain_telegram_queue()
-                self._maybe_send_resumo_diario()
 
                 time.sleep(QUEUE_DRAIN_TICK_SECONDS)
 

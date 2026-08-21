@@ -481,14 +481,20 @@ class AIClassifier:
         # (telegram_dispatcher.py e worker_radar_news.py já fazem isso por `categoria`).
         sql = """
             INSERT INTO genesis_radar_news
-                (title, title_hash, event_key, source, source_url, severity,
-                 categoria, affected_assets, market_bias, impact_summary, nivel, impact_score,
-                 ativo_tema, observacao, telegram_sent)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                (title, title_original, title_hash, event_key, source, source_url,
+                 severity, categoria, affected_assets, market_bias, impact_summary,
+                 nivel, impact_score, ativo_tema, observacao, piso_aplicado,
+                 telegram_sent)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                    %s, %s, %s)
         """
 
         params = (
             title[:500],
+            # P1.1: título cru do RSS (pré-tradução) — a coluna 'title' grava o já
+            # traduzido; sem title_original, a similaridade do coletor (A3) fica sem
+            # histórico útil contra o que comparar nas próximas 72h.
+            (entry.get('title') or '')[:500] or None,
             title_hash,
             event_key,
             entry.get('source', ''),
@@ -506,6 +512,9 @@ class AIClassifier:
             entry.get('impact_score', 0),
             (entry.get('ativo_tema') or '')[:45] or None,
             (entry.get('observacao') or '')[:120] or None,
+            # P1.1: piso_aplicado já é calculado em memória (_merge_classifications,
+            # via eventos_graves.piso_de_severidade) — só faltava entrar no INSERT.
+            entry.get('piso_aplicado'),
             0,
         )
 

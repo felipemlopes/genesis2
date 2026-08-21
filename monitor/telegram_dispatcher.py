@@ -51,7 +51,33 @@ class TelegramDispatcher:
     def __init__(self, bot_token: str | None = None, chat_id: str | None = None):
         self.bot_token = bot_token or os.getenv('TELEGRAM_BOT_TOKEN', '')
         self.chat_id = chat_id or os.getenv('TELEGRAM_CHAT_ID', '')
-        self.api_url = f'https://api.telegram.org/bot{self.bot_token}/sendMessage'
+        self.api_base = f'https://api.telegram.org/bot{self.bot_token}'
+        self.api_url = f'{self.api_base}/sendMessage'
+
+    def validate_connection(self) -> tuple[bool, str | None]:
+        """Confirma bot e destino sem enviar mensagem (P0.4) — getMe valida o token,
+        getChat valida que o bot enxerga o chat/grupo de TELEGRAM_CHAT_ID."""
+        if not self.bot_token:
+            return False, 'TELEGRAM_BOT_TOKEN ausente'
+        if not self.chat_id:
+            return False, 'TELEGRAM_CHAT_ID ausente'
+
+        try:
+            bot = requests.get(f'{self.api_base}/getMe', timeout=TELEGRAM_TIMEOUT)
+            if bot.status_code != 200 or not bot.json().get('ok'):
+                return False, f'getMe HTTP {bot.status_code}'
+
+            chat = requests.post(
+                f'{self.api_base}/getChat',
+                json={'chat_id': self.chat_id},
+                timeout=TELEGRAM_TIMEOUT,
+            )
+            if chat.status_code != 200 or not chat.json().get('ok'):
+                return False, f'getChat HTTP {chat.status_code}'
+
+            return True, None
+        except requests.RequestException as exc:
+            return False, f'erro de rede: {type(exc).__name__}'
 
     def send_news_alert(self, entry: dict) -> dict:
         """Envia alerta de notícia (Nível 1) para o Telegram no formato oficial.
@@ -69,9 +95,14 @@ class TelegramDispatcher:
         message = self._format_news_message(entry)
         return self._send_message_detailed(message)
 
-    def send_resumo_diario(self, text: str) -> bool:
-        """Envia o resumo diário (seção 5.1) já formatado para o Telegram."""
-        return self._send_message(text)
+    def send_resumo_diario(self, text: str) -> dict:
+        """Envia o resumo diário (seção 5.1) já formatado para o Telegram.
+
+        Passou de bool para dict (D4/P0.6) pelo mesmo motivo de send_news_alert:
+        sem distinguir FAILED de UNCERTAIN, _reservar_resumo_do_dia não tem como
+        decidir se vale liberar uma segunda tentativa ou nunca mais reenviar.
+        """
+        return self._send_message_detailed(text)
 
     # ─── Formatação (seção 5 — formato oficial das mensagens) ────────────────
 
@@ -179,7 +210,7 @@ class TelegramDispatcher:
           nesse caso (RT-04): é melhor perder uma notícia do que duplicar no grupo.
 
         Returns:
-            dict {'status': 'SENT'|'FAILED'|'UNCERTAIN', 'message_id': int|None}.
+            dict {'status': 'SENT'|'FAILED'|'UNCERTAIN', 'message_id': int|None, 'error': str|None}.
         """
         import time
 
@@ -190,6 +221,8 @@ class TelegramDispatcher:
             'disable_web_page_preview': True,
         }
 
+        ultimo_erro = None
+
         for attempt in range(2):
             try:
                 resp = requests.post(self.api_url, json=payload, timeout=TELEGRAM_TIMEOUT)
@@ -197,23 +230,33 @@ class TelegramDispatcher:
                 if resp.status_code == 200 and resp.json().get('ok'):
                     message_id = (resp.json().get('result') or {}).get('message_id')
                     logger.info('[Telegram] Mensagem enviada com sucesso.')
-                    return {'status': 'SENT', 'message_id': message_id}
+                    return {'status': 'SENT', 'message_id': message_id, 'error': None}
 
                 if resp.status_code in (400, 403):
                     logger.error(f'[Telegram] Erro claro (status={resp.status_code}): {resp.text[:200]}')
-                    return {'status': 'FAILED', 'message_id': None}
+                    return {
+                        'status': 'FAILED',
+                        'message_id': None,
+                        'error': f'HTTP {resp.status_code}: {resp.text[:500]}',
+                    }
 
                 logger.warning(
                     f'[Telegram] Erro na API (tentativa {attempt + 1}): '
                     f'status={resp.status_code}, body={resp.text[:200]}'
                 )
+                ultimo_erro = f'HTTP {resp.status_code}: {resp.text[:200]}'
 
             except requests.RequestException as e:
                 logger.warning(f'[Telegram] Erro de rede (tentativa {attempt + 1}): {e}')
+                ultimo_erro = f'{type(e).__name__}: {e}'
 
             if attempt == 0:
                 logger.info(f'[Telegram] Retentando em {RETRY_DELAY}s...')
                 time.sleep(RETRY_DELAY)
 
         logger.error('[Telegram] Desfecho INCERTO após 2 tentativas (timeout/rede/status inesperado).')
-        return {'status': 'UNCERTAIN', 'message_id': None}
+        return {
+            'status': 'UNCERTAIN',
+            'message_id': None,
+            'error': ultimo_erro or 'Timeout, rede, rate limit ou erro transitorio sem confirmacao de entrega',
+        }
