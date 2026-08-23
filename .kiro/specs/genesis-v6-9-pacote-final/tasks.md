@@ -1541,6 +1541,33 @@ versão instalada do Laravel (10.50), **não desabilita** a proteção — o mes
 silenciosamente ignorado e o default vira `true`, o oposto do pretendido). A correção é simplesmente não chamar o
 método — o `Factory` já tem `false` como default, que já permite passagem real para hosts sem fake.
 
+**Achado de produção real, corrigido nesta mesma sessão (23/08/2026, fora do escopo formal da Fase 18 — encontrado
+pelo Felipe rodando a mesma imagem BTCUSDT no ambiente `local`)**: o worker (`php artisan queue:work`) ficava ~2-3
+minutos "processando" no frontend antes de reportar falha, gastando as 3 tentativas completas
+(`GENESIS_GEMINI_MAX_ATTEMPTS`) — 3 chamadas reais e caras ao decisor — para chegar exatamente no mesmo resultado
+da 1ª. Causa: `CHART_VISIBLE_PRICE_DEVIATION` caía no mesmo `throw new \RuntimeException('GRAPHICAL_ANALYSIS_NEEDS_REPAIR:...')`
+genérico de todo erro de validação (`GraphicalAnalysisAttemptJob.php`, bloco stage1), acionando o retry padrão de
+`$tries` do Laravel — mas é um erro estruturalmente não-reparável (compara um valor FIXO, o preço impresso na
+imagem, contra o preço real da Binance; nenhuma nova chamada ao decisor muda nenhum dos dois lados). **Corrigido**:
+`GraphicalAnalysisAttemptJob.php` agora detecta esse erro especificamente e chama `finalizarComoFalha()` direto na
+1ª tentativa (mesma doutrina já usada para `REJECTED_IMAGE`/`PROMPT_INJECTION_DETECTED` — erros não-reparáveis
+terminam cedo, não entram no loop de repair), com mensagem pública nova e mais clara ("O preço visível no gráfico
+está desatualizado... envie uma captura de tela recente"). Novo teste
+`GraphicalAnalysisAttemptJobTest::test_chart_visible_price_deviation_falha_na_primeira_tentativa_sem_repair()`
+prova as duas pontas: `FAILED`/`CHART_VISIBLE_PRICE_DEVIATION`/crédito estornado na 1ª tentativa, e — a prova real
+do fail-fast — só 1 chamada ao decisor registrada (`Http::recorded()` filtrado por host), nunca 3. Confirmado
+verde isolado (1/1) e junto dos outros arquivos de job/pipeline + `DecisionResponseValidatorTest` (42/42).
+
+**Achado de infraestrutura local, não desta spec**: no mesmo incidente, o worker também morreu com
+`Allowed memory size of 134217728 bytes exhausted` (`Cache/DatabaseStore.php:417`, dentro de `unserialize()`) —
+`memory_limit` do PHP local (WAMP) estava no padrão de desenvolvimento de 128M, insuficiente para o volume real de
+dados que uma análise processa (múltiplos timeframes/exchanges, séries completas de indicadores, tudo retido no
+mesmo processo). Paliativo aplicado a pedido do Felipe: `memory_limit` 128M→512M em
+`C:\wamp64\bin\php\php8.2.26\php.ini` (afeta CLI/worker; Apache precisaria de restart separado, não feito). Causa
+raiz real (retenção de séries completas quando só o último valor é usado, candles brutos não liberados entre
+timeframes, possível recálculo duplicado) fica documentada mas **deliberadamente não atacada agora** — decisão
+explícita do Felipe de deixar para o futuro.
+
 **Não commitado.**
 
 ---
