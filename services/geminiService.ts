@@ -1,7 +1,6 @@
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
 import { GenesisAnalysisResult, TradeDirection, ChartMetadata, CandidateSetup, ExecutionStatus, PlanoSetup } from "../types";
-import { ExchangeData, fetchWithProxy } from "./cryptoApi";
 import { normalizarPar } from "./normalizarPar";
 import { obterChaveIdempotencia, encerrarChaveIdempotencia, hashDaImagem, type SubmissaoAnalise } from "./analysisIdempotency";
 import type { GraphicalAnalysisResult, GraphicalAnalysisPollResult, GraphicalAnalysisTerminalResult } from "../types/graphicalAnalysis";
@@ -106,64 +105,15 @@ async function pollAnalysisUntilTerminal(
 
 /* INIT: API Key injection */
 
-// --- GOVERNANCE LAYER CACHE ---
-let macroGovernanceCache = {
-  date: '',
-  content: ''
-};
-
-// Isolated cache per asset for sentiment
-let sentimentCache: Record<string, any> = {};
-
-// V6.8 (achado real, 15/08/2026): estas duas chamadas existiam desde antes desta spec
-// (MacroController, backend — busca de verdade via Google Search, não a memória de treino do
-// Gemini nem o Radar News) mas o código que as chamava tinha sido removido do front antes desta
-// sessão, deixando macroGovernanceCache/sentimentCache (acima) órfãos — a rota ficou viva, sem
-// consumidor, até ser removida por engano na Fase 10 (parecia morta). Restaurada: religa o cache
-// já existente às rotas restauradas (routes/api.php). Best-effort de propósito — se falhar (rede,
-// 401 por token expirado, etc.), a tela cai de volta no texto do Radar News/EvidenceCatalog que já
-// vem em `resolved.informative_context`, nunca quebra a análise em si.
-const fetchMacroToday = async (token: string): Promise<{ resumo: string } | null> => {
-  const hoje = new Date().toLocaleDateString('pt-BR');
-  if (macroGovernanceCache.date === hoje && macroGovernanceCache.content) {
-    return { resumo: macroGovernanceCache.content };
-  }
-  try {
-    const res = await fetch(`${API_BASE}/v1/macro/today`, {
-      method: 'POST',
-      headers: { Accept: 'application/json', Authorization: `Bearer ${token}` },
-    });
-    if (!res.ok) return null;
-    const body = await res.json();
-    const content = typeof body?.content === 'string' ? body.content.trim() : '';
-    if (!content) return null;
-    macroGovernanceCache = { date: hoje, content };
-    return { resumo: content };
-  } catch {
-    return null;
-  }
-};
-
-const fetchSentimento = async (token: string, symbol: string): Promise<{ narrativa: string } | null> => {
-  const horaAtual = new Date().toISOString().slice(0, 13);
-  const cacheKey = `${symbol}_${horaAtual}`;
-  if (sentimentCache[cacheKey]) {
-    return { narrativa: sentimentCache[cacheKey] };
-  }
-  try {
-    const res = await fetch(`${API_BASE}/v1/macro/sentimento?symbol=${encodeURIComponent(symbol)}`, {
-      headers: { Accept: 'application/json', Authorization: `Bearer ${token}` },
-    });
-    if (!res.ok) return null;
-    const body = await res.json();
-    const narrativa = typeof body?.sentimento === 'string' ? body.sentimento.trim() : '';
-    if (!narrativa) return null;
-    sentimentCache[cacheKey] = narrativa;
-    return { narrativa };
-  } catch {
-    return null;
-  }
-};
+// V6.9 pacote final (spec genesis-v6-9-pacote-final, Fase 11, item 11.5, doc §16): removidos
+// macroGovernanceCache/sentimentCache/fetchMacroToday/fetchSentimento — chamavam
+// `/v1/macro/today`/`/v1/macro/sentimento` (MacroController), rota já apagada do backend na
+// spec anterior (genesis-v6-8-correcao-tecnica, Fase 10: rota pública sem autenticação chamando
+// Gemini a cada cache miss, custo real, zero consumidor real) — as duas chamadas aqui já
+// estavam batendo 404 silenciosamente (o try/catch engolia o erro, `result.contexto_informativo`
+// nunca era de fato sobrescrito em produção). `mapGraphicalToLegacy()` usa direto
+// `v64.informative_context.macro/sentiment` (GeminiContextService/InformativeDisplayContextService,
+// item 11.1/11.2) — nunca precisou de uma segunda chamada paralela.
 
 const fileToGenerativePart = async (file: File): Promise<string> => {
   return new Promise((resolve, reject) => {
@@ -307,6 +257,8 @@ const emptyCandidateSetup: CandidateSetup = {
   ativo_base: null,
   rr_bruto: null,
   rr_liquido_estimado: null,
+  rr_bruto_exibir: null,
+  rr_liquido_exibir: null,
   rr_aviso: null,
   rr_minimo_referencia: null,
   rr_abaixo_do_minimo: false,
@@ -322,6 +274,21 @@ const emptyCandidateSetup: CandidateSetup = {
   verificacao: null,
   verificacao_motivo: null,
   liquidacao_classificacao: null,
+  // V6.9 pacote final (spec genesis-v6-9-pacote-final, Fase 11, item 11.9/11.10, doc §16):
+  // placeholder também precisa dos campos novos por plano — sem motor disponível, nenhum plano é
+  // recomendado e não há risco-retorno/margem calculados.
+  recommended: false,
+  reason_code: null,
+  motivo: null,
+  alvo_que_atende: null,
+  rr_por_alvo: {
+    tp1: { alvo: null, fonte: null, rr_bruto: null, rr_liquido: null, rr_bruto_exibir: null, rr_liquido_exibir: null, custo_bps: null, valido: false, motivo_ausencia: null },
+    tp2: { alvo: null, fonte: null, rr_bruto: null, rr_liquido: null, rr_bruto_exibir: null, rr_liquido_exibir: null, custo_bps: null, valido: false, motivo_ausencia: null },
+    tp3: { alvo: null, fonte: null, rr_bruto: null, rr_liquido: null, rr_bruto_exibir: null, rr_liquido_exibir: null, custo_bps: null, valido: false, motivo_ausencia: null },
+  },
+  capital_base_usd: null,
+  margem_comprometida_usd: null,
+  margem_comprometida_pct_capital: null,
 };
 
 // Adaptador (2026-07-27): traduz a resposta do motor V6.4 (rota /v1/graphical-analysis) para o
@@ -331,8 +298,12 @@ const emptyCandidateSetup: CandidateSetup = {
 // placeholder vazio (motor sem dado disponível para essa análise específica).
 const mapGraphicalToLegacy = (v64: GraphicalAnalysisResult): GenesisAnalysisResult => {
   const ctx = v64.informative_context;
-  const macroNarrative = ctx?.macro?.narrative?.value ?? null;
-  const sentimentNarrative = ctx?.sentiment?.narrative?.value ?? null;
+  // V6.9 pacote final (spec genesis-v6-9-pacote-final, Fase 11, item 11.5, doc §16):
+  // CanonicalMacroContext/CanonicalSentimentContext (item 11.4) trocaram o formato — resumo/
+  // narrativa/score/eventos são campos DIRETOS do bloco (status é do bloco inteiro, não mais por
+  // campo), só os 5 indicadores de mercado global continuam embrulhados em DisplayMetric (.value).
+  const macroNarrative = ctx?.macro?.resumo ?? null;
+  const sentimentNarrative = ctx?.sentiment?.narrativa ?? null;
   const exec = v64.execution;
 
   // V6.8 (spec genesis-v6-8-correcao-tecnica, Fase 7, CODE-P1-06/P1-08, 14/08/2026): este adaptador
@@ -350,14 +321,14 @@ const mapGraphicalToLegacy = (v64: GraphicalAnalysisResult): GenesisAnalysisResu
     // global, não do ativo. score volta ao contrato (alimenta o card Macro em ScoreBasisBars).
     fear_greed: ctx?.macro?.fear_greed?.value ?? null,
     btc_dominance: ctx?.macro?.btc_dominance?.value ?? null,
-    score: ctx?.macro?.score?.value ?? null,
+    score: ctx?.macro?.score ?? null,
   };
   const sentimentStats = {
     // A2 (V6.9): score do ativo alimenta o card Sentimento em ScoreBasisBars; gatilhos
     // alimentam a lista já renderizada em AnalysisResult.tsx (H6 — contrato nunca os preenchia).
-    score: ctx?.sentiment?.score?.value ?? null,
-    gatilhos_positivos: ctx?.sentiment?.gatilhos_positivos?.value ?? null,
-    gatilhos_negativos: ctx?.sentiment?.gatilhos_negativos?.value ?? null,
+    score: ctx?.sentiment?.score ?? null,
+    gatilhos_positivos: ctx?.sentiment?.gatilhos_positivos ?? null,
+    gatilhos_negativos: ctx?.sentiment?.gatilhos_negativos ?? null,
   };
   const macroTemDado = macroNarrative != null || Object.values(macroStats).some((v) => v != null);
   const sentimentoTemDado = sentimentNarrative != null || Object.values(sentimentStats).some((v) => v != null);
@@ -393,8 +364,9 @@ const mapGraphicalToLegacy = (v64: GraphicalAnalysisResult): GenesisAnalysisResu
       // correção antes do gate final (seção 25)**, não uma medição própria (não rodei análise real
       // nesta sessão).
       cobertura_baixa: v64.coverage_percent != null ? v64.coverage_percent < 75 : undefined,
-      // G5 (V6.9): nota de rastreabilidade pro rodapé — chega pronta da API.
-      nota_cobertura: v64.nota_cobertura ?? null,
+      // V6.9 pacote final (Fase 13, item 13.14): data_traceability substitui nota_cobertura —
+      // chega pronto da API.
+      data_traceability: v64.data_traceability ?? null,
     },
     execution: exec ? {
       status: exec.status as ExecutionStatus,
@@ -493,15 +465,16 @@ const mapGraphicalToLegacy = (v64: GraphicalAnalysisResult): GenesisAnalysisResu
 };
 
 // ETAPA 2: Analise completa via Laravel backend (motor V6.4)
+// V6.9 pacote final (spec genesis-v6-9-pacote-final, Fase 11, item 11.6, doc §16): assinatura sem
+// marketData/activeExchange/cvdDataParam/entryValue — nenhum dos quatro era lido em lugar nenhum
+// do corpo da função (confirmado nesta sessão, grep no arquivo inteiro); o motor V6.4 nunca aceitou
+// dado de mercado do cliente como entrada (autoridade numérica é PHP_API_MATH_ONLY, ver
+// CanonicalBundleBuilder no backend) — os quatro eram parâmetros mortos desde a migração pro V6.4.
 export const analyzeChart = async (
   file: File,
   metadata: ChartMetadata,
   equity: string,
-  marketData: ExchangeData,
-  activeExchange: string,
   userLeverage: number,
-  cvdDataParam: { delta: number, priceChangePercent: number } | null,
-  entryValue: number | '' = '',
   // Spec genesis-analise-grafica-fila-assincrona (Fase 5.4): opcional de propósito — só afeta a fase
   // de poll (depois que o job já foi despachado e o crédito já foi debitado). Cancelar o POST em si
   // não faz sentido: nesse ponto o crédito já pode ter sido reservado no backend, abortar o fetch só
@@ -598,26 +571,11 @@ export const analyzeChart = async (
 
   const result = mapGraphicalToLegacy(resolved);
 
-  // V6.8 (achado real, 15/08/2026): sobrepõe o resumo/narrativa de busca real (Google Search, via
-  // MacroController) por cima do que já veio da análise (Radar News/EvidenceCatalog) — mantém os
-  // números crus (VIX/DXY/S&P500/Fear&Greed/dominância) que já vieram da análise, só troca o texto.
-  // Best-effort, em paralelo, nunca bloqueia nem derruba a análise já concluída.
-  const [macroReal, sentimentoReal] = await Promise.all([
-    fetchMacroToday(token),
-    fetchSentimento(token, metadata.pair),
-  ]);
-  if (macroReal || sentimentoReal) {
-    const ctxAtual = (result.contexto_informativo ?? {}) as Record<string, unknown>;
-    const macroAtual = (ctxAtual.macro ?? {}) as Record<string, unknown>;
-    const sentimentoAtual = (ctxAtual.sentimento ?? {}) as Record<string, unknown>;
-    result.contexto_informativo = {
-      ...ctxAtual,
-      macro: macroReal ? { ...macroAtual, resumo: macroReal.resumo } : (ctxAtual.macro ?? null),
-      sentimento: sentimentoReal
-        ? { ...sentimentoAtual, narrativa: sentimentoReal.narrativa }
-        : (ctxAtual.sentimento ?? null),
-    };
-  }
+  // V6.9 pacote final (Fase 11, item 11.5): o bloco que sobrescrevia result.contexto_informativo
+  // com uma segunda chamada a /v1/macro/today e /v1/macro/sentimento (MacroController) saiu daqui
+  // — ver nota no topo do arquivo (a rota já não existe mais no backend). mapGraphicalToLegacy()
+  // já monta contexto_informativo a partir de v64.informative_context.macro/sentiment, única
+  // verdade persistida (item 11.1/11.2), sem chamada paralela nenhuma.
 
   return result;
 };

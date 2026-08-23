@@ -50,4 +50,30 @@ describe('ScoreBasisBars — selo categórico em vez de percentual inventado', (
   it('fileira usa 4 colunas (Técnico, Derivativos, Macro e Geopolítico, Sentimento)', () => {
     expect(fonte).toContain('lg:grid-cols-4');
   });
+
+  // V6.9 pacote final (spec genesis-v6-9-pacote-final, Fase 11, item 11.3, doc §16): regra que
+  // não pode ser reinterpretada (matriz de aceite) — os 4 cards aparecem sempre, ausência vira
+  // selo "Indisponível", nunca a fileira inteira sumindo (return null).
+  it('não tem retorno antecipado (return null) — os 4 cards sempre aparecem', () => {
+    expect(fonte).not.toMatch(/return null/);
+    expect(fonte).not.toMatch(/\{coherence &&/);
+    expect(fonte).not.toMatch(/\{strength && strength/);
+  });
+
+  it('renderiza os 4 blocos incondicionalmente, com selo Indisponível pra ausência', () => {
+    expect(fonte).toContain("rotulo={coherence ? (COHERENCE_LABEL[coherence] ?? coherence) : 'Indisponível'}");
+    expect(fonte).toContain('severidade="indisponivel"');
+    expect(fonte).toContain("rotulo=\"Indisponível\"");
+  });
+
+  // item 11.3: paleta roxo/âmbar por categoria (severidade do próprio dado), nunca mais
+  // vermelho/verde ligado a "contraria/apoia a direção escolhida".
+  it('usa paleta roxo/âmbar por severidade, nunca cor ligada à direção da operação', () => {
+    expect(fonte).toContain('text-purple-400');
+    expect(fonte).toContain('text-amber-400');
+    expect(fonte).not.toContain('genesis-positive');
+    expect(fonte).not.toContain('genesis-negative');
+    expect(fonte).not.toContain("apoia:");
+    expect(fonte).not.toContain("contraria:");
+  });
 });

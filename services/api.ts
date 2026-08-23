@@ -325,6 +325,66 @@ export async function fetchLiquidationMap(symbol: string, timeframe: string = '1
   }
 }
 
+// ─── FERRAMENTAS DE DERIVATIVOS (V6.9 pacote final, Fase 12, itens 12.1/12.4, doc §17) ─────────
+// decision_role: DISPLAY_ONLY nos dois — nunca entram na análise do cérebro, só exibição lateral.
+
+export interface DerivativesDisplayMetric {
+  status: 'AVAILABLE' | 'UNAVAILABLE';
+  value: number | null;
+  unit: string;
+  source: string;
+  observed_at: string;
+  error_code: string | null;
+}
+
+export interface DerivativesComparisonResponse {
+  symbol: string;
+  decision_role: 'DISPLAY_ONLY';
+  exchanges: Record<'binance' | 'bybit' | 'bitget' | 'okx', {
+    funding_rate: DerivativesDisplayMetric;
+    open_interest: DerivativesDisplayMetric;
+  }>;
+}
+
+export async function fetchDerivativesComparison(symbol: string): Promise<DerivativesComparisonResponse | null> {
+  try {
+    const res = await fetch(`${API_BASE}/v1/tools/derivatives-comparison/${encodeURIComponent(symbol)}`, { headers: getAuthHeaders() });
+    if (!res.ok) return null;
+    return res.json();
+  } catch {
+    return null;
+  }
+}
+
+export interface TradeFlowWindow {
+  buy_notional: number;
+  sell_notional: number;
+  delta_notional: number;
+  delta_ratio: number | null;
+  trade_count: number;
+  estado: 'AGRESSAO_COMPRADORA' | 'AGRESSAO_VENDEDORA' | 'EQUILIBRIO' | 'INDISPONIVEL';
+}
+
+export interface DerivativesFlowResponse {
+  symbol: string;
+  decision_role: 'DISPLAY_ONLY';
+  status: 'AVAILABLE' | 'UNAVAILABLE';
+  error_code?: string;
+  source?: string;
+  as_of_ms?: number;
+  windows?: Record<string, TradeFlowWindow>;
+}
+
+export async function fetchDerivativesFlow(symbol: string, timeframe: string): Promise<DerivativesFlowResponse | null> {
+  try {
+    const res = await fetch(`${API_BASE}/v1/tools/derivatives-flow/${encodeURIComponent(symbol)}?timeframe=${encodeURIComponent(timeframe)}`, { headers: getAuthHeaders() });
+    if (!res.ok) return null;
+    return res.json();
+  } catch {
+    return null;
+  }
+}
+
 // ─── ESTATISTICAS ─────────────────────────────────────────────
 
 export async function fetchEstatisticas() {

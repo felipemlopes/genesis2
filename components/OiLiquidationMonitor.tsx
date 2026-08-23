@@ -191,6 +191,30 @@ const OiLiquidationMonitor: React.FC = () => {
                         <OiChart history={data.openInterest.history} />
                     </div>
 
+                    {/* CARD 2: COMPARAÇÃO REAL ENTRE EXCHANGES (V6.9 pacote final, Fase 12, item 12.1) —
+                        cada fonte é independente, AVAILABLE/UNAVAILABLE própria, nunca extrapolada. */}
+                    <div className="w-full bg-genesis-card rounded-[10px] p-8">
+                        <div className="flex items-center gap-2 mb-6">
+                            <Layers size={16} className="text-genesis-accent" />
+                            <h3 className="text-sm font-bold uppercase tracking-widest text-white">Open Interest por Exchange (contratos)</h3>
+                        </div>
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-[16px]">
+                            {(['binance', 'bybit', 'bitget', 'okx'] as const).map((ex) => {
+                                const metrica = data.byExchange[ex];
+                                return (
+                                    <div key={ex} className="bg-white/5 rounded-lg p-3 text-center">
+                                        <span className="text-[9px] text-gray-500 uppercase font-bold block mb-1">{ex}</span>
+                                        {metrica.status === 'AVAILABLE' && metrica.value !== null ? (
+                                            <span className="text-sm font-mono font-bold text-white">{metrica.value.toLocaleString('en-US', { maximumFractionDigits: 0 })}</span>
+                                        ) : (
+                                            <span className="text-[10px] text-gray-600 uppercase">Indisponível</span>
+                                        )}
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+
                 </div>
 
                 {/* ANALYTICAL SUMMARY & FOOTER */}

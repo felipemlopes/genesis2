@@ -6,10 +6,10 @@ import {
 } from 'lucide-react';
 import { GenesisAnalysisResult, AnalysisDirection, PlanoSetup } from '../types';
 import { selecionarZona, getMe } from '../services/api';
-import { formatPrice } from '../services/cryptoApi';
+import { price as formatPrice, usd as formatUsd } from '../utils/canonicalMoney';
+import { publicText } from '../utils/publicVocabulary';
 import { rotularFonte, rotularComponenteBuffer } from '../utils/rotulos';
 import { faixaDeConviccao } from '../utils/conviccao';
-import { calcularRiscoRetornoAlvo } from '../utils/riscoRetorno';
 import AssetBadge from './AssetBadge';
 import BlocoConviccaoQualidade from './BlocoConviccaoQualidade';
 import ScoreBasisBars from './ScoreBasisBars';
@@ -198,6 +198,10 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, onSaveTrade, onRe
   const { analysis, execution } = data;
   const setup = execution.candidate_setup;
   const score = analysis.conviccao_modelo;
+  // V6.9 pacote final (spec genesis-v6-9-pacote-final, Fase 13, item 13.14, doc §18): a antiga
+  // nota de rastreabilidade (G5, V6.9), um número solto, virou este objeto — cobertura de decisão
+  // + frescor real por fonte, exibido no rodapé (não mais dentro do card de convicção).
+  const dataTraceability = analysis.data_traceability ?? null;
   // V6.5 (G14): antes lido de analysis.leitura_fraca, que o adaptador sempre chumbava em false
   // (nunca refletia a leitura real). Removido o campo falso — cautela agora deriva do próprio score,
   // mesma faixa "Fraca/Parcial" (<=60) usada por faixaDeConviccao() (G06).
@@ -226,12 +230,16 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, onSaveTrade, onRe
     || planos[0]
     || null;
   const planoBDados = planos.find((p) => p.plano === 'B') ?? null;
+  // V6.9 pacote final (spec genesis-v6-9-pacote-final, Fase 11, item 11.7, doc §16): tick real do
+  // contrato (PriceNormalizer, backend) — mesmo tick pro par inteiro, reaproveitado em toda
+  // formatação de PREÇO desta análise (entrada/stop/TP/EMAs/etc.), não só no plano ativo.
+  const tickDecimals = planoAtivo?.tick_decimals ?? setup?.tick_decimals ?? null;
   // V6.5 (G02): zona_de/zona_ate chegam numéricos agora (antes vinham embutidos na frase de
   // 'descricao', sem separador de milhar) — formatados aqui, junto do texto qualitativo do backend.
   const planoBDescricaoCompleta = (() => {
-    const texto = planoBDados?.descricao || 'Entrada alternativa calculada pelo motor de execução.';
+    const texto = publicText(planoBDados?.descricao) || 'Entrada alternativa calculada pelo motor de execução.';
     if (planoBDados?.zona_de != null && planoBDados?.zona_ate != null) {
-      return `Zona entre ${formatPrice(planoBDados.zona_de)} e ${formatPrice(planoBDados.zona_ate)}. ${texto}`;
+      return `Zona entre ${formatPrice(planoBDados.zona_de, tickDecimals)} e ${formatPrice(planoBDados.zona_ate, tickDecimals)}. ${texto}`;
     }
     return texto;
   })();
@@ -248,34 +256,17 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, onSaveTrade, onRe
     // total), não sobre a margem desta posição. Texto atualizado pra dizer o nome certo.
     const riscoPctCapitalBase = planoAtivo?.risco_pct_capital_base ?? setup?.risco_pct_capital_base;
     if (nocional == null || quantidadeBase == null || !ativoBase) return null;
-    // V6.6 (F05): três formatos de valor monetário coexistiam na tela ($62,706.90 nos preços,
-    // $73.06 aqui, $10 no risco de capital) — formatPrice() em todos os pontos, mesmo padrão.
-    const base = `${formatPrice(nocional)} de nocional, equivalente a ${quantidadeBase} ${ativoBase}`;
+    // V6.9 pacote final (Fase 11, item 11.7): nocional/risco são valores em DÓLAR, não preço de
+    // ativo — usd() (sempre 2 casas), nunca price() (casas do tick do ativo).
+    const base = `${formatUsd(nocional)} de nocional, equivalente a ${quantidadeBase} ${ativoBase}`;
     if (riscoUsd == null || riscoPctCapitalBase == null) return `${base}.`;
-    return `${base}. Risco estimado até o stop: ${formatPrice(riscoUsd)} (${riscoPctCapitalBase}% do capital-base).`;
+    return `${base}. Risco estimado até o stop: ${formatUsd(riscoUsd)} (${riscoPctCapitalBase}% do capital-base).`;
   })();
 
-  // V6.7 (C-27): TP2/TP3 não têm risco-retorno pronto no payload — só TP1 tem rr_bruto/
-  // rr_liquido_estimado, calculado pelo backend (ExecucaoService::montar()). Calculado aqui com a
-  // mesma fórmula (utils/riscoRetorno.ts) para TP2/TP3; TP1 reaproveita o valor pronto do backend,
-  // nunca recalculado.
-  const rrPorAlvo = (() => {
-    const entradaAtiva = planoAtivo?.entrada ?? setup?.entrada ?? null;
-    const stopAtivo = planoAtivo?.stop ?? setup?.stop ?? null;
-    const custoTotalBps = (planoAtivo?.custos_bps ?? setup?.custos_bps)?.total ?? null;
-    return {
-      tp1: {
-        bruto: planoAtivo?.rr_bruto ?? setup?.rr_bruto ?? null,
-        liquido: planoAtivo?.rr_liquido_estimado ?? setup?.rr_liquido_estimado ?? null,
-      },
-      tp2: calcularRiscoRetornoAlvo(
-        entradaAtiva, stopAtivo, planoAtivo?.tp2 ?? setup?.tp2, planoAtivo?.tp2_fonte ?? setup?.tp2_fonte, custoTotalBps
-      ),
-      tp3: calcularRiscoRetornoAlvo(
-        entradaAtiva, stopAtivo, planoAtivo?.tp3 ?? setup?.tp3, planoAtivo?.tp3_fonte ?? setup?.tp3_fonte, custoTotalBps
-      ),
-    };
-  })();
+  // V6.9 pacote final (spec genesis-v6-9-pacote-final, Fase 11, item 11.8, doc §16): risco-retorno
+  // por alvo chega pronto do backend (ExecucaoService::calcularRrPorAlvo(), TP2/TP3 incluídos) —
+  // utils/riscoRetorno.ts (recálculo local, sem validação de lado do alvo) apagado.
+  const rrPorAlvo = planoAtivo?.rr_por_alvo ?? setup?.rr_por_alvo ?? null;
 
   const badgeColor = isLong ? 'text-genesis-positive' : isShort ? 'text-genesis-negative' : 'text-yellow-500';
   const progressColor = isLong ? 'bg-genesis-positive' : isShort ? 'bg-genesis-negative' : 'bg-yellow-500/60';
@@ -287,8 +278,8 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, onSaveTrade, onRe
   const invalidacaoDirecao = planoAtivo?.invalidacao_direcao ?? execution.zonaInteresse?.invalidacao_direcao ?? null;
   const invalidacaoNivel = planoAtivo?.invalidacao_nivel ?? execution.zonaInteresse?.invalidacao_nivel ?? null;
   const invalidacaoAtiva = invalidacaoDirecao && invalidacaoNivel != null
-    ? `A tese perde validade com fechamento ${invalidacaoDirecao} de ${formatPrice(invalidacaoNivel)}.`
-    : (analysis.invalidacao_tese || null);
+    ? `A tese perde validade com fechamento ${invalidacaoDirecao} de ${formatPrice(invalidacaoNivel, tickDecimals)}.`
+    : (publicText(analysis.invalidacao_tese) || null);
 
   // V6.7 (A-14): três estados do stop — troca junto com o plano ativo, mesmo padrão de
   // invalidacaoDirecao/invalidacaoNivel acima.
@@ -297,11 +288,19 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, onSaveTrade, onRe
   const stopBufferAtivo = planoAtivo?.stop_buffer ?? setup?.stop_buffer ?? null;
   const stopMotivoAtivo = planoAtivo?.stop_motivo ?? setup?.stop_motivo ?? null;
 
+  // V6.9 pacote final (spec genesis-v6-9-pacote-final, Fase 11, item 11.9, doc §16): cada plano
+  // tem sua PRÓPRIA recomendação agora (ExecucaoService::montar()/PlanRecommendationService,
+  // Fase 8) — antes só existia uma, em execution.recommended/motivo/alvo_que_atende, implicitamente
+  // do Plano A, que não trocava ao selecionar o Plano B na tela.
+  const recommendedAtivo = planoAtivo?.recommended ?? setup?.recommended ?? execution.recommended;
+  const motivoAtivo = planoAtivo?.motivo ?? setup?.motivo ?? execution.motivo;
+  const alvoQueAtendeAtivo = planoAtivo?.alvo_que_atende ?? setup?.alvo_que_atende ?? execution.alvo_que_atende;
+
   // R3.2 — Adendo Seção 32: contrato canônico em inglês primeiro, com
   // fallback ao português legado. `execution.motivo` nunca alimenta a
   // justificativa do score — é um campo de execução, não de leitura.
-  const scoreJustification = analysis.score_justification ?? analysis.justificativa_score ?? null;
-  const technicalAnalysis = analysis.technical_analysis ?? analysis.narrativa_tecnica ?? null;
+  const scoreJustification = publicText(analysis.score_justification ?? analysis.justificativa_score ?? null) || null;
+  const technicalAnalysis = publicText(analysis.technical_analysis ?? analysis.narrativa_tecnica ?? null) || null;
   const scoreContext = analysis.score_context ?? null;
 
   return (
@@ -355,7 +354,7 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, onSaveTrade, onRe
                   {data.pair?.replace('USDT', '').replace('/', '') || ''}
                 </span>
                 <span className="text-sm font-mono text-white tracking-wider">
-                  {formatPrice(data.market_price)}
+                  {formatPrice(data.market_price, tickDecimals)}
                 </span>
                 {/* F9 (V6.9): variação do PRÓPRIO candle analisado (data.candle_change_pct,
                     fechamento vs fechamento anterior real) — antes usava change24h (prop vinda do
@@ -448,14 +447,12 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, onSaveTrade, onRe
             </p>
           )}
 
-          {/* G5 (V6.9): nota de rastreabilidade sempre visível — substitui o card "Qualidade dos
-              Dados" removido no A7. Número único, sem nomear indicador nenhum (o aviso amarelo
-              acima já cobre o caso de cobertura baixa; esta linha é a nota permanente). */}
-          {analysis.nota_cobertura != null && (
-            <p className="mb-4 text-[9px] text-gray-500 relative z-10">
-              Rastreabilidade dos dados desta leitura: {analysis.nota_cobertura}/100.
-            </p>
-          )}
+          {/* V6.9 pacote final (spec genesis-v6-9-pacote-final, Fase 13, item 13.14, doc §18):
+              a nota de rastreabilidade (G5, V6.9) saiu do card de convicção — não media nada sobre
+              convicção, media cobertura de DADOS, um conceito diferente que não deveria competir
+              por atenção com o número de convicção logo acima. Migrou inteira pro rodapé da tela
+              como `data_traceability` (bloco DataTraceabilityFooter, mais abaixo), junto do
+              frescor real por fonte que nunca tinha sido exposto antes. */}
 
           {score != null && isCautela && scoreContext && (
             <div className="mb-4 rounded-lg border border-yellow-500/30 bg-yellow-500/5 p-3 relative z-10">
@@ -473,9 +470,8 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, onSaveTrade, onRe
               (direção), qualidade da entrada (localização do preço) e risco/retorno — em vez do
               membro ler o número gigante do topo como "operação aprovada". */}
           <BlocoConviccaoQualidade
-            score={score}
-            rr={planoAtivo?.rr_liquido_estimado ?? setup?.rr_liquido_estimado ?? null}
-            rrBruto={planoAtivo?.rr_bruto ?? setup?.rr_bruto ?? null}
+            rrExibir={planoAtivo?.rr_liquido_exibir ?? setup?.rr_liquido_exibir ?? null}
+            rrBrutoExibir={planoAtivo?.rr_bruto_exibir ?? setup?.rr_bruto_exibir ?? null}
             rrMinimo={planoAtivo?.rr_minimo_referencia ?? setup?.rr_minimo_referencia ?? null}
             rrAbaixoDoMinimo={planoAtivo?.rr_abaixo_do_minimo ?? setup?.rr_abaixo_do_minimo ?? false}
             fatores={planoAtivo?.qualidade_entrada ?? setup?.qualidade_entrada ?? []}
@@ -538,18 +534,21 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, onSaveTrade, onRe
             nenhum componente lia — SEM_BARREIRA_REAL, RR_LIQUIDO_ABAIXO_MINIMO e
             CONVICCAO_ABAIXO_MINIMO ficavam invisíveis para o membro. Restrição obrigatória (DP-03/
             DP-05): este bloco só avisa, nunca desabilita nada — podeInteragir continua amarrado
-            exclusivamente a execution.executable, não a execution.recommended.
+            exclusivamente a execution.executable, não a recommendedAtivo.
             A8 (V6.9): reason_code (código interno tipo "RR_LIQUIDO_ABAIXO_MINIMO") saiu da tela —
             continua no payload/banco para histórico e estatística, só não é mais exibido. Manchete
             deixa de ser fixa "Plano não recomendado" quando existe um alvo posterior que já atende
-            o R/R mínimo — manchetePlano() nomeia esse alvo em vez de soar como reprovação total. */}
-        {!execution.recommended && (
+            o R/R mínimo — manchetePlano() nomeia esse alvo em vez de soar como reprovação total.
+            V6.9 pacote final (Fase 11, item 11.9): recommended/motivo/alvo_que_atende agora vêm do
+            PLANO ATIVO (recommendedAtivo/motivoAtivo/alvoQueAtendeAtivo) — troca junto com A/B, não
+            fica preso ao Plano A quando o membro seleciona o B. */}
+        {!recommendedAtivo && (
           <div className="bg-amber-950/20 border border-amber-600/30 rounded-lg p-3 mb-6 flex items-start gap-2.5">
             <AlertTriangle size={14} className="text-amber-400 shrink-0 mt-0.5" />
             <div>
-              <p className="text-[11px] font-bold text-amber-300 uppercase tracking-wider mb-1">{manchetePlano(execution.alvo_que_atende)}</p>
+              <p className="text-[11px] font-bold text-amber-300 uppercase tracking-wider mb-1">{manchetePlano(alvoQueAtendeAtivo)}</p>
               <p className="text-[11px] text-amber-200/90 leading-relaxed">
-                {execution.motivo || 'Esta configuração não atingiu os limiares recomendados de risco-retorno ou convicção. A decisão de seguir é sua.'}
+                {publicText(motivoAtivo) || 'Esta configuração não atingiu os limiares recomendados de risco-retorno ou convicção. A decisão de seguir é sua.'}
               </p>
             </div>
           </div>
@@ -573,7 +572,7 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, onSaveTrade, onRe
           <div className="bg-[#050505]  rounded-[10px] p-[16px] flex flex-col justify-center items-center text-center col-span-2 md:col-span-1">
             <span className="text-[10px] text-gray-500 font-bold uppercase tracking-widest mb-2">Liquidação (estimada)</span>
             <span className="text-xl font-mono text-orange-400 font-bold">
-              {(planoAtivo?.liquidacao ?? setup.liquidacao) != null ? formatPrice(Number(planoAtivo?.liquidacao ?? setup.liquidacao)) : '—'}
+              {(planoAtivo?.liquidacao ?? setup.liquidacao) != null ? formatPrice(Number(planoAtivo?.liquidacao ?? setup.liquidacao), tickDecimals) : '—'}
             </span>
           </div>
 
@@ -598,13 +597,38 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, onSaveTrade, onRe
                 const riscoPctMargem = planoAtivo?.risco_pct_margem ?? setup.risco_pct_margem;
                 const riscoUsd = planoAtivo?.risco_usd_estimado ?? setup.risco_usd_estimado;
                 if (riscoPctCapitalBase == null) return 'Exposição não calculada';
-                const usdSufixo = riscoUsd != null ? ` (${formatPrice(riscoUsd)})` : '';
+                const usdSufixo = riscoUsd != null ? ` (${formatUsd(riscoUsd)})` : '';
                 const margemTexto = riscoPctMargem != null ? ` · ${riscoPctMargem.toFixed(1)}% da margem desta posição` : '';
                 return `${riscoPctCapitalBase.toFixed(1)}% do capital-base${usdSufixo}${margemTexto}`;
               })()}
             </span>
           </div>
         </div>
+
+        {/* V6.9 pacote final (spec genesis-v6-9-pacote-final, Fase 11, item 11.10, doc §16): três
+            linhas SEMPRE distintas, nunca misturadas na mesma frase — diferente do card "Risco de
+            Capital (real)" acima, que mede quanto se PERDE se o stop for atingido; este mede
+            quanto está TRAVADO nesta posição agora, independente de o stop ser atingido ou não. */}
+        {(planoAtivo?.capital_base_usd ?? setup.capital_base_usd) != null && (
+          <div className="bg-[#050505]  rounded-[10px] p-[16px] mb-6 grid grid-cols-3 gap-[16px]" title="Capital-base é o seu saldo total informado. Margem comprometida é o que esta posição especificamente trava na corretora (nocional ÷ alavancagem).">
+            <div className="text-center">
+              <span className="text-[9px] text-gray-500 font-bold uppercase tracking-widest block mb-1">Capital-base</span>
+              <span className="text-sm font-mono text-white font-bold">{formatUsd(planoAtivo?.capital_base_usd ?? setup.capital_base_usd)}</span>
+            </div>
+            <div className="text-center">
+              <span className="text-[9px] text-gray-500 font-bold uppercase tracking-widest block mb-1">Margem comprometida</span>
+              <span className="text-sm font-mono text-white font-bold">
+                {(planoAtivo?.margem_comprometida_usd ?? setup.margem_comprometida_usd) != null ? formatUsd(planoAtivo?.margem_comprometida_usd ?? setup.margem_comprometida_usd) : '—'}
+              </span>
+            </div>
+            <div className="text-center">
+              <span className="text-[9px] text-gray-500 font-bold uppercase tracking-widest block mb-1">% do capital-base</span>
+              <span className="text-sm font-mono text-white font-bold">
+                {(planoAtivo?.margem_comprometida_pct_capital ?? setup.margem_comprometida_pct_capital) != null ? `${(planoAtivo?.margem_comprometida_pct_capital ?? setup.margem_comprometida_pct_capital)!.toFixed(1)}%` : '—'}
+              </span>
+            </div>
+          </div>
+        )}
 
         {/* V6.7 (B-20): alerta explícito de liquidação — antes calculado (gerarPlanoB()) mas nunca
             publicado nem exibido. DP-03: é aviso, nunca bloqueio — o botão de confirmar continua
@@ -666,7 +690,7 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, onSaveTrade, onRe
                   >
                     <div className="flex justify-between items-baseline mb-1">
                       <span className={`text-[10px] font-bold ${selectedZone === 'A' ? 'text-genesis-accent' : 'text-gray-400'}`}>Plano A (Primário)</span>
-                      <span className="font-mono font-bold text-sm text-white">{setup.entrada != null ? formatPrice(Number(setup.entrada)) : '—'}</span>
+                      <span className="font-mono font-bold text-sm text-white">{setup.entrada != null ? formatPrice(Number(setup.entrada), tickDecimals) : '—'}</span>
                     </div>
                     <p className="text-[9px] text-gray-400 font-mono tracking-wide leading-tight mt-1">
                       Entrada a mercado no preço analisado.
@@ -686,7 +710,7 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, onSaveTrade, onRe
                     >
                       <div className="flex justify-between items-baseline mb-1">
                         <span className={`text-[10px] font-bold ${selectedZone === 'B' ? 'text-genesis-accent' : 'text-gray-400'}`}>Plano B (Alternativo)</span>
-                        <span className="font-mono font-bold text-xs text-white">{formatPrice(Number(planoB.entrada))}</span>
+                        <span className="font-mono font-bold text-xs text-white">{formatPrice(Number(planoB.entrada), tickDecimals)}</span>
                       </div>
                       <p className="text-[9px] text-gray-400 font-mono tracking-wide leading-tight mt-1">
                         {planoBDescricaoCompleta}
@@ -747,31 +771,35 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, onSaveTrade, onRe
                 <div className="flex justify-between items-center group">
                     <span className="text-gray-500 text-[10px] font-bold">TP1</span>
                     <div className="text-right">
-                      <span className="text-genesis-positive font-mono font-bold text-sm bg-genesis-positive/10 px-2 py-0.5 rounded">{(planoAtivo?.tp1 ?? setup.tp1) != null ? formatPrice(Number(planoAtivo?.tp1 ?? setup.tp1)) : '—'}</span>
+                      <span className="text-genesis-positive font-mono font-bold text-sm bg-genesis-positive/10 px-2 py-0.5 rounded">{(planoAtivo?.tp1 ?? setup.tp1) != null ? formatPrice(Number(planoAtivo?.tp1 ?? setup.tp1), tickDecimals) : '—'}</span>
                       {/* C7 (V6.9): tp1_rotulo (linguagem de trader, com toques/confluências) tem prioridade — rotularFonte(tp1_fonte) so como fallback pra decisao cacheada anterior a este item. */}
                       {(planoAtivo?.tp1_rotulo ?? setup.tp1_rotulo ?? rotularFonte(planoAtivo?.tp1_fonte ?? setup.tp1_fonte)) && <div className="text-[8px] text-gray-500 mt-0.5">{planoAtivo?.tp1_rotulo ?? setup.tp1_rotulo ?? rotularFonte(planoAtivo?.tp1_fonte ?? setup.tp1_fonte)}</div>}
-                      {/* V6.7 (C-27): RR por alvo — antes só o RR do TP1 (geral) era visível na tela. */}
-                      {rrPorAlvo.tp1.liquido != null && <div className="text-[8px] text-genesis-positive/80 font-mono mt-0.5">RR 1:{rrPorAlvo.tp1.liquido.toFixed(2)}</div>}
+                      {/* V6.7 (C-27): RR por alvo — antes só o RR do TP1 (geral) era visível na tela.
+                          V6.9 pacote final (Fase 11, item 11.8): rr_por_alvo vem pronto do backend agora
+                          (campos rr_bruto/rr_liquido, não bruto/liquido — utils/riscoRetorno.ts apagado).
+                          Fase 13, item 13.7: rr_liquido_exibir já vem formatado ("1:%.2f") — sem
+                          .toFixed(2) local, nunca duas origens de formatação divergindo. */}
+                      {rrPorAlvo?.tp1.rr_liquido_exibir != null && <div className="text-[8px] text-genesis-positive/80 font-mono mt-0.5">RR {rrPorAlvo.tp1.rr_liquido_exibir}</div>}
                     </div>
                 </div>
                 <div className="flex justify-between items-center group">
                     <span className="text-gray-500 text-[10px] font-bold">TP2</span>
                     <div className="text-right">
-                      <span className="text-genesis-positive font-mono font-bold text-sm bg-genesis-positive/10 px-2 py-0.5 rounded">{(planoAtivo?.tp2 ?? setup.tp2) != null ? formatPrice(Number(planoAtivo?.tp2 ?? setup.tp2)) : '—'}</span>
+                      <span className="text-genesis-positive font-mono font-bold text-sm bg-genesis-positive/10 px-2 py-0.5 rounded">{(planoAtivo?.tp2 ?? setup.tp2) != null ? formatPrice(Number(planoAtivo?.tp2 ?? setup.tp2), tickDecimals) : '—'}</span>
                       {(planoAtivo?.tp2 ?? setup.tp2) != null
                         ? ((planoAtivo?.tp2_rotulo ?? setup.tp2_rotulo ?? rotularFonte(planoAtivo?.tp2_fonte ?? setup.tp2_fonte)) && <div className="text-[8px] text-gray-500 mt-0.5">{planoAtivo?.tp2_rotulo ?? setup.tp2_rotulo ?? rotularFonte(planoAtivo?.tp2_fonte ?? setup.tp2_fonte)}</div>)
                         : ((planoAtivo?.tp2_motivo ?? setup.tp2_motivo) && <div className="text-[8px] text-gray-500 mt-0.5">{planoAtivo?.tp2_motivo ?? setup.tp2_motivo}</div>)}
-                      {rrPorAlvo.tp2.liquido != null && <div className="text-[8px] text-genesis-positive/80 font-mono mt-0.5">RR 1:{rrPorAlvo.tp2.liquido.toFixed(2)}</div>}
+                      {rrPorAlvo?.tp2.rr_liquido_exibir != null && <div className="text-[8px] text-genesis-positive/80 font-mono mt-0.5">RR {rrPorAlvo.tp2.rr_liquido_exibir}</div>}
                     </div>
                 </div>
                 <div className="flex justify-between items-center group">
                     <span className="text-gray-500 text-[10px] font-bold">TP3</span>
                     <div className="text-right">
-                      <span className="text-genesis-positive font-mono font-bold text-sm bg-genesis-positive/10 px-2 py-0.5 rounded">{(planoAtivo?.tp3 ?? setup.tp3) != null ? formatPrice(Number(planoAtivo?.tp3 ?? setup.tp3)) : '—'}</span>
+                      <span className="text-genesis-positive font-mono font-bold text-sm bg-genesis-positive/10 px-2 py-0.5 rounded">{(planoAtivo?.tp3 ?? setup.tp3) != null ? formatPrice(Number(planoAtivo?.tp3 ?? setup.tp3), tickDecimals) : '—'}</span>
                       {(planoAtivo?.tp3 ?? setup.tp3) != null
                         ? ((planoAtivo?.tp3_rotulo ?? setup.tp3_rotulo ?? rotularFonte(planoAtivo?.tp3_fonte ?? setup.tp3_fonte)) && <div className="text-[8px] text-gray-500 mt-0.5">{planoAtivo?.tp3_rotulo ?? setup.tp3_rotulo ?? rotularFonte(planoAtivo?.tp3_fonte ?? setup.tp3_fonte)}</div>)
                         : ((planoAtivo?.tp3_motivo ?? setup.tp3_motivo) && <div className="text-[8px] text-gray-500 mt-0.5">{planoAtivo?.tp3_motivo ?? setup.tp3_motivo}</div>)}
-                      {rrPorAlvo.tp3.liquido != null && <div className="text-[8px] text-genesis-positive/80 font-mono mt-0.5">RR 1:{rrPorAlvo.tp3.liquido.toFixed(2)}</div>}
+                      {rrPorAlvo?.tp3.rr_liquido_exibir != null && <div className="text-[8px] text-genesis-positive/80 font-mono mt-0.5">RR {rrPorAlvo.tp3.rr_liquido_exibir}</div>}
                     </div>
                 </div>
               </div>
@@ -815,21 +843,21 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, onSaveTrade, onRe
                     </p>
                     {stopAncoraAtiva && (
                       <p className="text-[9px] text-gray-500 font-mono mt-1">
-                        Nível: {rotularFonte(stopAncoraAtiva.tipo)} em {formatPrice(stopAncoraAtiva.valor)}
+                        Nível: {rotularFonte(stopAncoraAtiva.tipo)} em {formatPrice(stopAncoraAtiva.valor, tickDecimals)}
                       </p>
                     )}
                   </div>
 
                   <div className="mb-1 mt-2 flex items-baseline gap-2">
                     <span className="text-[9px] font-bold text-gray-500 uppercase tracking-wider">Stop de proteção</span>
-                    <span className="text-2xl font-mono text-genesis-negative font-bold drop--[0_0_8px_rgba(239,68,68,0.4)]">{(planoAtivo?.stop ?? setup.stop) != null ? formatPrice(Number(planoAtivo?.stop ?? setup.stop)) : '—'}</span>
+                    <span className="text-2xl font-mono text-genesis-negative font-bold drop--[0_0_8px_rgba(239,68,68,0.4)]">{(planoAtivo?.stop ?? setup.stop) != null ? formatPrice(Number(planoAtivo?.stop ?? setup.stop), tickDecimals) : '—'}</span>
                   </div>
 
                   {/* D4: relação explícita — o stop nunca é um número solto, é sempre a invalidação
                       mais um colchão de segurança contra ruído/pavio. */}
                   {stopAncoraAtiva && stopBufferAtivo && (
                     <p className="text-[9px] text-gray-500 font-mono mb-2">
-                      = invalidação ({formatPrice(stopAncoraAtiva.valor)}) {invalidacaoDirecao === 'abaixo' ? '−' : '+'} colchão de {formatPrice(stopBufferAtivo.valor)} ({rotularComponenteBuffer(stopBufferAtivo.componente_vencedor)})
+                      = invalidação ({formatPrice(stopAncoraAtiva.valor, tickDecimals)}) {invalidacaoDirecao === 'abaixo' ? '−' : '+'} colchão de {formatPrice(stopBufferAtivo.valor, tickDecimals)} ({rotularComponenteBuffer(stopBufferAtivo.componente_vencedor)})
                     </p>
                   )}
 
@@ -980,11 +1008,11 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, onSaveTrade, onRe
                       e Number(null) é 0, então EMA ausente virava "$ 0" (viola DP-11: ausência é null,
                       nunca zero). Cada EMA agora é avaliada individualmente; ausente renderiza N/D. */}
                   <span className="text-[9px] text-white font-mono">
-                    {anyData.indicadores?.ema21 != null ? formatPrice(Number(anyData.indicadores.ema21)) : 'N/D'}
+                    {anyData.indicadores?.ema21 != null ? formatPrice(Number(anyData.indicadores.ema21), tickDecimals) : 'N/D'}
                     {' | '}
-                    {anyData.indicadores?.ema50 != null ? formatPrice(Number(anyData.indicadores.ema50)) : 'N/D'}
+                    {anyData.indicadores?.ema50 != null ? formatPrice(Number(anyData.indicadores.ema50), tickDecimals) : 'N/D'}
                     {' | '}
-                    {anyData.indicadores?.ema200 != null ? formatPrice(Number(anyData.indicadores.ema200)) : 'N/D'}
+                    {anyData.indicadores?.ema200 != null ? formatPrice(Number(anyData.indicadores.ema200), tickDecimals) : 'N/D'}
                   </span>
                 </div>
 
@@ -1091,15 +1119,28 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, onSaveTrade, onRe
                 </div>
               )}
               <p className={`text-[10px] text-gray-400 leading-relaxed mb-4 mt-3 ${!macroInfo?.resumo ? 'italic' : ''}`}>
-                  {macroInfo?.resumo || "Contexto informativo indisponível para esta análise (orçamento de IA esgotado ou serviço fora do ar)."}
+                  {publicText(macroInfo?.resumo) || "Contexto informativo indisponível para esta análise (orçamento de IA esgotado ou serviço fora do ar)."}
               </p>
+              {/* V6.9 pacote final (spec genesis-v6-9-pacote-final, Fase 11, item 11.1/11.4, doc §16):
+                  achado real — eventos sempre foram objetos com fonte/URL/horário reais
+                  (GeminiContextService, backend), nunca strings soltas; renderizar {evt} direto
+                  quebraria assim que macro.eventos viesse populado (React não renderiza objeto cru
+                  como filho). Mostra o título com a fonte, linkado quando há source_url. */}
               {macroInfo?.eventos && macroInfo.eventos.length > 0 && (
                 <div className="space-y-3">
-                  {macroInfo.eventos.map((evt: string, idx: number) => (
+                  {macroInfo.eventos.map((evt, idx: number) => (
                       <div key={idx} className="flex gap-2">
                         <span className="text-genesis-accent mt-0.5">•</span>
                         <p className="text-[9.5px] text-gray-400 leading-relaxed font-mono">
-                          {evt}
+                          {evt.title}
+                          {evt.source && (
+                            <span className="text-gray-600">
+                              {' — '}
+                              {evt.source_url ? (
+                                <a href={evt.source_url} target="_blank" rel="noopener noreferrer" className="underline hover:text-genesis-accent">{evt.source}</a>
+                              ) : evt.source}
+                            </span>
+                          )}
                         </p>
                       </div>
                   ))}
@@ -1131,7 +1172,7 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, onSaveTrade, onRe
                 </div>
               )}
               <p className="text-[10px] text-gray-400 leading-relaxed mb-4  pb-3 mt-3">
-                  {sentimento?.narrativa || "Contexto informativo indisponível para esta análise."}
+                  {publicText(sentimento?.narrativa) || "Contexto informativo indisponível para esta análise."}
               </p>
               <div className="grid grid-cols-2 gap-3">
                   <div>
@@ -1151,6 +1192,24 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, onSaveTrade, onRe
               </div>
             </div>
           </div>
+          )}
+
+          {/* V6.9 pacote final (spec genesis-v6-9-pacote-final, Fase 13, item 13.14, doc §18):
+              rastreabilidade completa de dados no rodapé — o número solto de cobertura que antes
+              morava dentro do card de convicção agora vive aqui, junto do frescor real por fonte.
+              Sempre visível (fora de showIndicators), nunca disputa atenção com o score. */}
+          {dataTraceability && (
+            <div className="mt-6 pt-4  text-[9px] text-gray-500 relative z-10 flex flex-wrap gap-x-4 gap-y-1">
+              {dataTraceability.decision_coverage_percent != null && (
+                <span>Cobertura de decisão: {dataTraceability.decision_coverage_percent}/100</span>
+              )}
+              {dataTraceability.freshness_coverage_percent != null && dataTraceability.fresh_sources != null && dataTraceability.expected_sources != null && (
+                <span>Frescor das fontes: {dataTraceability.freshness_coverage_percent}% ({dataTraceability.fresh_sources}/{dataTraceability.expected_sources})</span>
+              )}
+              {dataTraceability.as_of_ms != null && (
+                <span>Referência: {new Date(dataTraceability.as_of_ms).toLocaleString('pt-BR')}</span>
+              )}
+            </div>
           )}
         </div>
       </div>

@@ -73,18 +73,56 @@ export interface MultiTimeframeEntry {
   bias: 'BULLISH' | 'BEARISH' | 'MIXED' | null;
 }
 
-// Correção pós-entrega (2026-07-26): narrativa de macro/sentimento, gerada por uma chamada Gemini
-// separada do decisor único (InformativeNarrativeService, backend) — recria o texto que a tela sempre
-// mostrou no V4.3-R3.2. Best-effort: pode vir com status UNAVAILABLE se a chamada falhar.
-export interface MacroNarrative {
-  score: number | null;
-  resumo: string;
-  eventos: string[];
+// V6.9 pacote final (spec genesis-v6-9-pacote-final, Fase 11, item 11.4, doc §16): substitui
+// MacroNarrative/SentimentNarrative (formato antigo, aninhado dentro de EvidenceValue — o backend
+// nunca publicou de fato esse formato pros dois blocos, ver AnalysisPublicResponseBuilder). Bloco
+// status/error_code é do BLOCO inteiro (macro ou sentimento), não mais por campo individual —
+// GeminiContextService (backend) só marca AVAILABLE quando o texto (resumo/narrativa) realmente
+// veio preenchido; score pode ser null legitimamente sem derrubar o status do bloco.
+export interface InformativeBlockBase {
+  status: 'AVAILABLE' | 'UNAVAILABLE';
+  error_code: string | null;
 }
 
-export interface SentimentNarrative {
+// Evento do Radar News, com fonte e URL reais — nunca inventado pela IA (GeminiContextService,
+// backend, grounding obrigatório).
+export interface RadarNewsEvento {
+  title: string;
+  summary: string;
+  source: string;
+  source_url: string;
+  published_at: string;
+  observed_at: string;
+  relevance: 'HIGH' | 'MEDIUM';
+}
+
+// Indicador de mercado global (InformativeDisplayContextService, backend) — nunca entra no
+// bundle/evidence/manifest_hash decisório, só exibição.
+export interface DisplayMetric {
+  status: 'AVAILABLE' | 'UNAVAILABLE';
+  value: number | null;
+  unit: string | null;
+  source: string | null;
+  observed_at: string | null;
+  error_code: string | null;
+}
+
+export interface CanonicalMacroContext extends InformativeBlockBase {
+  resumo: string | null;
   score: number | null;
-  narrativa: string;
+  eventos: RadarNewsEvento[];
+  vix: DisplayMetric;
+  dxy_change_pct: DisplayMetric;
+  sp500_change_pct: DisplayMetric;
+  // A2 (V6.9): fear_greed/btc_dominance vivem em macro — mercado global, não do ativo.
+  fear_greed: DisplayMetric;
+  btc_dominance: DisplayMetric;
+}
+
+export interface CanonicalSentimentContext extends InformativeBlockBase {
+  narrativa: string | null;
+  score: number | null;
+  eventos: RadarNewsEvento[];
   gatilhos_positivos: string[];
   gatilhos_negativos: string[];
 }
@@ -115,22 +153,8 @@ export interface InformativeContext {
     session: EvidenceValue<{ name: string; utc_hour: number }>;
     multi_timeframe: EvidenceValue<MultiTimeframeEntry[]>;
   };
-  macro: {
-    vix: EvidenceValue;
-    dxy_change_pct: EvidenceValue;
-    sp500_change_pct: EvidenceValue;
-    // A2 (V6.9): fear_greed/btc_dominance saíram de sentiment — mercado global, não do ativo.
-    fear_greed: EvidenceValue;
-    btc_dominance: EvidenceValue;
-    score: EvidenceValue;
-    narrative: EvidenceValue<MacroNarrative>;
-  };
-  sentiment: {
-    score: EvidenceValue;
-    gatilhos_positivos: EvidenceValue<string[]>;
-    gatilhos_negativos: EvidenceValue<string[]>;
-    narrative: EvidenceValue<SentimentNarrative>;
-  };
+  macro: CanonicalMacroContext;
+  sentiment: CanonicalSentimentContext;
 }
 
 // Restauração pós-entrega (2026-07-27): justificativa estruturada que o próprio decisor já devolve
@@ -236,12 +260,16 @@ export interface ExecutionCandidateSetup {
   ativo_base: string | null;
   rr_bruto: number | null;
   rr_liquido_estimado: number | null;
+  // item 13.7: strings prontas ("1:%.2f"), mesma doutrina de TargetRiskReward acima.
+  rr_bruto_exibir: string | null;
+  rr_liquido_exibir: string | null;
   rr_aviso: string | null;
   rr_minimo_referencia: number | null;
   rr_abaixo_do_minimo: boolean;
   custos_bps: Record<string, number>;
   entrada_ts: string;
-  qualidade_entrada: { fator: string; avaliacao: 'BOM' | 'MEDIO' | 'RUIM'; detalhe: string }[] | null;
+  // item 13.6: UNAVAILABLE — os 4 fatores aparecem sempre agora, nunca somem por falta de insumo.
+  qualidade_entrada: { fator: string; avaliacao: 'BOM' | 'MEDIO' | 'RUIM' | 'UNAVAILABLE'; detalhe: string }[] | null;
   // V6.7 (A-13): campos novos do contrato do stop.
   stop_status: StopStatus;
   stop_ancora: StopAncora | null;
@@ -253,6 +281,23 @@ export interface ExecutionCandidateSetup {
   verificacao_motivo: string | null;
   // D1 (V6.9): distingue LIQ_ANTES_DO_STOP de LIQ_FOLGA_CURTA quando verificacao === 'INSEGURO'.
   liquidacao_classificacao: 'LIQ_ANTES_DO_STOP' | 'LIQ_FOLGA_CURTA' | null;
+  // V6.9 pacote final (spec genesis-v6-9-pacote-final, Fase 8/9/11, doc §13/§16): candidate_setup
+  // (Plano A) carrega os mesmos campos novos que execution.planos[0] — mesmo objeto, praticamente
+  // idêntico ao Plano A dentro de planos[] (mantido por compatibilidade com decisões cacheadas
+  // anteriores a planos[] existir).
+  recommended: boolean;
+  reason_code: string | null;
+  motivo: string | null;
+  alvo_que_atende: string | null;
+  microanalise: PlanMicroanalysis | null;
+  target_details: TargetDetails;
+  rr_por_alvo: RrPorAlvo;
+  tick_size: number | null;
+  tick_decimals: number | null;
+  maintenance_margin: MaintenanceMargin | null;
+  capital_base_usd: number | null;
+  margem_comprometida_usd: number | null;
+  margem_comprometida_pct_capital: number | null;
 }
 
 // V6.7 (G-44): faltavam zona_de/zona_ate/fonte — MotorExecucaoService::gerarPlanoB() sempre devolveu
@@ -287,6 +332,88 @@ export interface ExecutionPlanB {
   stop_ancora: StopAncora | null;
   stop_buffer: StopBuffer | null;
   stop_motivo: string | null;
+}
+
+// V6.9 pacote final (spec genesis-v6-9-pacote-final, Fase 11, item 11.4, doc §16): zona real do
+// catálogo (TargetCandidateCatalog, backend) — a IA seleciona candidate_id, nunca devolve preço.
+export interface TargetCandidate {
+  candidate_id: string;
+  side: 'ABOVE' | 'BELOW';
+  price: number;
+  distance_atr: number;
+  primary_source: string;
+  label: string;
+}
+
+// Rastreabilidade completa de um TP até o item exato do catálogo que o originou
+// (AlvoService::calcularAlvos(), backend) — null quando o alvo correspondente está ausente.
+export interface TargetDetail {
+  candidate_id: string | null;
+  price: number | null;
+  source: string | null;
+  label: string | null;
+}
+
+export interface TargetDetails {
+  tp1: TargetDetail | null;
+  tp2: TargetDetail | null;
+  tp3: TargetDetail | null;
+}
+
+// Risco-retorno de UM alvo (ExecucaoService::calcularRrPorAlvo(), backend) — valido=false nunca
+// tem rr_bruto/rr_liquido preenchidos, sempre motivo_ausencia.
+export interface TargetRiskReward {
+  alvo: number | null;
+  fonte: string | null;
+  rr_bruto: number | null;
+  rr_liquido: number | null;
+  // V6.9 pacote final (spec genesis-v6-9-pacote-final, Fase 13, item 13.7, doc §18): string pronta
+  // ("1:%.2f") calculada uma única vez no backend — o frontend nunca mais faz .toFixed(2) sozinho.
+  rr_bruto_exibir: string | null;
+  rr_liquido_exibir: string | null;
+  custo_bps: number | null;
+  valido: boolean;
+  motivo_ausencia: string | null;
+}
+
+export interface RrPorAlvo {
+  tp1: TargetRiskReward;
+  tp2: TargetRiskReward;
+  tp3: TargetRiskReward;
+}
+
+// BreakRetestService::horizontal() (backend) — rompimento/reteste real por candle fechado, nunca
+// projeção. status=UNAVAILABLE quando não há candles/nível suficiente para avaliar.
+export interface BreakRetestResult {
+  status: 'UNAVAILABLE' | 'OK';
+  event: 'NO_BREAK' | 'FALSE_BREAK_UP' | 'FALSE_BREAK_DOWN' | 'RETEST_UP_CONFIRMED' | 'RETEST_DOWN_CONFIRMED' | 'BREAK_UP_CONFIRMED' | 'BREAK_DOWN_CONFIRMED' | null;
+  level?: number;
+  break_index?: number;
+  confirmation_offset?: number | null;
+}
+
+// PlanAMicroanalysisService (backend) — barreira contrária mais próxima, posição no range,
+// break/retest, risco de antecipação. Hoje só o Plano A tem (null no Plano B).
+export interface PlanMicroanalysis {
+  nearest_contrary_barrier: TargetCandidate | null;
+  range_position: 'LOWER' | 'MIDDLE' | 'UPPER' | null;
+  break_retest: BreakRetestResult | null;
+  anticipation_risk: 'LOW' | 'MODERATE' | 'HIGH' | 'UNAVAILABLE';
+  risk_factors: string[];
+}
+
+// LiquidationCalculatorService (backend) — liquidação por bracket real, nunca margem fixa como
+// substituição silenciosa. status=UNAVAILABLE quando o bracket real não veio (nunca um número
+// calculado com manutenção inventada como se fosse real).
+export interface MaintenanceMargin {
+  liquidation_price: number | null;
+  maintenance_margin_ratio: number | null;
+  bracket: number | null;
+  source: string;
+  status: 'NO_RISK' | 'UNAVAILABLE' | 'AVAILABLE';
+  verification: 'SEGURO' | 'INSEGURO' | null;
+  verification_reason: string | null;
+  liquidation_classification: 'LIQ_ANTES_DO_STOP' | 'LIQ_FOLGA_CURTA' | null;
 }
 
 // V6.5 (E08): formato único e completo compartilhado pelos dois planos em execution.planos[] — antes
@@ -324,9 +451,19 @@ export interface ExecutionPlanoSetup {
   ativo_base: string | null;
   rr_bruto: number | null;
   rr_liquido_estimado: number | null;
+  // item 13.7: strings prontas ("1:%.2f"), mesma doutrina de TargetRiskReward acima.
+  rr_bruto_exibir: string | null;
+  rr_liquido_exibir: string | null;
   rr_aviso: string | null;
   rr_minimo_referencia: number | null;
   rr_abaixo_do_minimo: boolean;
+  // V6.9 pacote final (spec genesis-v6-9-pacote-final, Fase 11, item 11.10, doc §16): três linhas
+  // SEMPRE distintas — capital-base, margem comprometida nesta posição, e a segunda como % da
+  // primeira. Diferentes de risco_usd_estimado/risco_pct_capital_base (acima), que medem RISCO se
+  // o stop for atingido, não margem travada.
+  capital_base_usd: number | null;
+  margem_comprometida_usd: number | null;
+  margem_comprometida_pct_capital: number | null;
   // V6.5 (G02): substituem 'invalidacao' (string, número cru embutido) — direção + nível numéricos.
   invalidacao_direcao: 'acima' | 'abaixo' | null;
   invalidacao_nivel: number | null;
@@ -338,7 +475,8 @@ export interface ExecutionPlanoSetup {
   entrada_ts: string | null;
   // V6.5 (G15): 4 fatores de LOCALIZAÇÃO de QualidadeEntradaService — null quando não computado
   // (hoje, sempre null no Plano B: ver ExecucaoService.php).
-  qualidade_entrada: { fator: string; avaliacao: 'BOM' | 'MEDIO' | 'RUIM'; detalhe: string }[] | null;
+  // item 13.6: UNAVAILABLE — os 4 fatores aparecem sempre agora, nunca somem por falta de insumo.
+  qualidade_entrada: { fator: string; avaliacao: 'BOM' | 'MEDIO' | 'RUIM' | 'UNAVAILABLE'; detalhe: string }[] | null;
   // V6.7 (A-13): campos novos do contrato do stop — presentes nos dois planos, cada um com sua
   // própria âncora/buffer (o stop do Plano B é ancorado na própria entrada dele, não na do Plano A).
   stop_status: StopStatus;
@@ -350,6 +488,23 @@ export interface ExecutionPlanoSetup {
   verificacao: 'SEGURO' | 'INSEGURO' | null;
   verificacao_motivo: string | null;
   liquidacao_classificacao: 'LIQ_ANTES_DO_STOP' | 'LIQ_FOLGA_CURTA' | null;
+  // V6.9 pacote final (spec genesis-v6-9-pacote-final, Fase 8/9/11, doc §13/§16): cada plano
+  // (A e B) ganha sua PRÓPRIA recomendação — antes só existia uma, no nível de
+  // ExecutionPipelineResult (Plano A implicitamente). item 11.9: a tela lê estes campos do
+  // planoAtivo, não mais de execution.recommended/motivo/alvo_que_atende.
+  recommended: boolean;
+  reason_code: string | null;
+  motivo: string | null;
+  alvo_que_atende: string | null;
+  // null no Plano B hoje (PlanAMicroanalysisService só roda pro Plano A, ver ExecucaoService).
+  microanalise: PlanMicroanalysis | null;
+  target_details: TargetDetails;
+  rr_por_alvo: RrPorAlvo;
+  // PriceNormalizer (backend, item 8.6) — tick real do contrato usado pra arredondar todo preço
+  // deste plano; null quando o símbolo não tem filtro conhecido (degrada pra 8 casas no backend).
+  tick_size: number | null;
+  tick_decimals: number | null;
+  maintenance_margin: MaintenanceMargin | null;
 }
 
 export interface ExecutionPipelineResult {
@@ -411,6 +566,74 @@ export type GraphicalAnalysisPollResult =
   | GraphicalAnalysisPendingResult
   | GraphicalAnalysisTerminalResult;
 
+// ScoreFinalizer::finalize() (backend, Fase 9 item 9.1) — breakdown público completo do score
+// final, persistido em Analise::score_breakdown e exposto sem recálculo.
+export interface ScoreBreakdown {
+  score: number;
+  score_tecnico: number;
+  derivatives_modifier: number;
+  contradiction_penalty: number;
+  data_quality_penalty: number;
+  evaluated_families: string[];
+  limiting_factors: string[];
+  temporal_alignment: 'ALIGNED' | 'MIXED' | 'CONTRARY' | 'UNAVAILABLE';
+  derivatives_effect: { strength: DerivativesContext['strength']; modifier: number; summary: string | null };
+}
+
+// DataFreshnessGate::avaliar() (backend, Fase 3 item 3.4) — idade/sequência/conteúdo real por
+// fonte, persistido em Analise::source_freshness.
+export interface SourceFreshnessItem {
+  timestamp_ms: number | null;
+  age_ms: number | null;
+  age_limit_ms: number | null;
+  sequence_ok: boolean;
+  content_ok: boolean;
+  status: 'AVAILABLE' | 'STALE' | 'SEQUENCE_GAP' | 'EMPTY_OR_INVALID';
+}
+
+export interface SourceFreshness {
+  as_of_ms: number;
+  source: string;
+  quality: 'ALTA' | 'MEDIA' | 'BAIXA';
+  coverage_ratio: number;
+  usable_sources: string[];
+  items: Record<string, SourceFreshnessItem>;
+}
+
+// target_selection.candidate_ids que a IA escolheu (GenesisDecisionSchema, backend) — os mesmos
+// IDs que geraram execution.planos[*].target_details.
+export interface TargetSelectionRationale {
+  candidate_id: string;
+  reason: string;
+}
+
+export interface TargetSelection {
+  candidate_ids: string[];
+  rationales: TargetSelectionRationale[];
+}
+
+export interface AnalysisTimestamps {
+  market_price_observed_at: string | null;
+  indicators_observed_at: string | null;
+  last_closed_candle_at: string | null;
+  candle_state: string | null;
+  // Fase 9 (item 9.5): snapshot que decidiu (horário/preço/candle de abertura da série real).
+  snapshot_horario: string | null;
+  snapshot_preco: number | null;
+  snapshot_candle_abertura_ts: number | null;
+}
+
+// V6.9 pacote final (spec genesis-v6-9-pacote-final, Fase 13, item 13.14, doc §18):
+// AnalysisPublicResponseBuilder::dataTraceability() — junta cobertura de decisão (mesma métrica
+// que a antiga `nota_cobertura`) com o frescor real por fonte (source_freshness, DataFreshnessGate).
+export interface DataTraceability {
+  decision_coverage_percent: number | null;
+  fresh_sources: number | null;
+  expected_sources: number | null;
+  freshness_coverage_percent: number | null;
+  as_of_ms: number | null;
+}
+
 export interface GraphicalAnalysisResult {
   analysis_id: string;
   status: 'COMPLETED';
@@ -430,9 +653,10 @@ export interface GraphicalAnalysisResult {
   contradicoes: DirectionContradiction[];
   visual_observations: VisualObservations;
   coverage_percent: number | null;
-  // G5 (V6.9): nota de rastreabilidade pro rodapé — válidos/esperados de TODO o manifesto
-  // (qualquer papel), não só o que decide direção (coverage_percent acima é decision_percent).
-  nota_cobertura: number | null;
+  // V6.9 pacote final (spec genesis-v6-9-pacote-final, Fase 13, item 13.14, doc §18): substitui
+  // `nota_cobertura` (G5, V6.9, escalar solto) — junta a mesma cobertura de decisão com o frescor
+  // real por fonte (source_freshness) num único bloco pro rodapé.
+  data_traceability: DataTraceability | null;
   snapshot_observed_at: string | null;
   market_price: number | null;
   // F9 (V6.9): variação do PRÓPRIO candle analisado (fechamento vs fechamento anterior real) —
@@ -443,6 +667,13 @@ export interface GraphicalAnalysisResult {
   };
   informative_context: InformativeContext;
   execution: ExecutionPipelineResult | null;
+  // V6.9 pacote final (spec genesis-v6-9-pacote-final, Fase 11, item 11.2, doc §16): já
+  // persistidos desde a Fase 9 (item 9.5), só agora expostos no contrato público.
+  score_breakdown: ScoreBreakdown | null;
+  source_freshness: SourceFreshness | null;
+  target_candidates: TargetCandidate[];
+  target_selection: TargetSelection | null;
+  timestamps: AnalysisTimestamps;
   created_at: string;
 }
 

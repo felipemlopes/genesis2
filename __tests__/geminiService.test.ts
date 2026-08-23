@@ -96,9 +96,8 @@ describe('analyzeChart fallback behavior', () => {
 
     const mockFile = new File(['test'], 'chart.png', { type: 'image/png' });
     const metadata = { pair: 'BTCUSDT', exchange: 'Binance', timeframe: '4h' } as any;
-    const marketData = {} as any;
 
-    const result = await analyzeChart(mockFile, metadata, '1000', marketData, 'Binance', 10, null);
+    const result = await analyzeChart(mockFile, metadata, '1000', 10);
 
     expect(callCount).toBe(2);
     expect(warnSpy).toHaveBeenCalledWith(
@@ -126,9 +125,8 @@ describe('analyzeChart fallback behavior', () => {
 
     const mockFile = new File(['test'], 'chart.png', { type: 'image/png' });
     const metadata = { pair: 'ETHUSDT', exchange: 'Binance', timeframe: '1h' } as any;
-    const marketData = {} as any;
 
-    await analyzeChart(mockFile, metadata, '500', marketData, 'Binance', 5, null);
+    await analyzeChart(mockFile, metadata, '500', 5);
 
     expect(callCount).toBe(2);
     expect(warnSpy).toHaveBeenCalledWith(
@@ -145,10 +143,9 @@ describe('analyzeChart fallback behavior', () => {
 
     const mockFile = new File(['test'], 'chart.png', { type: 'image/png' });
     const metadata = { pair: 'BTCUSDT', exchange: 'Binance', timeframe: '4h' } as any;
-    const marketData = {} as any;
 
     await expect(
-      analyzeChart(mockFile, metadata, '1000', marketData, 'Binance', 10, null)
+      analyzeChart(mockFile, metadata, '1000', 10)
     ).rejects.toThrow();
     expect(warnSpy).not.toHaveBeenCalled();
   });
@@ -205,8 +202,15 @@ describe('analyzeChart preserva evidências antes descartadas (Fase 7)', () => {
       vrvp: { presente: true, confianca: 0.7, poc: 99, hvn: [98], lvn: [95] },
     },
     coverage_percent: 80,
-    // G5 (V6.9): nota de rastreabilidade — precisa sobreviver ao adaptador igual a coverage_percent.
-    nota_cobertura: 92,
+    // V6.9 pacote final (Fase 13, item 13.14): data_traceability substitui nota_cobertura —
+    // precisa sobreviver ao adaptador igual a coverage_percent.
+    data_traceability: {
+      decision_coverage_percent: 92,
+      fresh_sources: 8,
+      expected_sources: 10,
+      freshness_coverage_percent: 80,
+      as_of_ms: 1_700_000_000_000,
+    },
     snapshot_observed_at: null,
     market_price: 100,
     display_only: { long_short_ratio: null },
@@ -225,21 +229,23 @@ describe('analyzeChart preserva evidências antes descartadas (Fase 7)', () => {
         session: { value: null, unit: null, status: 'UNAVAILABLE' },
         multi_timeframe: { value: null, unit: null, status: 'UNAVAILABLE' },
       },
+      // V6.9 pacote final (spec genesis-v6-9-pacote-final, Fase 11, item 11.4/11.6, doc §16):
+      // CanonicalMacroContext/CanonicalSentimentContext — status é do BLOCO inteiro, resumo/
+      // narrativa/score/eventos são campos diretos; só os 5 indicadores de mercado global
+      // continuam embrulhados em DisplayMetric (.value).
       macro: {
-        vix: { value: 18.58, unit: 'index', status: 'AVAILABLE' },
-        dxy_change_pct: { value: -0.49, unit: '%', status: 'AVAILABLE' },
-        sp500_change_pct: { value: -1.16, unit: '%', status: 'AVAILABLE' },
+        status: 'AVAILABLE', error_code: null, resumo: null, score: 45, eventos: [],
+        vix: { status: 'AVAILABLE', value: 18.58, unit: 'index', source: 'YAHOO_FINANCE', observed_at: null, error_code: null },
+        dxy_change_pct: { status: 'AVAILABLE', value: -0.49, unit: '%', source: 'YAHOO_FINANCE', observed_at: null, error_code: null },
+        sp500_change_pct: { status: 'AVAILABLE', value: -1.16, unit: '%', source: 'YAHOO_FINANCE', observed_at: null, error_code: null },
         // A2 (V6.9): fear_greed/btc_dominance saíram de sentiment — mercado global, não do ativo.
-        fear_greed: { value: 26, unit: 'index', status: 'AVAILABLE' },
-        btc_dominance: { value: 56.46, unit: '%', status: 'AVAILABLE' },
-        score: { value: 45, unit: 'index', status: 'AVAILABLE' },
-        narrative: { value: null, unit: null, status: 'UNAVAILABLE' },
+        fear_greed: { status: 'AVAILABLE', value: 26, unit: 'index', source: 'ALTERNATIVE_ME', observed_at: null, error_code: null },
+        btc_dominance: { status: 'AVAILABLE', value: 56.46, unit: '%', source: 'COINGECKO', observed_at: null, error_code: null },
       },
       sentiment: {
-        score: { value: 72, unit: 'index', status: 'AVAILABLE' },
-        gatilhos_positivos: { value: ['Adoção institucional crescente'], unit: 'array', status: 'AVAILABLE' },
-        gatilhos_negativos: { value: [], unit: 'array', status: 'AVAILABLE' },
-        narrative: { value: null, unit: null, status: 'UNAVAILABLE' },
+        status: 'UNAVAILABLE', error_code: null, narrativa: null, score: 72, eventos: [],
+        gatilhos_positivos: ['Adoção institucional crescente'],
+        gatilhos_negativos: [],
       },
     },
     execution: null,
@@ -252,7 +258,7 @@ describe('analyzeChart preserva evidências antes descartadas (Fase 7)', () => {
 
     const mockFile = new File(['test'], 'chart.png', { type: 'image/png' });
     const metadata = { pair: 'BTCUSDT', exchange: 'Binance', timeframe: '4h' } as any;
-    const result = await analyzeChart(mockFile, metadata, '', {} as any, 'Binance', 10, null);
+    const result = await analyzeChart(mockFile, metadata, '', 10);
 
     expect(result.indicadores?.plus_di).toBe(0);
     expect(result.indicadores?.minus_di).toBe(22.4);
@@ -265,7 +271,7 @@ describe('analyzeChart preserva evidências antes descartadas (Fase 7)', () => {
 
     const mockFile = new File(['test'], 'chart.png', { type: 'image/png' });
     const metadata = { pair: 'BTCUSDT', exchange: 'Binance', timeframe: '4h' } as any;
-    const result = await analyzeChart(mockFile, metadata, '', {} as any, 'Binance', 10, null);
+    const result = await analyzeChart(mockFile, metadata, '', 10);
 
     const ctx = result.contexto_informativo as any;
     expect(ctx.macro.vix).toBe(18.58);
@@ -286,23 +292,30 @@ describe('analyzeChart preserva evidências antes descartadas (Fase 7)', () => {
 
     const mockFile = new File(['test'], 'chart.png', { type: 'image/png' });
     const metadata = { pair: 'BTCUSDT', exchange: 'Binance', timeframe: '4h' } as any;
-    const result = await analyzeChart(mockFile, metadata, '', {} as any, 'Binance', 10, null);
+    const result = await analyzeChart(mockFile, metadata, '', 10);
 
     expect(result.contradicoes).toEqual([
       { tipo: 'DMI', detalhe: 'DMI aponta predominância vendedora, contrário à direção LONG.' },
     ]);
   });
 
-  // G5 (V6.9): nota_cobertura chega pronta da API — precisa sobreviver ao adaptador.
-  it('preserva a nota de rastreabilidade (nota_cobertura)', async () => {
+  // V6.9 pacote final (Fase 13, item 13.14): data_traceability chega pronto da API — precisa
+  // sobreviver ao adaptador, substitui nota_cobertura (G5, V6.9).
+  it('preserva a rastreabilidade de dados (data_traceability)', async () => {
     const { analyzeChart } = await import('../services/geminiService');
     globalThis.fetch = vi.fn(async () => new Response(JSON.stringify(respostaCompleta()), { status: 200 })) as any;
 
     const mockFile = new File(['test'], 'chart.png', { type: 'image/png' });
     const metadata = { pair: 'BTCUSDT', exchange: 'Binance', timeframe: '4h' } as any;
-    const result = await analyzeChart(mockFile, metadata, '', {} as any, 'Binance', 10, null);
+    const result = await analyzeChart(mockFile, metadata, '', 10);
 
-    expect((result.analysis as any)?.nota_cobertura).toBe(92);
+    expect((result.analysis as any)?.data_traceability).toEqual({
+      decision_coverage_percent: 92,
+      fresh_sources: 8,
+      expected_sources: 10,
+      freshness_coverage_percent: 80,
+      as_of_ms: 1_700_000_000_000,
+    });
   });
 
   it('preserva score de macro/sentimento e os gatilhos de sentimento', async () => {
@@ -311,7 +324,7 @@ describe('analyzeChart preserva evidências antes descartadas (Fase 7)', () => {
 
     const mockFile = new File(['test'], 'chart.png', { type: 'image/png' });
     const metadata = { pair: 'BTCUSDT', exchange: 'Binance', timeframe: '4h' } as any;
-    const result = await analyzeChart(mockFile, metadata, '', {} as any, 'Binance', 10, null);
+    const result = await analyzeChart(mockFile, metadata, '', 10);
 
     const ctx = result.contexto_informativo as any;
     expect(ctx.macro.score).toBe(45);
@@ -326,15 +339,17 @@ describe('analyzeChart preserva evidências antes descartadas (Fase 7)', () => {
   // uma análise real com narrativa presente mostrar sempre o fallback genérico na tela.
   it('preserva o texto da narrativa de macro/sentimento como string, não espalhada em caracteres', async () => {
     const resposta = respostaCompleta();
-    (resposta.informative_context as any).macro.narrative = { value: 'Sem eventos macro verificados nesta janela.', unit: null, status: 'AVAILABLE' };
-    (resposta.informative_context as any).sentiment.narrative = { value: 'Sem sentimento verificado para este ativo.', unit: null, status: 'AVAILABLE' };
+    (resposta.informative_context as any).macro.status = 'AVAILABLE';
+    (resposta.informative_context as any).macro.resumo = 'Sem eventos macro verificados nesta janela.';
+    (resposta.informative_context as any).sentiment.status = 'AVAILABLE';
+    (resposta.informative_context as any).sentiment.narrativa = 'Sem sentimento verificado para este ativo.';
 
     const { analyzeChart } = await import('../services/geminiService');
     globalThis.fetch = vi.fn(async () => new Response(JSON.stringify(resposta), { status: 200 })) as any;
 
     const mockFile = new File(['test'], 'chart.png', { type: 'image/png' });
     const metadata = { pair: 'BTCUSDT', exchange: 'Binance', timeframe: '4h' } as any;
-    const result = await analyzeChart(mockFile, metadata, '', {} as any, 'Binance', 10, null);
+    const result = await analyzeChart(mockFile, metadata, '', 10);
 
     const ctx = result.contexto_informativo as any;
     expect(ctx.macro.resumo).toBe('Sem eventos macro verificados nesta janela.');
@@ -349,7 +364,7 @@ describe('analyzeChart preserva evidências antes descartadas (Fase 7)', () => {
 
     const mockFile = new File(['test'], 'chart.png', { type: 'image/png' });
     const metadata = { pair: 'BTCUSDT', exchange: 'Binance', timeframe: '4h' } as any;
-    const result = await analyzeChart(mockFile, metadata, '', {} as any, 'Binance', 10, null);
+    const result = await analyzeChart(mockFile, metadata, '', 10);
 
     expect(result.derivatives_context?.strength).toBe('STRENGTHENS');
     expect(result.visual_observations?.objects).toHaveLength(1);

@@ -17,7 +17,7 @@ import { useAppContext } from '../contexts/AppContext';
 import AnalysisResult from '../components/AnalysisResult';
 import NewsTicker from '../components/NewsTicker';
 import OrderBookImbalance from '../components/OrderBookImbalance';
-import TrendQuality from '../components/TrendQuality';
+import BasisSpotPerpetualCard from '../components/BasisSpotPerpetualCard';
 import LiquidationHeatmap from '../components/LiquidationHeatmap';
 import SectorSentiment from '../components/SectorSentiment';
 import { analyzeChart, scanChartMetadata, ChartMetadataBlockedError } from '../services/geminiService';
@@ -224,9 +224,7 @@ const GenesisPage: React.FC = () => {
   ) => {
     const fileToUse = fileOverride || selectedFile;
     const metaToUse = metadataOverride || chartMetadata;
-    const exchangeToUse = exchangeOverride || exchange;
     const pairToUse = pairOverride || selectedPair;
-    const marketDataToUse = marketDataOverride || marketData;
 
     if (isAnalyzing && !fileOverride) return;
 
@@ -257,15 +255,15 @@ const GenesisPage: React.FC = () => {
         timeframe: metaToUse?.timeframe || timeframe,
       } as ChartMetadata;
 
+      // V6.9 pacote final (spec genesis-v6-9-pacote-final, Fase 11, item 11.6, doc §16):
+      // marketDataToUse/exchangeToUse/cvdData/entryValue saíram da chamada — analyzeChart() nunca
+      // os lia (dead params, ver geminiService.ts); o motor V6.4 não aceita dado de mercado do
+      // cliente como entrada.
       const data = await analyzeChart(
         fileToUse,
         analysisMetadata,
         equity,
-        marketDataToUse,
-        exchangeToUse,
         leverage,
-        cvdData,
-        entryValue,
         abortController.signal
       );
 
@@ -651,7 +649,7 @@ const GenesisPage: React.FC = () => {
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.4, delay: 1 * 0.08, ease: 'easeOut' }}
               >
-                <TrendQuality symbol={selectedPair} exchange={exchange} />
+                <BasisSpotPerpetualCard symbol={selectedPair} exchange={exchange} />
               </motion.div>
               <motion.div
                 initial={{ opacity: 0, y: 10 }}

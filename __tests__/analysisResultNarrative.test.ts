@@ -67,16 +67,19 @@ describe('16.4: AnalysisResult não duplica narrativa entre justificativa do sco
     expect(result.technicalAnalysis).toBeNull();
   });
 
+  // V6.9 pacote final (spec genesis-v6-9-pacote-final, Fase 11, item 11.13, doc §16): a linha
+  // exata mudou — os dois campos passam por publicText() agora (defesa contra termo técnico em
+  // inglês escapando pra narrativa) — mas a fonte (inglês antes do português legado) e a ausência
+  // de mainRationale/execution.motivo como fallback continuam as mesmas, só verificadas de um jeito
+  // que sobrevive à mudança de forma da linha.
   it('AnalysisResult.tsx implementa a lógica exata do Adendo Seção 32 (sem mainRationale/execution.motivo como fallback)', () => {
     const componentPath = path.resolve(__dirname, '../components/AnalysisResult.tsx');
     const content = fs.readFileSync(componentPath, 'utf-8');
 
-    expect(content).toContain(
-      'const scoreJustification = analysis.score_justification ?? analysis.justificativa_score ?? null;'
-    );
-    expect(content).toContain(
-      'const technicalAnalysis = analysis.technical_analysis ?? analysis.narrativa_tecnica ?? null;'
-    );
+    expect(content).toContain('analysis.score_justification ?? analysis.justificativa_score ?? null');
+    expect(content).toContain('analysis.technical_analysis ?? analysis.narrativa_tecnica ?? null');
+    expect(content).toMatch(/const scoreJustification = publicText\(/);
+    expect(content).toMatch(/const technicalAnalysis = publicText\(/);
     expect(content).not.toContain('mainRationale');
     expect(content).not.toMatch(/scoreJustification[\s\S]{0,40}execution\.motivo/);
   });

@@ -1,5 +1,17 @@
 
 import React, { useEffect, useState } from 'react';
+import { fetchLSRData } from '../services/cryptoApi';
+
+/**
+ * V6.9 pacote final (spec genesis-v6-9-pacote-final, Fase 12, item 12.9, doc §17): achado real —
+ * este componente reimplementava as 3 chamadas (Binance/Bybit/OKX), cada uma com sua própria
+ * cascata de 2 proxies, duplicando exatamente `fetchLSRData()` (já existente em `cryptoApi.ts`,
+ * usado por outros consumidores) — inclusive com a MESMA rota errada da Binance
+ * (`/fapi/v1/globalLongShortAccountRatio`, que não existe; a real é
+ * `/futures/data/globalLongShortAccountRatio`, já corrigida em `fetchLSRData()`). Substituído por
+ * uma cascata simples sobre a função real, sem reimplementar fetch/proxy/parsing.
+ * `decision_role: DISPLAY_ONLY` — puramente informativo, nunca decide nada.
+ */
 
 interface LongShortRatioProps {
   symbol: string;
@@ -9,8 +21,9 @@ interface RatioData {
   long: number;
   short: number;
   ratio: number;
-  timestamp: number;
 }
+
+const FONTES = ['Binance', 'Bybit', 'OKX'] as const;
 
 const LongShortRatio: React.FC<LongShortRatioProps> = ({ symbol }) => {
   const [data, setData] = useState<RatioData | null>(null);
@@ -20,155 +33,37 @@ const LongShortRatio: React.FC<LongShortRatioProps> = ({ symbol }) => {
 
   useEffect(() => {
     let isMounted = true;
-    
-    // Reset state on symbol change
+
     setData(null);
     setLoading(true);
     setError(false);
 
-    const cleanSymbol = symbol.replace('/', '').toUpperCase();
-
-    // --- FETCH FUNCTIONS ---
-
-    const fetchFromBinance = async (proxyUrlGen: (url: string) => string): Promise<RatioData> => {
-       const targetUrl = `https://fapi.binance.com/fapi/v1/globalLongShortAccountRatio?symbol=${cleanSymbol}&period=1h&limit=1&_t=${Date.now()}`;
-       const res = await fetch(proxyUrlGen(targetUrl));
-       if (!res.ok) throw new Error('Binance fetch failed');
-       const json = await res.json();
-       
-       if (Array.isArray(json) && json.length > 0 && json[0].longShortRatio) {
-           const item = json[0];
-           let long = parseFloat(item.longAccount);
-           let short = parseFloat(item.shortAccount);
-           // Normalize to 0-100
-           if (long <= 1) long = long * 100;
-           if (short <= 1) short = short * 100;
-           
-           return {
-               long,
-               short,
-               ratio: parseFloat(item.longShortRatio),
-               timestamp: Date.now()
-           };
-       }
-       throw new Error('Binance invalid format');
-    };
-
-    const fetchFromBybit = async (proxyUrlGen: (url: string) => string): Promise<RatioData> => {
-        // Bybit V5 Public Endpoint
-        const targetUrl = `https://api.bybit.com/v5/market/account-ratio?category=linear&symbol=${cleanSymbol}&period=1h&limit=1&_t=${Date.now()}`;
-        const res = await fetch(proxyUrlGen(targetUrl));
-        if (!res.ok) throw new Error('Bybit fetch failed');
-        const json = await res.json();
-
-        if (json.retCode === 0 && json.result && json.result.list && json.result.list.length > 0) {
-            const item = json.result.list[0];
-            const buyRatio = parseFloat(item.buyRatio); // e.g. "0.54"
-            const sellRatio = parseFloat(item.sellRatio); // e.g. "0.46"
-            
-            return {
-                long: buyRatio * 100,
-                short: sellRatio * 100,
-                ratio: buyRatio / sellRatio,
-                timestamp: parseInt(item.timestamp)
-            };
-        }
-        throw new Error('Bybit invalid format');
-    };
-
-    const fetchFromOkx = async (proxyUrlGen: (url: string) => string): Promise<RatioData> => {
-        const ccy = cleanSymbol.replace('USDT', '');
-        const targetUrl = `https://www.okx.com/api/v5/rubik/stat/contracts/long-short-account-ratio?ccy=${ccy}&period=1H`;
-        const res = await fetch(proxyUrlGen(targetUrl));
-        if (!res.ok) throw new Error('OKX fetch failed');
-        const json = await res.json();
-
-        if (json.code === '0' && json.data && json.data.length > 0) {
-            const ratio = parseFloat(json.data[0][1]);
-            const long = (ratio * 100) / (1 + ratio);
-            const short = 100 - long;
-            
-            return {
-                long,
-                short,
-                ratio,
-                timestamp: parseInt(json.data[0][0])
-            };
-        }
-        throw new Error('OKX invalid format');
-    };
-
-    // --- ORCHESTRATOR ---
-
     const loadData = async () => {
-        // List of proxies to try
-        const proxies = [
-            (url: string) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
-            (url: string) => `https://corsproxy.io/?${encodeURIComponent(url)}`,
-        ];
-
-        // Strategy: 
-        // 1. Try Binance with all proxies
-        // 2. If fail, Try Bybit with all proxies
-        // 3. If fail, Try OKX with all proxies
-        
-        // Attempt Binance
-        for (const proxy of proxies) {
-            try {
-                const result = await fetchFromBinance(proxy);
-                if (isMounted) {
-                    setData(result);
-                    setSource('Binance');
-                    setLoading(false);
-                    return; // Success
-                }
-            } catch (e) {
-                // Continue to next proxy
-            }
-        }
-
-        // Attempt Bybit (Fallback)
-        for (const proxy of proxies) {
-            try {
-                const result = await fetchFromBybit(proxy);
-                if (isMounted) {
-                    setData(result);
-                    setSource('Bybit'); // Bybit is huge volume, good fallback
-                    setLoading(false);
-                    return; // Success
-                }
-            } catch (e) {
-                // Continue
-            }
-        }
-
-        // Attempt OKX (Fallback 2)
-        for (const proxy of proxies) {
-            try {
-                const result = await fetchFromOkx(proxy);
-                if (isMounted) {
-                    setData(result);
-                    setSource('OKX');
-                    setLoading(false);
-                    return; // Success
-                }
-            } catch (e) {
-                // Continue
-            }
-        }
-
-        if (isMounted) {
-            setError(true);
+      for (const fonte of FONTES) {
+        try {
+          const resultado = await fetchLSRData(symbol, fonte);
+          if (resultado && isMounted) {
+            setData(resultado);
+            setSource(fonte);
             setLoading(false);
+            return;
+          }
+        } catch {
+          // tenta a próxima fonte
         }
+      }
+      if (isMounted) {
+        setError(true);
+        setLoading(false);
+      }
     };
 
     loadData();
     const interval = setInterval(loadData, 10000); // Poll every 10s
 
     return () => {
-        clearInterval(interval);
-        isMounted = false;
+      clearInterval(interval);
+      isMounted = false;
     };
   }, [symbol]);
 
@@ -189,23 +84,24 @@ const LongShortRatio: React.FC<LongShortRatioProps> = ({ symbol }) => {
   if (error && !data) {
       return (
         <div className="flex flex-col justify-center items-center h-full w-full text-center opacity-50">
-             <span className="text-[10px] text-red-500 font-mono font-bold">CONEXÃO INSTÁVEL</span>
-             <span className="text-[8px] text-gray-500">Tentando reconectar...</span>
+             <span className="text-[10px] text-red-500 font-mono font-bold">INDISPONÍVEL</span>
+             <span className="text-[8px] text-gray-500">Nenhuma fonte respondeu.</span>
         </div>
       );
   }
 
-  const safeData = data || { long: 50, short: 50, ratio: 1.00 };
-  const isBullish = safeData.ratio >= 1;
+  if (!data) return null;
+
+  const isBullish = data.ratio >= 1;
 
   // Chart Calculations
   const radius = 18;
   const circumference = 2 * Math.PI * radius;
-  const longOffset = circumference - ((safeData.long / 100) * circumference);
+  const longOffset = circumference - ((data.long / 100) * circumference);
 
   return (
     <div className="flex flex-col justify-between h-full w-full px-1 relative group cursor-pointer z-10 hover:z-[9999999]">
-       
+
        {/* TOOLTIP INFORMATIVO (Hover) */}
        <div className="absolute top-[calc(100%+10px)] left-1/2 -translate-x-1/2 mb-3 w-60 p-3 bg-black border border-white/5 rounded-xl shadow-[0_10px_40px_rgba(0,0,0,1)] opacity-0 group-hover:opacity-100 transition-all duration-300 pointer-events-none z-[9999999] text-center scale-95 group-hover:scale-100 origin-top">
            <div className="flex flex-col gap-1.5">
@@ -237,11 +133,7 @@ const LongShortRatio: React.FC<LongShortRatioProps> = ({ symbol }) => {
             </span>
             <div className="text-[9px] font-bold text-gray-600 flex items-center gap-1 opacity-70 group-hover:opacity-100 transition-opacity">
                 <span>FONTE:</span>
-                {source === 'Binance' ? (
-                     <span className="text-yellow-600">BINANCE</span>
-                ) : (
-                     <span className="text-orange-500">BYBIT</span>
-                )}
+                <span className="text-yellow-600">{source.toUpperCase()}</span>
             </div>
        </div>
 
@@ -254,14 +146,14 @@ const LongShortRatio: React.FC<LongShortRatioProps> = ({ symbol }) => {
                        <circle
                          cx="20" cy="20" r={radius}
                          fill="transparent"
-                         stroke="#ef4444" 
+                         stroke="#ef4444"
                          strokeWidth="4"
                          className="opacity-80"
                        />
                        <circle
                          cx="20" cy="20" r={radius}
                          fill="transparent"
-                         stroke="#10b981" 
+                         stroke="#10b981"
                          strokeWidth="4"
                          strokeDasharray={circumference}
                          strokeDashoffset={longOffset}
@@ -269,10 +161,10 @@ const LongShortRatio: React.FC<LongShortRatioProps> = ({ symbol }) => {
                          className="transition-all duration-1000 ease-out shadow-[0_0_10px_rgba(16,185,129,0.5)]"
                        />
                    </svg>
-                   
+
                    <div className="absolute inset-0 flex items-center justify-center">
                        <span className={`text-[11px] font-bold font-mono tracking-tighter ${isBullish ? 'text-green-400' : 'text-red-400'}`}>
-                          {safeData.ratio.toFixed(2)}
+                          {data.ratio.toFixed(2)}
                        </span>
                    </div>
                </div>
@@ -281,27 +173,27 @@ const LongShortRatio: React.FC<LongShortRatioProps> = ({ symbol }) => {
                <div className="flex flex-col items-end justify-center flex-1 pl-3 gap-0.5">
                   <div className="flex items-center gap-1.5">
                      <div className="w-1.5 h-1.5 rounded-full bg-genesis-positive shadow-[0_0_5px_rgba(16,185,129,0.5)]" />
-                     <span className="text-xs font-mono font-bold text-gray-200">{safeData.long.toFixed(1)}%</span>
+                     <span className="text-xs font-mono font-bold text-gray-200">{data.long.toFixed(1)}%</span>
                      <span className="text-[8px] text-gray-500 font-bold uppercase ml-0.5">L</span>
                   </div>
 
                   <div className="flex items-center gap-1.5">
                      <div className="w-1.5 h-1.5 rounded-full bg-genesis-negative shadow-[0_0_5px_rgba(239,68,68,0.5)]" />
-                     <span className="text-xs font-mono font-bold text-gray-400">{safeData.short.toFixed(1)}%</span>
+                     <span className="text-xs font-mono font-bold text-gray-400">{data.short.toFixed(1)}%</span>
                      <span className="text-[8px] text-gray-600 font-bold uppercase ml-0.5">S</span>
                   </div>
                </div>
            </div>
 
-           {/* Melhoria 4: Medidor visual Long vs Short (Barra Horizontal) */}
+           {/* Medidor visual Long vs Short (Barra Horizontal) */}
            <div className="w-full h-1.5 bg-red-500/20 rounded-full mt-2 overflow-hidden flex">
-               <div 
+               <div
                    className="h-full bg-green-500 transition-all duration-1000 ease-out"
-                   style={{ width: `${safeData.long}%` }}
+                   style={{ width: `${data.long}%` }}
                />
-               <div 
+               <div
                    className="h-full bg-red-500 transition-all duration-1000 ease-out"
-                   style={{ width: `${safeData.short}%` }}
+                   style={{ width: `${data.short}%` }}
                />
            </div>
        </div>

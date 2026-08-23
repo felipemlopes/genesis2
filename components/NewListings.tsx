@@ -69,7 +69,9 @@ const NewListings: React.FC = () => {
     }
   };
 
-  const getTimeSince = (ts: number) => {
+  // item 12.10: launchDate pode ser null (fonte não informa, ex.: Bitget) — nunca mais estimado.
+  const getTimeSince = (ts: number | null) => {
+    if (ts === null) return 'Data indisponível';
     const diff = Date.now() - ts;
     const hours = Math.floor(diff / (1000 * 60 * 60));
     if (hours < 1) return 'Menos de 1h';

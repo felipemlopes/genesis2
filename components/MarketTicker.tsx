@@ -37,8 +37,10 @@ const MarketTicker: React.FC = () => {
   const [dominance, setDominance] = useState<DominanceData | null>(null);
 
   useEffect(() => {
-    // Public Binance Stream (!miniTicker is lighter than !ticker)
-    const ws = new WebSocket('wss://stream.binance.com:9443/ws/!miniTicker@arr');
+    // V6.9 pacote final (spec genesis-v6-9-pacote-final, Fase 12, item 12.11, doc §17): apontava
+    // para o WebSocket Spot (stream.binance.com) — o Gênesis só opera Futures perpétuo (mesma
+    // doutrina A10). Migrado para o stream equivalente em Futures.
+    const ws = new WebSocket('wss://fstream.binance.com/ws/!miniTicker@arr');
 
     ws.onmessage = (event) => {
       try {

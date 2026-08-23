@@ -18,21 +18,27 @@ export interface TrendResult {
   };
 }
 
-const BASE_BINANCE = "https://api.binance.com/api/v3";
+// V6.9 pacote final (spec genesis-v6-9-pacote-final, Fase 12, item 12.6, doc §17): achado real —
+// BASE_BINANCE apontava para o mercado Spot (api.binance.com/api/v3) para klines/aggTrades/depth,
+// enquanto o resto do app só opera Futures perpétuo (mesma doutrina A10 do backend: nenhum dado de
+// Spot em nenhuma camada de análise). Também usava /fapi/v1/openInterestHist — rota que não existe
+// na Binance (confirmado no backend, BinanceService::getOpenInterestHist() usa
+// /futures/data/openInterestHist); o funding rate agora vem de /fapi/v1/premiumIndex (funding
+// atual, um objeto só) em vez de /fapi/v1/fundingRate (histórico paginado, exigia limit=1 para
+// simular "atual"). BASE_BINANCE (Spot) apagado por completo — só rotas Futures daqui em diante.
 const BASE_BINANCE_FUT = "https://fapi.binance.com/fapi/v1";
+const BASE_BINANCE_FUT_DATA = "https://fapi.binance.com/futures/data";
 
 export const analyzeTrend = async (asset: 'BTC' | 'ETH'): Promise<TrendResult> => {
   const symbol = `${asset}USDT`;
-  const okxSymbol = `${asset}-USDT`;
 
-  // 1. DATA COLLECTION
-  const [klines, trades, depth, funding, oi, aggTrades] = await Promise.all([
-    fetchWithProxy(`${BASE_BINANCE}/klines?symbol=${symbol}&interval=1m&limit=100`),
-    fetchWithProxy(`${BASE_BINANCE}/aggTrades?symbol=${symbol}&limit=500`),
-    fetchWithProxy(`${BASE_BINANCE}/depth?symbol=${symbol}&limit=100`),
-    fetchWithProxy(`${BASE_BINANCE_FUT}/fundingRate?symbol=${symbol}&limit=1`),
-    fetchWithProxy(`${BASE_BINANCE_FUT}/openInterestHist?symbol=${symbol}&period=5m&limit=12`),
-    fetchWithProxy(`${BASE_BINANCE}/aggTrades?symbol=${symbol}&limit=1000`)
+  // 1. DATA COLLECTION (Futures perpétuo — nunca Spot)
+  const [klines, depth, funding, oi, aggTrades] = await Promise.all([
+    fetchWithProxy(`${BASE_BINANCE_FUT}/klines?symbol=${symbol}&interval=1m&limit=100`),
+    fetchWithProxy(`${BASE_BINANCE_FUT}/depth?symbol=${symbol}&limit=100`),
+    fetchWithProxy(`${BASE_BINANCE_FUT}/premiumIndex?symbol=${symbol}`),
+    fetchWithProxy(`${BASE_BINANCE_FUT_DATA}/openInterestHist?symbol=${symbol}&period=5m&limit=12`),
+    fetchWithProxy(`${BASE_BINANCE_FUT}/aggTrades?symbol=${symbol}&limit=1000`)
   ]);
 
   if (!klines || !Array.isArray(klines) || klines.length === 0) {
@@ -79,9 +85,10 @@ export const analyzeTrend = async (asset: 'BTC' | 'ETH'): Promise<TrendResult> =
     else if (oiDelta < 0 && priceChangeRecent < 0) scores.oi = 1; // Longs liquidating
   }
 
-  // INDICATOR 4: Funding Rate
-  if (funding && funding[0]) {
-    const rate = parseFloat(funding[0].fundingRate);
+  // INDICATOR 4: Funding Rate (premiumIndex devolve um objeto único com o funding atual, não uma
+  // lista histórica — lastFundingRate, não fundingRate).
+  if (funding && funding.lastFundingRate !== undefined) {
+    const rate = parseFloat(funding.lastFundingRate);
     if (rate > 0.01) scores.funding = -1.5; // Overbought risk
     else if (rate < 0) scores.funding = 1.5; // Short squeeze risk
   }

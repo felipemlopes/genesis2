@@ -33,9 +33,12 @@ describe('BlocoConviccaoQualidade — bloco de risco e retorno (bruto x líquido
     expect(fonte).toContain('cuidado, risco retorno abaixo do recomendado');
   });
 
+  // V6.9 pacote final (spec genesis-v6-9-pacote-final, Fase 13, item 13.7, doc §18): rr/rrBruto
+  // (número) viraram rrExibir/rrBrutoExibir (string pronta do backend) — asserção atualizada pro
+  // novo nome de prop, mesmo critério de ordem (bruto antes do líquido no JSX).
   it('layout, ordem e classes do bloco não mudaram — bruto continua antes do líquido no JSX', () => {
-    const indiceBruto = fonte.indexOf('rrBruto != null');
-    const indiceLiquido = fonte.indexOf('{rr != null && (');
+    const indiceBruto = fonte.indexOf('rrBrutoExibir != null');
+    const indiceLiquido = fonte.indexOf('{rrExibir != null && (');
     expect(indiceBruto).toBeGreaterThan(-1);
     expect(indiceLiquido).toBeGreaterThan(-1);
     expect(indiceBruto).toBeLessThan(indiceLiquido);

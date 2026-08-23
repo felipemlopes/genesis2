@@ -6,7 +6,10 @@ export interface NormalizedListing {
   symbol: string;
   exchange: string;
   type: 'Nova Listagem' | 'Ativação Recente';
-  launchDate: number;
+  // V6.9 pacote final (Fase 12, item 12.10): a Bitget não expõe data de listagem na v2 — antes
+  // era estimada com Math.random() ("Estimado para o pool"), um número fabricado apresentado como
+  // se fosse a data real de listagem. Agora null quando a fonte não informa, nunca inventado.
+  launchDate: number | null;
   volume24h: number;
   price: number;
   spread: number;
@@ -73,7 +76,9 @@ export const getNovasListagens = async (): Promise<NormalizedListing[]> => {
     // 3. VARREDURA BITGET (Detecção via Volume/Snapshot)
     const bitgetInfo = await fetchWithProxy('https://api.bitget.com/api/v2/mix/market/contracts?productType=USDT-FUTURES');
     if (bitgetInfo?.data) {
-      // Bitget não expõe data de listagem fácil na v2, usamos a ordem da lista (geralmente novos no topo)
+      // V6.9 pacote final (Fase 12, item 12.10, achado real): Bitget não expõe data de listagem
+      // na v2 — usamos a ordem da lista (geralmente novos no topo) só para ordem de exibição.
+      // launchDate fica null (nunca estimado com Math.random()); a UI mostra "Data indisponível".
       const candidates = bitgetInfo.data.slice(0, 40);
       for (const s of candidates) {
         results.push({
@@ -81,7 +86,7 @@ export const getNovasListagens = async (): Promise<NormalizedListing[]> => {
           symbol: s.symbol.replace('USDT', '/USDT'),
           exchange: 'Bitget',
           type: 'Ativação Recente',
-          launchDate: now - (Math.random() * 5 * 24 * 60 * 60 * 1000), // Estimado para o pool
+          launchDate: null,
           volume24h: 0,
           price: 0,
           spread: 0,
@@ -117,8 +122,14 @@ export const getNovasListagens = async (): Promise<NormalizedListing[]> => {
     console.error("Erro na varredura global:", e);
   }
 
-  // Consolidação e Ordenação por data (Mais novos primeiro)
-  return results.sort((a, b) => b.launchDate - a.launchDate);
+  // Consolidação e Ordenação por data (Mais novos primeiro; sem data conhecida vai para o fim —
+  // nunca comparado como se fosse 0/Epoch, o que os empurraria para o topo como "mais recentes").
+  return results.sort((a, b) => {
+    if (a.launchDate === null && b.launchDate === null) return 0;
+    if (a.launchDate === null) return 1;
+    if (b.launchDate === null) return -1;
+    return b.launchDate - a.launchDate;
+  });
 };
 
 // Helper para buscar dados de mercado de um subconjunto específico (evita overload)

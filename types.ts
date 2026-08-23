@@ -6,7 +6,7 @@
 // "famílias votantes" pré-V6, classification/modifier/rule — não usada por nenhum componente real,
 // candidata a limpeza futura, não removida aqui por estar fora do escopo desta fase) que colidiria
 // com o nome do contrato real do backend.
-import type { VisualPattern, VisualObject, FibonacciObservation, VrvpObservation, DerivativesContext as GraphicalDerivativesContext, DirectionContradiction, ExecutionPlanB, ScoreBasis, StopStatus, StopAncora, StopBuffer } from './types/graphicalAnalysis';
+import type { VisualPattern, VisualObject, FibonacciObservation, VrvpObservation, DerivativesContext as GraphicalDerivativesContext, DirectionContradiction, ExecutionPlanB, ScoreBasis, StopStatus, StopAncora, StopBuffer, RrPorAlvo, DataTraceability } from './types/graphicalAnalysis';
 
 // V6.7 (A-13): reexportados para quem importa de '../types' (a maioria dos componentes) em vez de
 // '../types/graphicalAnalysis' diretamente.
@@ -143,6 +143,11 @@ export interface CandidateSetup {
   ativo_base: string | null;
   rr_bruto: number | null;
   rr_liquido_estimado: number | null;
+  // V6.9 pacote final (spec genesis-v6-9-pacote-final, Fase 13, item 13.7, doc §18): strings
+  // prontas ("1:%.2f") calculadas uma única vez no backend — nunca mais reconstruídas com
+  // .toFixed(2) no frontend.
+  rr_bruto_exibir: string | null;
+  rr_liquido_exibir: string | null;
   rr_aviso: string | null;
   // V6.6 (E04/F01): número puro de referência — o bloco de convicção (único lugar onde RR aparece
   // agora, DF-02) monta a observação "abaixo do recomendado" a partir destes dois campos.
@@ -151,7 +156,8 @@ export interface CandidateSetup {
   custos_bps: Record<string, number>;
   entrada_ts: string | null;
   // V6.5 (G15, Decisão 8 do PO): 4 fatores de LOCALIZAÇÃO de QualidadeEntradaService.
-  qualidade_entrada: { fator: string; avaliacao: 'BOM' | 'MEDIO' | 'RUIM'; detalhe: string }[] | null;
+  // item 13.6: UNAVAILABLE — os 4 fatores aparecem sempre agora, nunca somem por falta de insumo.
+  qualidade_entrada: { fator: string; avaliacao: 'BOM' | 'MEDIO' | 'RUIM' | 'UNAVAILABLE'; detalhe: string }[] | null;
   // V6.7 (A-13): campos novos do contrato do stop.
   stop_status: StopStatus;
   stop_ancora: StopAncora | null;
@@ -162,6 +168,16 @@ export interface CandidateSetup {
   verificacao_motivo: string | null;
   // D1 (V6.9): distingue LIQ_ANTES_DO_STOP de LIQ_FOLGA_CURTA quando verificacao === 'INSEGURO'.
   liquidacao_classificacao: 'LIQ_ANTES_DO_STOP' | 'LIQ_FOLGA_CURTA' | null;
+  // V6.9 pacote final (spec genesis-v6-9-pacote-final, Fase 8/9/11, doc §13/§16): mesmos campos
+  // novos de PlanoSetup abaixo — candidate_setup (Plano A) carrega o mesmo objeto praticamente.
+  recommended: boolean;
+  reason_code: string | null;
+  motivo: string | null;
+  alvo_que_atende: string | null;
+  rr_por_alvo: RrPorAlvo;
+  capital_base_usd: number | null;
+  margem_comprometida_usd: number | null;
+  margem_comprometida_pct_capital: number | null;
 }
 
 // V6.5 (E08): Plano A e Plano B chegavam com formatos diferentes — CandidateSetup completo para A,
@@ -196,11 +212,31 @@ export interface PlanoSetup {
   ativo_base: string | null;
   rr_bruto: number | null;
   rr_liquido_estimado: number | null;
+  // V6.9 pacote final (spec genesis-v6-9-pacote-final, Fase 13, item 13.7, doc §18): strings
+  // prontas ("1:%.2f") calculadas uma única vez no backend — nunca mais reconstruídas com
+  // .toFixed(2) no frontend.
+  rr_bruto_exibir: string | null;
+  rr_liquido_exibir: string | null;
   rr_aviso: string | null;
   // V6.6 (E04/F01): número puro de referência — o bloco de convicção (único lugar onde RR aparece
   // agora, DF-02) monta a observação "abaixo do recomendado" a partir destes dois campos.
   rr_minimo_referencia: number | null;
   rr_abaixo_do_minimo: boolean;
+  // V6.9 pacote final (spec genesis-v6-9-pacote-final, Fase 11, item 11.8/11.9/11.10, doc §16):
+  // cada plano ganha sua PRÓPRIA recomendação (antes só existia uma, em execution.recommended,
+  // implicitamente do Plano A) e o risco-retorno de TP2/TP3 pronto do backend (antes recalculado
+  // no cliente, utils/riscoRetorno.ts — apagado, ver AnalysisResult.tsx).
+  recommended: boolean;
+  reason_code: string | null;
+  motivo: string | null;
+  alvo_que_atende: string | null;
+  rr_por_alvo: RrPorAlvo;
+  // Fase 11, item 11.10: três linhas sempre distintas — capital-base, margem comprometida nesta
+  // posição, e a segunda como % da primeira. Diferentes de risco_usd_estimado/
+  // risco_pct_capital_base (acima), que medem risco se o stop for atingido, não margem travada.
+  capital_base_usd: number | null;
+  margem_comprometida_usd: number | null;
+  margem_comprometida_pct_capital: number | null;
   // V6.5 (G02): substituem 'invalidacao' (string) — o backend montava a frase com o nível cru embutido
   // (ex.: "$65370.9262", sem separador de milhar); agora devolve direção + nível numéricos, o frontend
   // formata e monta o texto.
@@ -217,7 +253,8 @@ export interface PlanoSetup {
   // calculados por QualidadeEntradaService a partir da entrada específica deste plano — texto aberto,
   // sem nota composta nem porcentagem inventada. null quando os insumos (EMA21/ATR/barreira) não
   // estavam disponíveis.
-  qualidade_entrada: { fator: string; avaliacao: 'BOM' | 'MEDIO' | 'RUIM'; detalhe: string }[] | null;
+  // item 13.6: UNAVAILABLE — os 4 fatores aparecem sempre agora, nunca somem por falta de insumo.
+  qualidade_entrada: { fator: string; avaliacao: 'BOM' | 'MEDIO' | 'RUIM' | 'UNAVAILABLE'; detalhe: string }[] | null;
   // V6.7 (A-13): campos novos do contrato do stop — presentes nos dois planos.
   stop_status: StopStatus;
   stop_ancora: StopAncora | null;
@@ -256,8 +293,9 @@ export interface GenesisAnalysisResult {
     // reintroduzia o conceito de convicção-base separada (a V6 aboliu isso, é só o score final de
     // novo). cobertura_baixa é derivado de verdade a partir de coverage_percent — nunca chumbado.
     cobertura_baixa?: boolean;
-    // G5 (V6.9): nota de rastreabilidade pro rodapé — GraphicalAnalysisResult.nota_cobertura.
-    nota_cobertura?: number | null;
+    // V6.9 pacote final (spec genesis-v6-9-pacote-final, Fase 13, item 13.14, doc §18): substitui
+    // nota_cobertura (G5, V6.9) — GraphicalAnalysisResult.data_traceability.
+    data_traceability?: DataTraceability | null;
     family_scores?: GraphicalFamilyScores;
     score_justification?: string;
     technical_analysis?: string;
