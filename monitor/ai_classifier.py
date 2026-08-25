@@ -594,7 +594,9 @@ class AIClassifier:
                 'temperature': 0,
                 'maxOutputTokens': max_output_tokens,
                 'responseMimeType': 'application/json',
-                'thinkingConfig': {'thinkingBudget': 0},   # o raciocinio nao pode consumir o orcamento de saida
+                'thinkingConfig': {'thinkingBudget': 1},   # 0 e rejeitado (400 INVALID_ARGUMENT) pelo
+                # gemini-3.6-flash atual; 1 e o menor valor aceito, mantendo o raciocinio
+                # perto do minimo pra nao consumir o orcamento de saida.
             },
         }
         headers = {
