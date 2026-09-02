@@ -56,3 +56,17 @@ export function rotularComponenteBuffer(componente: string | null | undefined): 
   if (!componente) return 'margem de segurança';
   return ROTULOS_BUFFER[componente] ?? componente;
 }
+
+// V6.9 correção técnica (item 36): "1W"/"1M" (semana/mês) viravam chip cru — e "1M" maiúsculo é
+// visualmente idêntico a "1m" (um minuto) depois que o CSS aplica `uppercase`. Só os dois códigos
+// ambíguos ganham rótulo por extenso; o resto (15m/1h/4h/1d etc.) não precisa, nunca colide com
+// outra unidade de tempo. "1M" (mês, valor canônico sempre maiúsculo — ver
+// `BinanceService::normalizarIntervalo()` no backend) é comparado ANTES do `toLowerCase()`, pra
+// nunca confundir com "1m" (minuto, sempre minúsculo); "1W"/"1w" (semana) não tem essa ambiguidade
+// (não existe timeframe "1w" minúsculo de minuto), então aceita qualquer capitalização.
+export function rotularTimeframe(timeframe: string | null | undefined): string {
+  if (!timeframe) return '—';
+  if (timeframe === '1M') return 'Mensal';
+  if (timeframe.toLowerCase() === '1w') return 'Semanal';
+  return timeframe.toUpperCase();
+}

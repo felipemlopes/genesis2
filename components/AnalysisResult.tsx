@@ -8,7 +8,7 @@ import { GenesisAnalysisResult, AnalysisDirection, PlanoSetup } from '../types';
 import { selecionarZona, getMe } from '../services/api';
 import { price as formatPrice, usd as formatUsd } from '../utils/canonicalMoney';
 import { publicText } from '../utils/publicVocabulary';
-import { rotularFonte, rotularComponenteBuffer } from '../utils/rotulos';
+import { rotularFonte, rotularComponenteBuffer, rotularTimeframe } from '../utils/rotulos';
 import { faixaDeConviccao } from '../utils/conviccao';
 import AssetBadge from './AssetBadge';
 import BlocoConviccaoQualidade from './BlocoConviccaoQualidade';
@@ -350,6 +350,11 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, onSaveTrade, onRe
               só no ticker geral da plataforma, fora do bloco de análise. */}
           {data.market_price != null && (
             <div className="flex items-center gap-2 mb-1">
+                {/* V6.9 correção técnica (item 38): esta segunda ocorrência do nome do ativo (a
+                    primeira, na Action Bar acima, já usa AssetBadge desde a V6.5/G12-G13) ainda
+                    era texto puro extraído do par — mesmo componente único de ícone, tamanho
+                    pequeno pra caber ao lado do preço. */}
+                <AssetBadge symbol={data.pair} size="sm" mostrarNome={false} />
                 <span className="text-[12px] font-bold text-genesis-text-secondary uppercase tracking-wider">
                   {data.pair?.replace('USDT', '').replace('/', '') || ''}
                 </span>
@@ -828,7 +833,11 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, onSaveTrade, onRe
                 // já renderizam '—' sozinhos nos outros blocos). O botão de confirmar continua
                 // habilitado (DP-03) — podeInteragir depende só de execution.executable.
                 <p className="text-[11px] text-gray-400 leading-relaxed">
-                  {stopMotivoAtivo || 'Não encontramos um stop adequado. Sugerimos que você verifique e defina um stop compatível com seu perfil de investidor e com o risco da operação.'}
+                  {/* V6.9 correção técnica (item 34): texto de fallback local alinhado ao literal
+                      exato do backend (NivelService::MENSAGEM_STOP_INDISPONIVEL) — na prática
+                      nunca é usado (o backend sempre preenche stop_motivo neste status), mantido
+                      só como defesa contra uma decisão cacheada de antes desta correção. */}
+                  {stopMotivoAtivo || 'Stop estrutural indisponível. Não foi identificado um nível de proteção com lastro dentro do horizonte operacional desta análise. Se decidir executar a entrada, defina o stop de acordo com a sua estratégia antes de dimensionar a posição.'}
                 </p>
               ) : (
                 <>
@@ -865,6 +874,16 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, onSaveTrade, onRe
                     <div className="mb-2 flex items-start gap-1.5 bg-amber-950/20 border border-amber-600/30 rounded px-2 py-1.5">
                       <AlertTriangle size={11} className="text-amber-400 shrink-0 mt-0.5" />
                       <span className="text-[9px] text-amber-300 leading-relaxed">Stop mais largo que o normal. Reduza o tamanho e a alavancagem.</span>
+                    </div>
+                  )}
+                  {/* V6.9 correção técnica (item 34): "fallback estrutural" — o stop existe, mas não
+                      veio da escolha específica da IA (stop_motivo só vem preenchido nesse caso,
+                      NivelService::stop()); o código interno some, só a consequência em linguagem
+                      humana aparece. */}
+                  {stopMotivoAtivo && (
+                    <div className="mb-2 flex items-start gap-1.5 bg-white/[0.03] border border-white/10 rounded px-2 py-1.5">
+                      <AlertTriangle size={11} className="text-gray-400 shrink-0 mt-0.5" />
+                      <span className="text-[9px] text-gray-400 leading-relaxed">{stopMotivoAtivo}</span>
                     </div>
                   )}
                   {/* V6.6 (F08): "Condição de Disparo" mostrava executionLabel[execution.status] —
@@ -994,7 +1013,10 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, onSaveTrade, onRe
                     {(anyData.indicadores?.fontes?.atr === 'GRAFICO' || anyData.indicadores?.fontes?.atr === 'OCR') && <span className="text-[8px] bg-yellow-500/20 text-yellow-500 border border-yellow-500/30 px-1 py-0.5 rounded">OCR</span>}
                     {anyData.indicadores?.fontes?.atr === 'INDISPONIVEL' && <span className="text-[8px] bg-gray-500/20 text-gray-400 border border-gray-500/30 px-1 py-0.5 rounded">N/D</span>}
                   </div>
-                  <span className="text-[10px] text-white font-mono">{anyData.indicadores?.atr != null ? `$${Number(anyData.indicadores.atr).toFixed(4)}` : "N/D"}</span>
+                  {/* V6.9 correção técnica (item 35): toFixed(4) cru removido — mesmo formatador
+                      canônico (utils/canonicalMoney.ts) que entrada/stop/TPs já usam, com o
+                      mesmo tickDecimals real do contrato, nunca uma precisão fixa arbitrária. */}
+                  <span className="text-[10px] text-white font-mono">{anyData.indicadores?.atr != null ? formatPrice(Number(anyData.indicadores.atr), tickDecimals) : "N/D"}</span>
                 </div>
 
                 <div className="flex justify-between items-center group">
@@ -1078,7 +1100,10 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, onSaveTrade, onRe
                           : 'text-yellow-500 bg-yellow-500/10 border-yellow-500/20';
                         return (
                           <div key={idx} className={`flex items-center gap-2 px-3 py-1.5 rounded border ${biasColor}`}>
-                            <span className="text-[9px] font-bold uppercase">{tf.timeframe}</span>
+                            {/* V6.9 correção técnica (item 36): "1M" cru era visualmente idêntico a
+                                "1m" (minuto) depois do CSS uppercase — rotularTimeframe() expande
+                                1W/1M por extenso, o resto (15m/1h/4h/1d...) não muda. */}
+                            <span className="text-[9px] font-bold uppercase">{rotularTimeframe(tf.timeframe)}</span>
                             <span className="text-[9px] font-mono font-bold">{BIAS_LABEL[tf.bias] ?? '—'}</span>
                           </div>
                         );

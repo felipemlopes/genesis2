@@ -10,6 +10,7 @@ import logging
 import os
 import re
 import unicodedata
+from datetime import datetime
 
 import pymysql
 import requests
@@ -484,10 +485,19 @@ class AIClassifier:
                 (title, title_original, title_hash, event_key, source, source_url,
                  severity, categoria, affected_assets, market_bias, impact_summary,
                  nivel, impact_score, ativo_tema, observacao, piso_aplicado,
-                 telegram_sent)
+                 telegram_sent, created_at, updated_at)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                    %s, %s, %s)
+                    %s, %s, %s, %s, %s)
         """
+
+        # created_at nao tem DEFAULT no schema (timestamp NULL DEFAULT NULL) e o
+        # INSERT nunca preenchia — toda linha ficava com created_at NULL, e
+        # "NULL >= NOW() - INTERVAL n HOUR" nunca e verdadeiro em SQL. Resultado:
+        # _drain_telegram_queue() e o resumo diario nunca enxergavam nenhuma
+        # linha, mesmo com nivel=1 gravado — a fila do Telegram ficava vazia pra
+        # sempre. UTC pra bater com o resto do worker (datetime.utcnow() em
+        # worker_radar_news.py, ver _limites_dia_brt).
+        agora = datetime.utcnow()
 
         params = (
             title[:500],
@@ -516,6 +526,8 @@ class AIClassifier:
             # via eventos_graves.piso_de_severidade) — só faltava entrar no INSERT.
             entry.get('piso_aplicado'),
             0,
+            agora,
+            agora,
         )
 
         try:
