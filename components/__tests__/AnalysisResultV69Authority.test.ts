@@ -38,10 +38,14 @@ describe('AnalysisResultV69Authority — pipeline síncrono, uma única verdade 
     expect(geminiServiceFonte).not.toContain('sentimentCache');
   });
 
-  // O Plano A é a entrada a mercado (execução imediata) — sempre o ponto de partida da tela,
-  // trocar para o Plano B é uma ação explícita do membro, nunca o estado inicial.
-  it('Plano A inicia selecionado por padrão', () => {
-    expect(analysisResultFonte).toMatch(/useState<'A' \| 'B' \| null>\('A'\)/);
+  // Spec genesis-v6-10-implementacao (Fase 5, item 5.1/5.4, doc §5.3): o Plano A deixou de ser
+  // sempre o ponto de partida hardcoded — a IA declara qual plano (A ou B) é o primário
+  // (plano_primario), e é ELE que vem pré-selecionado, não sempre A. `selectedZone` (a escolha
+  // EXPLÍCITA do membro) inicia em null; `zonaEfetiva` (o que a tela efetivamente mostra) cai no
+  // primário declarado. Plano A continua existindo e clicável, só não é mais o padrão fixo.
+  it('plano primário declarado pela IA vem pré-selecionado, não sempre o Plano A', () => {
+    expect(analysisResultFonte).toMatch(/useState<'A' \| 'B' \| null>\(null\)/);
+    expect(analysisResultFonte).toContain("zonaEfetiva: 'A' | 'B' = selectedZone ?? planoPrimario");
   });
 
   // Fase 11, item 11.8: rrPorAlvo vem pronto do backend (ExecucaoService::calcularRrPorAlvo()) —

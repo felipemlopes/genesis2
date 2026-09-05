@@ -7,7 +7,7 @@ título+fonte, fail-open, discovery_radar acoplado). Cobrem C1-C9 e a seção 2
 
 import time as _time
 from datetime import datetime, timedelta
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pymysql
 import pytest
@@ -523,6 +523,26 @@ def test_d2_reservar_despacho_sucesso_reserva_nova():
     conn.commit.assert_called()
 
 
+def test_d2_reservar_despacho_news_id_evita_colisao_por_title_hash_igual():
+    """Revisão de 03/09/2026: title_hash só tem índice normal (não é UNIQUE) em
+    genesis_radar_news — duas notícias DIFERENTES sem event_key podiam ter o
+    mesmo title_hash (manchete idêntica reaparecendo fora da janela de dedup de
+    24h do coletor) e colidir no mesmo dispatch_key, travando a segunda pra
+    sempre. news_id entrando na base do hash garante chaves diferentes mesmo
+    nesse cenário."""
+    worker = RadarNewsWorker()
+    row_a = {'id': 30, 'event_key': None, 'title_hash': 'mesmo-hash-abc'}
+    row_b = {'id': 31, 'event_key': None, 'title_hash': 'mesmo-hash-abc'}
+
+    conn_a = _mock_conn(fetchone_sequence=[None])
+    assert worker._reservar_despacho(row_a, conn_a) is True
+
+    conn_b = _mock_conn(fetchone_sequence=[None])
+    assert worker._reservar_despacho(row_b, conn_b) is True
+
+    assert row_a['_dispatch_key'] != row_b['_dispatch_key']
+
+
 def test_d2_reservar_despacho_sent_bloqueia_para_sempre():
     """Estado terminal SENT nunca libera reenvio, mesmo com attempts baixo."""
     worker = RadarNewsWorker()
@@ -772,6 +792,38 @@ def test_e2_pode_disparar_conta_por_telegram_sent_at():
     assert 'telegram_sent_at >= NOW()' in src
     assert 'DATE(telegram_sent_at) = CURDATE()' in src
     assert 'liberando por segurança' in src or 'liberando por seguranca' in src
+    # Cooldown por tema: mesma correção das duas contagens acima — não pode sobrar
+    # nenhuma checagem de orçamento contando por created_at neste método.
+    assert 'created_at >=' not in src
+
+
+def test_e2_pode_disparar_tema_cooldown_conta_por_telegram_sent_at():
+    """Revisão de 03/09/2026: o cooldown por tema (categoria + ativo principal) tinha
+    ficado pra trás quando as contagens de hora/dia foram corrigidas para contar
+    pelo horário do ENVIO — a query de tema continuou em created_at. Com a fila por
+    relevância podendo adiar o envio em até JANELA_UTIL_HORAS, uma notícia criada
+    há mais de TEMA_COOLDOWN_HOURS mas enviada há poucos minutos não seria mais
+    enxergada pelo cooldown se ele contasse por created_at."""
+    worker = RadarNewsWorker()
+    row = {'severity': 'HIGH', 'categoria': 3, 'affected_assets': '["USDT"]'}
+    conn = _mock_conn(fetchone_sequence=[{'n': 0}, {'n': 0}, {'n': 0}])
+
+    assert worker._pode_disparar(row, conn) is True
+
+    cursor = conn.cursor.return_value
+    tema_sql = cursor.execute.call_args_list[2][0][0]
+    assert 'telegram_sent_at >= NOW() - INTERVAL %s HOUR' in tema_sql
+    assert 'created_at' not in tema_sql
+
+
+def test_e2_pode_disparar_tema_cooldown_bloqueia_mesmo_tema_recente():
+    """Mesmo cenário acima, mas com uma notícia do mesmo tema já enviada dentro da
+    janela de cooldown — _pode_disparar tem que recusar (tema == 0 é falso)."""
+    worker = RadarNewsWorker()
+    row = {'severity': 'HIGH', 'categoria': 3, 'affected_assets': '["USDT"]'}
+    conn = _mock_conn(fetchone_sequence=[{'n': 0}, {'n': 0}, {'n': 1}])
+
+    assert worker._pode_disparar(row, conn) is False
 
 
 def _drain_mock(row, monkeypatch, worker):
@@ -1215,6 +1267,21 @@ def test_p06_atualizar_estado_resumo_sent_grava_itens_e_message_id(monkeypatch):
     conn.close.assert_called()
 
 
+def _insert_params_by_column(sql: str, params: tuple) -> dict:
+    """Mapeia os valores posicionais de um INSERT para o nome de cada coluna, lendo
+    a lista de colunas direto do próprio SQL capturado.
+
+    Evita reacoplar os testes a um índice fixo (params[-2], params[-1], ...) que
+    quebra toda vez que uma coluna nova entra no INSERT — foi exatamente isso que
+    quebrou estes dois testes quando persist_classified passou a gravar
+    created_at/updated_at explicitamente (correção real de um bug: essas colunas
+    não têm DEFAULT no schema e ficavam sempre NULL sem esse preenchimento)."""
+    columns_part = sql.split('(', 1)[1].split(')', 1)[0]
+    columns = [c.strip() for c in columns_part.replace('\n', ' ').split(',')]
+    assert len(columns) == len(params), f"{len(columns)} colunas vs {len(params)} params"
+    return dict(zip(columns, params))
+
+
 def test_p11_persist_classified_grava_title_original_e_piso_aplicado():
     """P1.1: title_original (texto cru do RSS) e piso_aplicado entram no INSERT —
     antes desta correção, as duas colunas existiam no schema mas nunca eram
@@ -1246,10 +1313,15 @@ def test_p11_persist_classified_grava_title_original_e_piso_aplicado():
     sql, params = cursor.execute.call_args[0]
     assert 'title_original' in sql
     assert 'piso_aplicado' in sql
-    assert len(params) == 17
-    assert params[1] == 'Original RSS headline'  # title_original: texto cru, não titulo_pt
-    assert params[-2] == 'HIGH'  # piso_aplicado
-    assert params[-1] == 0  # telegram_sent
+    cols = _insert_params_by_column(sql, params)
+    assert cols['title_original'] == 'Original RSS headline'  # texto cru, não titulo_pt
+    assert cols['piso_aplicado'] == 'HIGH'
+    assert cols['telegram_sent'] == 0
+    # created_at/updated_at (P1.1): gravados explicitamente porque a coluna não
+    # tem DEFAULT no schema — sem isso a linha nasce com created_at NULL e some
+    # de qualquer filtro por data (fila do Telegram, similaridade, resumo diário).
+    assert isinstance(cols['created_at'], datetime)
+    assert isinstance(cols['updated_at'], datetime)
 
 
 def test_p11_persist_classified_title_original_none_quando_sem_titulo_rss():
@@ -1271,9 +1343,89 @@ def test_p11_persist_classified_title_original_none_quando_sem_titulo_rss():
 
     classifier.persist_classified(entry, conn)
 
-    _, params = cursor.execute.call_args[0]
-    assert params[1] is None  # sem entry['title'], title_original fica None
-    assert params[-2] is None  # sem piso aplicado, fica None
+    sql, params = cursor.execute.call_args[0]
+    cols = _insert_params_by_column(sql, params)
+    assert cols['title_original'] is None  # sem entry['title'], title_original fica None
+    assert cols['piso_aplicado'] is None  # sem piso aplicado, fica None
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Revisão 03/09/2026 — _call_gemini não pode forçar JSON para chamadas de texto
+# livre (_gerar_conclusao_do_dia pedia uma frase solta, mas herdava
+# responseMimeType='application/json' de _call_gemini sem precisar)
+# ═══════════════════════════════════════════════════════════════════════════
+
+class _FakeGeminiResponse:
+    def __init__(self, text: str, status_code: int = 200):
+        self.status_code = status_code
+        self._text = text
+        self.text = text
+
+    def json(self):
+        return {'candidates': [{'content': {'parts': [{'text': self._text}]}}]}
+
+
+def test_call_gemini_response_json_true_inclui_response_mime_type():
+    """Default (usado por classify()): generationConfig força responseMimeType, já
+    que a classificação sempre espera um array JSON estrito de volta."""
+    classifier = AIClassifier(api_key='fake')
+    captured = {}
+
+    def fake_post(url, json=None, headers=None, timeout=None):
+        captured['payload'] = json
+        return _FakeGeminiResponse('[]')
+
+    with patch('ai_classifier.requests.post', side_effect=fake_post):
+        texto = classifier._call_gemini('prompt qualquer')
+
+    assert texto == '[]'
+    assert captured['payload']['generationConfig']['responseMimeType'] == 'application/json'
+
+
+def test_call_gemini_response_json_false_omite_response_mime_type():
+    """response_json=False (usado por _gerar_conclusao_do_dia): sem
+    responseMimeType — sem isso o modelo tende a devolver texto livre embrulhado
+    numa string/objeto JSON em vez da frase plana pedida no prompt."""
+    classifier = AIClassifier(api_key='fake')
+    captured = {}
+
+    def fake_post(url, json=None, headers=None, timeout=None):
+        captured['payload'] = json
+        return _FakeGeminiResponse('Tom neutro hoje.')
+
+    with patch('ai_classifier.requests.post', side_effect=fake_post):
+        texto = classifier._call_gemini('prompt qualquer', response_json=False)
+
+    assert texto == 'Tom neutro hoje.'
+    assert 'responseMimeType' not in captured['payload']['generationConfig']
+
+
+def test_gerar_conclusao_do_dia_chama_call_gemini_com_response_json_false():
+    import inspect
+    src = inspect.getsource(RadarNewsWorker._gerar_conclusao_do_dia)
+    assert 'response_json=False' in src
+
+
+def test_gerar_conclusao_do_dia_texto_plano_passa_direto(monkeypatch):
+    worker = RadarNewsWorker()
+    monkeypatch.setattr(
+        worker.ai_classifier, '_call_gemini',
+        lambda p, response_json=True: 'Aumento de aversão a risco.',
+    )
+    top10 = [{'title': 'X', 'categoria': 1, 'impact_summary': 'y'}]
+    assert worker._gerar_conclusao_do_dia(top10) == 'Aumento de aversão a risco.'
+
+
+def test_gerar_conclusao_do_dia_remove_aspas_sobrando(monkeypatch):
+    """Sanitização defensiva: se o modelo ainda devolver a frase entre aspas (hábito
+    de JSON-string ou resposta mal formatada), as aspas das pontas são removidas."""
+    worker = RadarNewsWorker()
+    monkeypatch.setattr(
+        worker.ai_classifier, '_call_gemini',
+        lambda p, response_json=True: '"Fluxo institucional positivo."',
+    )
+    top10 = [{'title': 'X', 'categoria': 1, 'impact_summary': 'y'}]
+    assert worker._gerar_conclusao_do_dia(top10) == 'Fluxo institucional positivo.'
 
 
 def test_p12_loop_drena_fila_antes_do_ciclo_rss():

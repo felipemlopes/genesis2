@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { ExchangeData, formatPrice } from '../services/cryptoApi';
+import { ExchangeData } from '../services/cryptoApi';
 import { RealtimeCVDService, CVDSnapshot } from '../services/realtimeCVDService';
 import LongShortRatio from './LongShortRatio';
 import FearAndGreed from './FearAndGreed';

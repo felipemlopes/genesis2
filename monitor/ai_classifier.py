@@ -582,13 +582,23 @@ class AIClassifier:
         normalized = self._alias_map.get(raw_clean.lower())
         return normalized or raw_clean.upper()
 
-    def _call_gemini(self, prompt: str, max_output_tokens: int = MAX_OUTPUT_TOKENS) -> str | None:
+    def _call_gemini(
+        self, prompt: str, max_output_tokens: int = MAX_OUTPUT_TOKENS, response_json: bool = True
+    ) -> str | None:
         """Chama a API pública do Gemini (Google generativelanguage, v1beta).
 
         GENESIS_AI_URL é só o host (ex. https://generativelanguage.googleapis.com);
         o path /v1beta/models/{model}:generateContent é montado aqui. GENESIS_AI_TOKEN
         é a API key do Google, mandada no header x-goog-api-key (não Bearer — a API
         pública não aceita OAuth Bearer para chave de API, só para service account).
+
+        Args:
+            response_json: quando True (default), força responseMimeType=
+                'application/json' — usado pela classificação, que sempre espera um
+                array JSON estrito de volta. Quando False, omite essa config: usado
+                por chamadas de texto livre (ex.: _gerar_conclusao_do_dia), onde
+                forçar JSON sem schema faz o modelo devolver a frase embrulhada em
+                aspas ou num objeto em vez de texto plano.
 
         Returns:
             Texto da resposta ou None em caso de falha.
@@ -600,16 +610,19 @@ class AIClassifier:
             return None
 
         url = f'{GENESIS_AI_URL}/v1beta/models/{GEMINI_MODEL}:generateContent'
+        generation_config = {
+            'temperature': 0,
+            'maxOutputTokens': max_output_tokens,
+            'thinkingConfig': {'thinkingBudget': 1},   # 0 e rejeitado (400 INVALID_ARGUMENT) pelo
+            # gemini-3.6-flash atual; 1 e o menor valor aceito, mantendo o raciocinio
+            # perto do minimo pra nao consumir o orcamento de saida.
+        }
+        if response_json:
+            generation_config['responseMimeType'] = 'application/json'
+
         payload = {
             'contents': [{'parts': [{'text': prompt}]}],
-            'generationConfig': {
-                'temperature': 0,
-                'maxOutputTokens': max_output_tokens,
-                'responseMimeType': 'application/json',
-                'thinkingConfig': {'thinkingBudget': 1},   # 0 e rejeitado (400 INVALID_ARGUMENT) pelo
-                # gemini-3.6-flash atual; 1 e o menor valor aceito, mantendo o raciocinio
-                # perto do minimo pra nao consumir o orcamento de saida.
-            },
+            'generationConfig': generation_config,
         }
         headers = {
             'Content-Type': 'application/json',

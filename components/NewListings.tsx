@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { RefreshCw, AlertTriangle, ShieldCheck, Zap, Search, Activity } from 'lucide-react';
 import { getNovasListagens, enrichListingData, NormalizedListing } from '../services/newListingService';
-import { formatPrice } from '../services/cryptoApi';
+import { price as formatPrice } from '../utils/canonicalMoney';
 
 const NewListings: React.FC = () => {
   const [allPool, setAllPool] = useState<NormalizedListing[]>([]);

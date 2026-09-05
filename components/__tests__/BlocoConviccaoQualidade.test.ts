@@ -25,8 +25,18 @@ describe('BlocoConviccaoQualidade — bloco de risco e retorno (bruto x líquido
     expect(fonte).toContain('bruto (não considera taxas, spread e slippage)');
   });
 
-  it('a legenda do líquido ficou só com a palavra "líquido"', () => {
-    expect(fonte).toContain('<span className="text-[9px] text-gray-500">líquido</span>');
+  // Spec genesis-v6-10-implementacao (Fase 9, item 9.2, doc §9.2): o número que rrExibir carrega
+  // deixou de ser o R:R líquido do TP1 isolado — agora é o combinado dos três alvos (parciais
+  // configuráveis). A legenda ao lado precisa dizer isso, não mais "líquido" sozinho (que agora
+  // seria enganoso: parece o líquido de UM alvo, quando é uma combinação de três).
+  it('a legenda do número principal diz "combinado", não mais "líquido" sozinho', () => {
+    expect(fonte).toContain('<span className="text-[9px] text-gray-500">combinado</span>');
+    expect(fonte).not.toContain('<span className="text-[9px] text-gray-500">líquido</span>');
+  });
+
+  it('mostra o esquema de parciais que originou o número combinado, quando o backend populou', () => {
+    expect(fonte).toContain('parciaisAlvo');
+    expect(fonte).toContain('formatarEsquemaDeParciais');
   });
 
   it('o aviso de R/R abaixo do mínimo continua no mesmo lugar (fallback não mudou)', () => {

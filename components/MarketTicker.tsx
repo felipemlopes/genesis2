@@ -1,7 +1,8 @@
 
 import React, { useEffect, useState, memo } from 'react';
 import { ArrowUp, ArrowDown } from 'lucide-react';
-import { formatPrice, fetchWithProxy } from '../services/cryptoApi';
+import { fetchWithProxy } from '../services/cryptoApi';
+import { price as formatPrice } from '../utils/canonicalMoney';
 import AssetBadge from './AssetBadge';
 
 interface TickerData {

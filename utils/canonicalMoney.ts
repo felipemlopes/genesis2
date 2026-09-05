@@ -22,7 +22,7 @@ const magnitudeDecimals = (value: number): number => {
 };
 
 const format = (value: number, decimals: number): string =>
-  '$ ' + value.toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+  '$' + value.toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
 
 /**
  * Preço de ativo (entrada, stop, TP, liquidação, EMA, ATR...). Passe `tickDecimals` do plano

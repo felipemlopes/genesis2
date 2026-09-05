@@ -1,7 +1,7 @@
 import React from 'react';
 import { PlayCircle, Trash2 } from 'lucide-react';
 import { useAppContext } from '../contexts/AppContext';
-import { formatPrice } from '../services/cryptoApi';
+import { price as formatPrice } from '../utils/canonicalMoney';
 
 const ActiveTradesPage: React.FC = () => {
   const { activeTrades, setActiveTrades, closedTrades, setClosedTrades } = useAppContext();

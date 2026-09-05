@@ -2,7 +2,7 @@
 import React, { useEffect, useState } from 'react';
 import { LineChart, ArrowUp, ArrowDown, RefreshCw, HelpCircle, Layers, AlertOctagon } from 'lucide-react';
 import { fetchOiLiquidationData, OiLiquidationData } from '../services/oiLiquidationService';
-import { formatPrice } from '../services/cryptoApi';
+import { price as formatPrice } from '../utils/canonicalMoney';
 
 const OiLiquidationMonitor: React.FC = () => {
   const [data, setData] = useState<OiLiquidationData | null>(null);
@@ -27,7 +27,11 @@ const OiLiquidationMonitor: React.FC = () => {
     // REMOVED INTERVAL: Data must remain static once captured.
   }, [asset]);
 
-  const formatCurrency = (val: number, compact: boolean = true) => {
+  // Spec genesis-v6-10-implementacao (Fase 8, item 8.1, doc §8.1): oiLiquidationService agora
+  // devolve `null` (não `0`) quando a coleta falha — a tela precisa tratar isso sem quebrar
+  // (`null.toLocaleString()` lançaria) e sem mostrar "$0" como se fosse dado real.
+  const formatCurrency = (val: number | null, compact: boolean = true) => {
+      if (val == null) return '—';
       if (compact) {
         if (val >= 1000000000) return `$${(val / 1000000000).toFixed(2)}B`;
         if (val >= 1000000) return `$${(val / 1000000).toFixed(2)}M`;
@@ -79,11 +83,16 @@ const OiLiquidationMonitor: React.FC = () => {
       );
   };
 
-  const getPercentageColor = (val: number) => {
+  const getPercentageColor = (val: number | null) => {
+      if (val == null) return 'text-gray-600';
       if (val > 0) return 'text-genesis-positive';
       if (val < 0) return 'text-genesis-negative';
       return 'text-gray-400';
   };
+
+  // Item 8.1: as 4 variações percentuais (header 24h + 5min/1h/24h do card) agora podem chegar
+  // null — um único helper de texto evita repetir a checagem 4 vezes.
+  const formatPercent = (val: number | null) => val == null ? '—' : `${val > 0 ? '+' : ''}${val.toFixed(2)}%`;
 
   return (
     <div className="h-full flex flex-col bg-black overflow-y-auto custom-scrollbar p-6 animate-in fade-in duration-500">
@@ -107,9 +116,9 @@ const OiLiquidationMonitor: React.FC = () => {
                         <span className="text-sm font-mono font-bold text-white tracking-wide">
                             {formatPrice(data.meta.price)}
                         </span>
-                        <div className={`flex items-center gap-1 text-[10px] font-bold ${data.meta.change24h >= 0 ? 'text-genesis-positive' : 'text-genesis-negative'}`}>
-                            {data.meta.change24h >= 0 ? <ArrowUp size={10} /> : <ArrowDown size={10} />}
-                            {Math.abs(data.meta.change24h).toFixed(2)}%
+                        <div className={`flex items-center gap-1 text-[10px] font-bold ${getPercentageColor(data.meta.change24h)}`}>
+                            {data.meta.change24h != null && (data.meta.change24h >= 0 ? <ArrowUp size={10} /> : <ArrowDown size={10} />)}
+                            {data.meta.change24h == null ? '—' : `${Math.abs(data.meta.change24h).toFixed(2)}%`}
                         </div>
                     </div>
                 )}
@@ -169,19 +178,19 @@ const OiLiquidationMonitor: React.FC = () => {
                                 <div className="bg-white/5 rounded-lg p-[16px] text-center ">
                                     <span className="text-[10px] text-gray-500 block mb-1">5 Min</span>
                                     <span className={`text-sm font-mono font-bold ${getPercentageColor(data.openInterest.change5m)}`}>
-                                        {data.openInterest.change5m > 0 ? '+' : ''}{data.openInterest.change5m.toFixed(2)}%
+                                        {formatPercent(data.openInterest.change5m)}
                                     </span>
                                 </div>
                                 <div className="bg-white/5 rounded-lg p-[16px] text-center ">
                                     <span className="text-[10px] text-gray-500 block mb-1">1 Hora</span>
                                     <span className={`text-sm font-mono font-bold ${getPercentageColor(data.openInterest.change1h)}`}>
-                                        {data.openInterest.change1h > 0 ? '+' : ''}{data.openInterest.change1h.toFixed(2)}%
+                                        {formatPercent(data.openInterest.change1h)}
                                     </span>
                                 </div>
                                 <div className="bg-white/5 rounded-lg p-[16px] text-center ">
                                     <span className="text-[10px] text-gray-500 block mb-1">24 Horas</span>
                                     <span className={`text-sm font-mono font-bold ${getPercentageColor(data.openInterest.change24h)}`}>
-                                        {data.openInterest.change24h > 0 ? '+' : ''}{data.openInterest.change24h.toFixed(2)}%
+                                        {formatPercent(data.openInterest.change24h)}
                                     </span>
                                 </div>
                             </div>

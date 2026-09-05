@@ -258,11 +258,25 @@ export interface ExecutionCandidateSetup {
   nocional_estimado: number | null;
   quantidade_base_estimada: number | null;
   ativo_base: string | null;
+  // Spec genesis-v6-10-implementacao (Fase 6, item 6.7, doc §6.7): o arredondamento da quantidade
+  // pro stepSize real do contrato pode reduzir o risco realizado bem abaixo do planejado —
+  // populados só quando o desvio passa de 10%, null nos demais casos.
+  risco_planejado: number | null;
+  risco_real: number | null;
+  risco_desvio_pct: number | null;
   rr_bruto: number | null;
   rr_liquido_estimado: number | null;
   // item 13.7: strings prontas ("1:%.2f"), mesma doutrina de TargetRiskReward acima.
   rr_bruto_exibir: string | null;
   rr_liquido_exibir: string | null;
+  // Spec genesis-v6-10-implementacao (Fase 9, item 9.2, doc §9.2): R:R combinado dos três alvos
+  // pelas parciais configuradas (ExecucaoService::calcularRrLiquidoCombinado()) — é o número que o
+  // cabeçalho (BlocoConviccaoQualidade) exibe agora, não mais rr_liquido_estimado (TP1 isolado,
+  // que continua existindo aqui e em rr_por_alvo.tp1, sem mudança).
+  rr_liquido_combinado: number | null;
+  rr_liquido_combinado_exibir: string | null;
+  rr_liquido_combinado_abaixo_do_minimo: boolean;
+  parciais_alvo: Record<string, number>;
   rr_aviso: string | null;
   rr_minimo_referencia: number | null;
   rr_abaixo_do_minimo: boolean;
@@ -341,6 +355,12 @@ export interface TargetCandidate {
   side: 'ABOVE' | 'BELOW';
   price: number;
   distance_atr: number;
+  // Spec genesis-v6-10-implementacao (Fase 9, item 9.1, doc §9.1): distância até esta candidata
+  // dividida pela distância do stop automático provisório do mesmo lado (calculado antes de
+  // qualquer decisão da IA) — a IA usa isto pra preferir, no TP1, uma candidata que já pague pelo
+  // menos 1:1 de risco-retorno, em vez de sempre a barreira mais próxima disponível. `null` quando
+  // não há stop automático provisório desse lado (ex.: sem nenhuma âncora elegível no pool).
+  rr_provisorio: number | null;
   primary_source: string;
   label: string;
 }
@@ -449,11 +469,23 @@ export interface ExecutionPlanoSetup {
   nocional_estimado: number | null;
   quantidade_base_estimada: number | null;
   ativo_base: string | null;
+  // Spec genesis-v6-10-implementacao (Fase 6, item 6.7, doc §6.7): o arredondamento da quantidade
+  // pro stepSize real do contrato pode reduzir o risco realizado bem abaixo do planejado —
+  // populados só quando o desvio passa de 10%, null nos demais casos.
+  risco_planejado: number | null;
+  risco_real: number | null;
+  risco_desvio_pct: number | null;
   rr_bruto: number | null;
   rr_liquido_estimado: number | null;
   // item 13.7: strings prontas ("1:%.2f"), mesma doutrina de TargetRiskReward acima.
   rr_bruto_exibir: string | null;
   rr_liquido_exibir: string | null;
+  // Spec genesis-v6-10-implementacao (Fase 9, item 9.2, doc §9.2): mesmo contrato de
+  // ExecutionCandidateSetup acima.
+  rr_liquido_combinado: number | null;
+  rr_liquido_combinado_exibir: string | null;
+  rr_liquido_combinado_abaixo_do_minimo: boolean;
+  parciais_alvo: Record<string, number>;
   rr_aviso: string | null;
   rr_minimo_referencia: number | null;
   rr_abaixo_do_minimo: boolean;
@@ -465,8 +497,19 @@ export interface ExecutionPlanoSetup {
   margem_comprometida_usd: number | null;
   margem_comprometida_pct_capital: number | null;
   // V6.5 (G02): substituem 'invalidacao' (string, número cru embutido) — direção + nível numéricos.
+  // Invalidação DA OPERAÇÃO — a âncora estrutural que, se rompida, nega a entrada em si.
   invalidacao_direcao: 'acima' | 'abaixo' | null;
   invalidacao_nivel: number | null;
+  // V6.9 correção técnica (item 13, backend); spec genesis-v6-10-implementacao (Fase 6, item 6.6,
+  // doc §6.6): já existiam no backend (ExecucaoService.php), zero ocorrências no frontend até esta
+  // fase. Invalidação DA ESTRUTURA — a estrutura que sustenta a leitura se quebra (contexto, não
+  // decide a operação sozinha). Invalidação DA TESE — a tendência anterior é retomada. Cada uma só
+  // aparece quando existe um nível real e justificável do mesmo catálogo; ausência é null, nunca
+  // "indisponível" na tela.
+  invalidacao_estrutura_direcao: 'acima' | 'abaixo' | null;
+  invalidacao_estrutura_nivel: number | null;
+  invalidacao_tese_direcao: 'acima' | 'abaixo' | null;
+  invalidacao_tese_nivel: number | null;
   zona_de: number | null;
   zona_ate: number | null;
   fonte: string | null;
@@ -525,6 +568,11 @@ export interface ExecutionPipelineResult {
   planoB: ExecutionPlanB | null;
   // V6.5 (E08): 1 ou 2 itens, mesmo formato completo pros dois planos.
   planos: ExecutionPlanoSetup[];
+  // Spec genesis-v6-10-implementacao (Fase 5, item 5.1/5.3, doc §5.3): qual plano (A/B) a IA
+  // declarou como primário — o que vem pré-selecionado na tela e alimenta o cabeçalho. O outro
+  // plano continua existindo e clicável. 'A' é o valor de uma decisão antiga/cacheada sem o campo
+  // (mesmo fallback aplicado no backend, AnalysisPersistenceService).
+  plano_primario: 'A' | 'B';
   zonaInteresse: { tipo: string; zona: string; invalidacao_direcao: 'acima' | 'abaixo' | null; invalidacao_nivel: number | null } | null;
   avisos: string[];
   stop_ancora: { tipo: string; valor: number } | null;
@@ -566,18 +614,30 @@ export type GraphicalAnalysisPollResult =
   | GraphicalAnalysisPendingResult
   | GraphicalAnalysisTerminalResult;
 
-// ScoreFinalizer::finalize() (backend, Fase 9 item 9.1) — breakdown público completo do score
-// final, persistido em Analise::score_breakdown e exposto sem recálculo.
+// Spec genesis-v6-10-implementacao (Fase 3, item 3.5) — substitui o breakdown de
+// `ScoreFinalizer::finalize()` (backend, Fase 9 item 9.1, V6.9). A Etapa 2 separada e o conceito
+// de "modulador"/penalidades pós-IA deixaram de existir (decisão do Felipe via AskUserQuestion:
+// fundir numa chamada só) — o score final agora é puramente aritmético sobre a classificação que
+// a IA deu a cada uma das 4 famílias (`ScoreFromFamilies::calcular()`), persistido sem recálculo
+// em `Analise::score_breakdown`. Nenhum componente consome este campo hoje (ver `score_basis`/
+// `derivatives_context` em `AnalysisResult.tsx`, que cobrem a UI atual) — mantido em sincronia com
+// o contrato real da API para quem vier a exibi-lo.
+export interface ScoreFamilyBreakdown {
+  nivel: 'FORTE_A_FAVOR' | 'A_FAVOR' | 'NEUTRO' | 'CONTRA' | 'FORTE_CONTRA' | 'INDISPONIVEL';
+  peso: number;
+  fator?: number;
+  contribuicao: number | null;
+}
+
 export interface ScoreBreakdown {
-  score: number;
-  score_tecnico: number;
-  derivatives_modifier: number;
-  contradiction_penalty: number;
-  data_quality_penalty: number;
-  evaluated_families: string[];
-  limiting_factors: string[];
-  temporal_alignment: 'ALIGNED' | 'MIXED' | 'CONTRARY' | 'UNAVAILABLE';
-  derivatives_effect: { strength: DerivativesContext['strength']; modifier: number; summary: string | null };
+  score: number | null;
+  cobertura: number;
+  breakdown: {
+    estrutura: ScoreFamilyBreakdown;
+    order_flow: ScoreFamilyBreakdown;
+    derivativos: ScoreFamilyBreakdown;
+    momentum: ScoreFamilyBreakdown;
+  };
 }
 
 // DataFreshnessGate::avaliar() (backend, Fase 3 item 3.4) — idade/sequência/conteúdo real por

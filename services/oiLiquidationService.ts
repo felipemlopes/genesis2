@@ -14,17 +14,21 @@ import { fetchDerivativesComparison, DerivativesDisplayMetric } from './api';
  * expõe essa série — as outras exchanges entram só no card de comparação por fonte.
  */
 
+// Spec genesis-v6-10-implementacao (Fase 8, item 8.1, doc §8.1): campos que dependiam de uma
+// chamada de rede (preço, OI e variações) viram nullable — falha de coleta agora é `null`
+// ("indisponível"), nunca um `0` fabricado que a tela mostraria como se fosse um dado real (ex.:
+// "0.00% em 1h" parecendo mercado parado, quando na verdade a chamada falhou).
 export interface OiLiquidationData {
   meta: {
-    price: number;
-    change24h: number;
+    price: number | null;
+    change24h: number | null;
   };
   openInterest: {
-    totalUsd: number;
-    change5m: number;
-    change1h: number;
-    change24h: number;
-    trend: 'Rising' | 'Falling' | 'Stable';
+    totalUsd: number | null;
+    change5m: number | null;
+    change1h: number | null;
+    change24h: number | null;
+    trend: 'Rising' | 'Falling' | 'Stable' | 'Unavailable';
     history: number[]; // For chart
   };
   byExchange: Record<'binance' | 'bybit' | 'bitget' | 'okx', DerivativesDisplayMetric>;
@@ -44,7 +48,19 @@ const getSymbol = (asset: string, exchange: string) => {
 // --- API FETCHERS ---
 
 // BINANCE
-const fetchBinanceOIHistory = async (symbol: string) => {
+interface BinanceOiHistoryResult {
+  val: number | null;
+  history: number[];
+  chg5m: number | null;
+  chg1h: number | null;
+  chg24h: number | null;
+}
+
+// Item 8.1 (doc §8.1): falha de coleta (exceção ou array vazio) devolve `null` nos quatro campos
+// numéricos — antes devolvia `0` nos dois casos, indistinguível de "OI real é zero" pra tela.
+const OI_HISTORY_INDISPONIVEL: BinanceOiHistoryResult = { val: null, history: [], chg5m: null, chg1h: null, chg24h: null };
+
+const fetchBinanceOIHistory = async (symbol: string): Promise<BinanceOiHistoryResult> => {
   try {
     // 5m period, 288 periods = 24 hours
     const url = `https://fapi.binance.com/futures/data/openInterestHist?symbol=${symbol}&period=5m&limit=289`;
@@ -69,9 +85,9 @@ const fetchBinanceOIHistory = async (symbol: string) => {
 
       return { val: latest, history, chg5m, chg1h, chg24h };
     }
-    return { val: 0, history: [], chg5m: 0, chg1h: 0, chg24h: 0 };
+    return OI_HISTORY_INDISPONIVEL;
   } catch (e) {
-    return { val: 0, history: [], chg5m: 0, chg1h: 0, chg24h: 0 };
+    return OI_HISTORY_INDISPONIVEL;
   }
 };
 
@@ -79,7 +95,7 @@ const fetchBinanceOIHistory = async (symbol: string) => {
 // V6.9 pacote final (spec genesis-v6-9-pacote-final, Fase 14, item 14.3, achado real): apontava
 // para api.binance.com/api/v3 (Spot) — resíduo que passou despercebido na Fase 12 (só o bloco
 // byExchange foi reescrito ali, não este header de preço). Migrado para Futures.
-const fetchCurrentTicker = async (symbol: string) => {
+const fetchCurrentTicker = async (symbol: string): Promise<{ price: number | null; change: number | null }> => {
     try {
         const url = `https://fapi.binance.com/fapi/v1/ticker/24hr?symbol=${symbol}`;
         const data = await fetchWithProxy(url);
@@ -88,7 +104,9 @@ const fetchCurrentTicker = async (symbol: string) => {
             change: parseFloat(data.priceChangePercent)
         };
     } catch {
-        return { price: 0, change: 0 };
+        // Item 8.1 (doc §8.1): falha de coleta vira null — antes "$0" e "0.00%" pareciam preço e
+        // variação reais.
+        return { price: null, change: null };
     }
 }
 
@@ -117,25 +135,39 @@ export const fetchOiLiquidationData = async (symbol: string = 'BTCUSDT'): Promis
     // totalOiUsd soma só o que é real e disponível — nunca preenche uma fonte ausente com número
     // inventado. Unidades divergem por exchange (contratos, não USD) — usado aqui só como proxy
     // relativo de tamanho agregado real, nunca como valor monetário exato somável entre exchanges.
-    const totalOiUsd = Object.values(byExchange)
+    // Item 8.1: `binanceData.val` agora pode ser `null` de verdade (falha de coleta) — o fallback
+    // só serve quando a soma das exchanges é zero (nenhuma disponível), nunca mascara um null real.
+    const somaExchanges = Object.values(byExchange)
         .filter((m) => m.status === 'AVAILABLE' && m.value !== null)
-        .reduce((acc, m) => acc + (m.value as number), 0) || binanceData.val;
+        .reduce((acc, m) => acc + (m.value as number), 0);
+    const totalOiUsd = somaExchanges > 0 ? somaExchanges : binanceData.val;
 
     // 4. GENERATE ANALYSIS TEXT (Focused strictly on OI)
-    const oiTrend = binanceData.chg1h > 0 ? 'aumentou' : 'diminuiu';
-    const leverageContext = binanceData.chg1h > 0 ? 'entrada de nova alavancagem' : 'saída de alavancagem (limpeza)';
-    const oiTrendNoun = binanceData.chg1h > 0 ? 'crescente' : 'decrescente';
-
-    let riskConclusion = '';
-    if (binanceData.chg1h > 0.5) {
-        riskConclusion = 'que o mercado está acumulando risco especulativo, aumentando a probabilidade de volatilidade no curto prazo';
-    } else if (binanceData.chg1h < -0.5) {
-        riskConclusion = 'que o mercado está em fase de desalavancagem, reduzindo o risco de movimentos explosivos imediatos';
+    // Item 8.1 (doc §8.1): chg1h pode ser null (falha de coleta) — antes null>0/null<-0.5 caíam
+    // silenciosamente no ramo "diminuiu"/"estabilidade", uma leitura fabricada sobre dado ausente.
+    const chg1h = binanceData.chg1h;
+    let summary: string;
+    let status: string;
+    if (chg1h == null) {
+        summary = 'Não foi possível obter a variação recente do Open Interest da Binance nesta consulta.';
+        status = 'Unavailable';
     } else {
-        riskConclusion = 'estabilidade momentânea na alavancagem, aguardando novo gatilho de volume';
-    }
+        const oiTrend = chg1h > 0 ? 'aumentou' : 'diminuiu';
+        const leverageContext = chg1h > 0 ? 'entrada de nova alavancagem' : 'saída de alavancagem (limpeza)';
+        const oiTrendNoun = chg1h > 0 ? 'crescente' : 'decrescente';
 
-    const summary = `O Open Interest da Binance ${oiTrend} nas últimas horas, indicando ${leverageContext}. A manutenção de uma taxa ${oiTrendNoun} sugere ${riskConclusion}.`;
+        let riskConclusion: string;
+        if (chg1h > 0.5) {
+            riskConclusion = 'que o mercado está acumulando risco especulativo, aumentando a probabilidade de volatilidade no curto prazo';
+        } else if (chg1h < -0.5) {
+            riskConclusion = 'que o mercado está em fase de desalavancagem, reduzindo o risco de movimentos explosivos imediatos';
+        } else {
+            riskConclusion = 'estabilidade momentânea na alavancagem, aguardando novo gatilho de volume';
+        }
+
+        summary = `O Open Interest da Binance ${oiTrend} nas últimas horas, indicando ${leverageContext}. A manutenção de uma taxa ${oiTrendNoun} sugere ${riskConclusion}.`;
+        status = chg1h > 0 ? 'Leverage Increasing' : 'Deleveraging';
+    }
 
     return {
         meta: {
@@ -147,13 +179,13 @@ export const fetchOiLiquidationData = async (symbol: string = 'BTCUSDT'): Promis
             change5m: binanceData.chg5m,
             change1h: binanceData.chg1h,
             change24h: binanceData.chg24h,
-            trend: binanceData.chg1h > 0.5 ? 'Rising' : (binanceData.chg1h < -0.5 ? 'Falling' : 'Stable'),
+            trend: chg1h == null ? 'Unavailable' : (chg1h > 0.5 ? 'Rising' : (chg1h < -0.5 ? 'Falling' : 'Stable')),
             history: binanceData.history,
         },
         byExchange,
         analysis: {
             summary,
-            status: binanceData.chg1h > 0 ? 'Leverage Increasing' : 'Deleveraging'
+            status
         }
     };
 };

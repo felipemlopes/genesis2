@@ -2,7 +2,7 @@
 import React, { useEffect, useState } from 'react';
 import { Layers, HelpCircle, ArrowUp, ArrowDown, RefreshCw, AlertTriangle, Target, Activity } from 'lucide-react';
 import { fetchLiquidityMapData, LiquidityMapData, LiquidityLevel } from '../services/liquidityMapService';
-import { formatPrice } from '../services/cryptoApi';
+import { price as formatPrice } from '../utils/canonicalMoney';
 
 const LiquidityMap: React.FC = () => {
   const [data, setData] = useState<LiquidityMapData | null>(null);

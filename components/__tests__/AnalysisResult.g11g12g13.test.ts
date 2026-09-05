@@ -29,13 +29,22 @@ describe('AnalysisResult — G12 faixa do Fear & Greed', () => {
   });
 });
 
-describe('AnalysisResult — G13 Plano A pré-selecionado', () => {
-  it('selectedZone inicia em "A", não null', () => {
-    expect(fonte).toContain(`useState<'A' | 'B' | null>('A')`);
+// Spec genesis-v6-10-implementacao (Fase 5, item 5.1/5.4, doc §5.3): G13 (acima) garantia que
+// ALGUM plano ficasse pré-selecionado (antes dela, nada era — bug real). Esta fase substitui o
+// hardcode em 'A' pelo plano que a IA de fato declarou como primário (`plano_primario`, novo campo
+// do contrato) — G13 continua satisfeita (sempre há um plano efetivamente selecionado,
+// `zonaEfetiva`), só o valor padrão deixou de ser sempre A.
+describe('AnalysisResult — Fase 5 plano primário declarado pela IA', () => {
+  it('selectedZone inicia em null — sem escolha explícita do membro ainda', () => {
+    expect(fonte).toContain(`useState<'A' | 'B' | null>(null)`);
   });
 
-  it('reset ao trocar de análise volta pro Plano A, não para nenhum plano', () => {
-    expect(fonte).toContain("setSelectedZone('A')");
-    expect(fonte).not.toContain('setSelectedZone(null)');
+  it('reset ao trocar de análise volta pra null, nunca herda escolha da análise anterior', () => {
+    expect(fonte).toContain('setSelectedZone(null)');
+  });
+
+  it('zonaEfetiva cai no plano primário declarado pela IA quando não há escolha explícita', () => {
+    expect(fonte).toContain("const zonaEfetiva: 'A' | 'B' = selectedZone ?? planoPrimario;");
+    expect(fonte).toContain("execution.plano_primario === 'B' ? 'B' : 'A'");
   });
 });

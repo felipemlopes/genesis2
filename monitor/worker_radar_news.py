@@ -378,10 +378,15 @@ class RadarNewsWorker:
                 affected_assets = json.loads(row.get('affected_assets') or '[]')
                 ativo_principal = affected_assets[0] if affected_assets else None
                 if row.get('categoria') is not None and ativo_principal:
+                    # Mesma correção das duas contagens acima: conta pelo horário do
+                    # ENVIO, não pelo da criação — a fila por relevância + adiado_ate
+                    # pode atrasar o envio em até JANELA_UTIL_HORAS em relação ao
+                    # created_at, então contar por created_at deixava o cooldown de
+                    # tema fora de sincronia com o resto do orçamento.
                     cur.execute(
                         "SELECT COUNT(*) AS n FROM genesis_radar_news "
                         "WHERE categoria = %s AND JSON_CONTAINS(affected_assets, %s) AND telegram_sent = 1 "
-                        "AND created_at >= NOW() - INTERVAL %s HOUR",
+                        "AND telegram_sent_at >= NOW() - INTERVAL %s HOUR",
                         (row['categoria'], json.dumps(ativo_principal), TEMA_COOLDOWN_HOURS),
                     )
                     tema = cur.fetchone()['n']
@@ -439,8 +444,16 @@ class RadarNewsWorker:
         next_attempt_at — isso resolve a tensão que a versão anterior deste método
         deixava documentada e sem resolver (INSERT único bloqueava reenvio pra sempre).
         """
-        base = row.get('event_key') or row.get('title_hash') or str(row['id'])
-        dispatch_key = hashlib.sha256(f"{base}|nivel1".encode('utf-8')).hexdigest()
+        # news_id sempre entra na base: title_hash só tem índice normal (não é
+        # UNIQUE) em genesis_radar_news, então duas notícias diferentes com
+        # event_key ausente/malformado podiam colidir no mesmo dispatch_key se
+        # tivessem o mesmo title_hash — a segunda ficava bloqueada pra sempre por
+        # este método, sem nunca ser marcada com supressao nem rebaixada, só
+        # retentando em silêncio a cada ciclo de dreno. event_key/title_hash
+        # continuam no hash por rastreabilidade, mas quem garante 1 dispatch por
+        # notícia é sempre o news_id.
+        base = row.get('event_key') or row.get('title_hash') or ''
+        dispatch_key = hashlib.sha256(f"{row['id']}|{base}|nivel1".encode('utf-8')).hexdigest()
 
         try:
             conn.begin()
@@ -950,10 +963,19 @@ class RadarNewsWorker:
             "fluxo institucional positivo, pressão regulatória, risco em stablecoins). "
             "Responda apenas com a frase, sem explicação.\n\n" + resumo_itens
         )
-        texto = self.ai_classifier._call_gemini(prompt)
+        # response_json=False: este prompt pede uma frase solta, não JSON — forçar
+        # responseMimeType='application/json' (default de _call_gemini, usado pela
+        # classificação) faria o modelo devolver a frase embrulhada em aspas ou num
+        # objeto em vez de texto plano.
+        texto = self.ai_classifier._call_gemini(prompt, response_json=False)
         if not texto:
             return "Sem leitura disponível hoje."
-        return texto.strip().splitlines()[0][:300]
+        linha = texto.strip().splitlines()[0][:300]
+        # Sanitização defensiva: se ainda vier entre aspas (hábito de JSON-string ou
+        # resposta futura mal formatada), remove as aspas das pontas.
+        if len(linha) >= 2 and linha[0] == linha[-1] == '"':
+            linha = linha[1:-1].strip()
+        return linha
 
     # ─── Main loop ────────────────────────────────────────────────────────────
 

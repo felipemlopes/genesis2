@@ -1,7 +1,7 @@
 import React from 'react';
 import { History } from 'lucide-react';
 import { useAppContext } from '../contexts/AppContext';
-import { formatPrice } from '../services/cryptoApi';
+import { price as formatPrice } from '../utils/canonicalMoney';
 
 const HistoryPage: React.FC = () => {
   const { closedTrades } = useAppContext();

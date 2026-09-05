@@ -1,8 +1,13 @@
 
 // Service to fetch REAL market data from Exchanges
-// Note: Direct browser calls to these APIs often face CORS issues. 
+// Note: Direct browser calls to these APIs often face CORS issues.
 // In a production env, these should be routed through a backend proxy.
 // For this 'Terminal', we attempt direct fetch as requested.
+
+// Item 2.3.4 (spec genesis-v6-10-implementacao): formatador único de dinheiro — alias
+// `formatPrice` mantido de propósito (as funções abaixo já declaram uma variável local `price`
+// dentro do próprio escopo, então importar sob o nome `price` colidiria).
+import { price as formatPrice } from '../utils/canonicalMoney';
 
 export interface MarketData {
   funding: string;
@@ -40,24 +45,18 @@ export const formatCryptoValue = (value: string | number | undefined | null): st
   }).format(num);
 };
 
-// --- REGRA IMUTÁVEL DE FORMATAÇÃO DE PREÇOS EM DÓLAR ---
-export const formatPrice = (value: number) => {
-  if (isNaN(value)) return '---';
-  
-  // Regra 1: Preços iguais ou superiores a $1.00 -> Max 2 casas decimais
-  if (Math.abs(value) >= 1) {
-    return '$ ' + value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  }
-  
-  // Regra 2: Preços entre $0.01 e $1.00 -> Max 4 casas decimais
-  if (Math.abs(value) >= 0.01) {
-    return '$ ' + value.toLocaleString('en-US', { minimumFractionDigits: 4, maximumFractionDigits: 4 });
-  }
-
-  // Regra 3: Preços inferiores a $0.01 -> Preservar precisão (Visual Truncation Only)
-  // Utiliza 8 casas para garantir que tokens de baixo valor (ex: PEPE, SHIB) não sejam arredondados para 0 ou percam precisão crítica.
-  return '$ ' + value.toLocaleString('en-US', { maximumFractionDigits: 8 });
-};
+// Item 2.3.4 (spec genesis-v6-10-implementacao): a implementação própria de formatPrice() saiu
+// daqui — dois formatadores de dinheiro convivendo era o item C6 do documento. O nome
+// `formatPrice` continua exportado (import no topo do arquivo) só por compatibilidade — é agora
+// um alias de `canonicalMoney.price()`, o formatador único (mesma heurística de magnitude como
+// fallback sem tickDecimals, cifrão colado em vez de "$ " com espaço). Migrado nos 6 consumidores
+// externos reais (grep confirmado antes de remover a implementação própria): MarketTicker,
+// LiquidityMap, NewListings, OiLiquidationMonitor, HistoryPage, ActiveTradesPage — esses passaram
+// a importar `canonicalMoney` diretamente. `MarketWidget`/`GenesisPage` importavam mas nunca
+// chamavam — import morto, removido sem migração de comportamento. `AnalysisResult.tsx` já usava
+// `canonicalMoney` sob o mesmo alias local — nunca foi consumidor deste arquivo. Os 4 usos
+// internos abaixo (fetchBinanceData/fetchBybitData/fetchBitgetData/fetchOkxData, que montam
+// `MarketData.price`) continuam chamando `formatPrice`, agora resolvido pelo import.
 
 const formatFunding = (value: number) => {
   if (isNaN(value)) return '---';

@@ -31,6 +31,15 @@ import React from 'react';
  *    princípio do DP-06 (Macro/Sentimento nunca julgam a operação) agora estendido a Derivativos:
  *    "enfraquece a leitura" é um fato sobre a força do dado, não um veredito vermelho sobre a
  *    operação escolhida.
+ *
+ * Spec genesis-v6-10-implementacao (Fase 6, item 6.3, doc §6.3): o selo "Indisponível" de
+ * Macro/Sentimento seguia só `macroScore`/`sentimentScore` (o score da narrativa) — no BTC e no SUI
+ * aparecia mesmo com VIX/DXY/S&P500 reais presentes no card de números mais abaixo da tela
+ * (AnalysisResult.tsx). "O card só é indisponível quando NADA chegou" — a decisão de disponibilidade
+ * agora é do CHAMADOR (`macroDisponivel`/`sentimentDisponivel`, olhando todos os campos do bloco:
+ * score + números + narrativa), não deste componente, que só sabe do score. O item do documento
+ * citou só o card de Macro; a mesma inconsistência existia idêntica no de Sentimento (mesmo
+ * `BlocoNumerico`, mesmo padrão score-vs-demais-campos) — corrigida junto, não deixada pela metade.
  */
 
 type TechnicalCoherence = 'VERY_LOW' | 'LOW' | 'MODERATE' | 'HIGH' | 'VERY_HIGH';
@@ -58,6 +67,13 @@ interface Props {
   direction: 'LONG' | 'SHORT' | 'INDISPONIVEL';
   macroScore: number | null;
   sentimentScore: number | null;
+  // Spec genesis-v6-10-implementacao (Fase 6, item 6.3, doc §6.3): o selo "Indisponível" seguia só
+  // o score da narrativa — no BTC e no SUI aparecia mesmo com VIX/DXY/S&P500 reais presentes no
+  // card de baixo (AnalysisResult.tsx). "Disponível" agora é decidido por quem monta a tela, olhando
+  // TODOS os campos do bloco (score + números + narrativa), não só o score que este componente
+  // recebe. Faltando só a narrativa/score, o card mostra o que vier (barra some, selo não aparece).
+  macroDisponivel: boolean;
+  sentimentDisponivel: boolean;
 }
 
 const Selo: React.FC<{ severidade: Severidade; rotulo: string }> = ({ severidade, rotulo }) => (
@@ -76,12 +92,15 @@ const BlocoCategorico: React.FC<{ nome: string; rotulo: string; severidade: Seve
 );
 
 // Bloco numérico — só pros dois casos (Macro/Sentimento) onde o percentual é um dado real, não
-// inventado por este componente. pct=null renderiza o mesmo selo "Indisponível" dos categóricos.
-const BlocoNumerico: React.FC<{ nome: string; pct: number | null; legenda: string }> = ({ nome, pct, legenda }) => (
+// inventado por este componente. `disponivel=false` (nada do bloco chegou) renderiza o selo
+// "Indisponível" dos categóricos; `pct=null` com `disponivel=true` (só a narrativa/score faltou,
+// outros números do bloco vieram) não mostra selo nem barra — item 6.3, nunca alarma indisponível
+// sobre um card que tem dado real.
+const BlocoNumerico: React.FC<{ nome: string; pct: number | null; disponivel: boolean; legenda: string }> = ({ nome, pct, disponivel, legenda }) => (
   <div className="bg-black/40 rounded p-3 border border-white/[0.05]">
     <div className="flex justify-between items-center mb-2">
       <span className="text-[9px] font-bold text-gray-500 uppercase tracking-wider">{nome}</span>
-      {pct == null && <Selo severidade="indisponivel" rotulo="Indisponível" />}
+      {!disponivel && <Selo severidade="indisponivel" rotulo="Indisponível" />}
     </div>
     {pct != null && (
       <div className="relative w-full bg-gray-900 rounded-full h-1.5 overflow-hidden">
@@ -92,7 +111,7 @@ const BlocoNumerico: React.FC<{ nome: string; pct: number | null; legenda: strin
   </div>
 );
 
-const ScoreBasisBars: React.FC<Props> = ({ scoreBasis, derivativesContext, macroScore, sentimentScore }) => {
+const ScoreBasisBars: React.FC<Props> = ({ scoreBasis, derivativesContext, macroScore, sentimentScore, macroDisponivel, sentimentDisponivel }) => {
   const coherence = scoreBasis?.technical_coherence as TechnicalCoherence | undefined;
   const strength = (derivativesContext?.strength as DerivativesStrength | undefined) ?? 'UNAVAILABLE';
 
@@ -117,8 +136,8 @@ const ScoreBasisBars: React.FC<Props> = ({ scoreBasis, derivativesContext, macro
         severidade={derivativosSeveridade}
         legenda="Força dos derivativos sobre o cenário"
       />
-      <BlocoNumerico nome="Macro e Geopolítico" pct={macroScore} legenda="Contexto macro/geopolítico — informativo" />
-      <BlocoNumerico nome="Sentimento" pct={sentimentScore} legenda="Sentimento do ativo — informativo" />
+      <BlocoNumerico nome="Macro e Geopolítico" pct={macroScore} disponivel={macroDisponivel} legenda="Contexto macro/geopolítico — informativo" />
+      <BlocoNumerico nome="Sentimento" pct={sentimentScore} disponivel={sentimentDisponivel} legenda="Sentimento do ativo — informativo" />
     </div>
   );
 };

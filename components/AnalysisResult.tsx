@@ -33,12 +33,21 @@ interface AnalysisResultProps {
 // por análise) como 100% da barra.
 const TETO_RISCO = 2;
 
+// Spec genesis-v6-10-implementacao (Fase 6, item 6.1, doc §6.1): dicionário completo contra a
+// lista canônica real (TechnicalAnalysisService::FASES_WYCKOFF, backend, 11 valores) — faltavam 4
+// (ACUMULACAO_SC/AR/ST, RANGE_SEM_EVENTO), que caíam no fallback quebrado abaixo e apareciam crus
+// na tela (ex.: "RANGE_SEM_EVENTO" no APT e no SUI). 'DISTRIBUICAO_SPRING' removido — não existe em
+// FASES_WYCKOFF (confirmado por grep no backend), nunca foi produzido por classificarFase(); tê-lo
+// aqui sugeria uma fase real que não existe.
 const WYCKOFF_LABEL: Record<string, string> = {
   DISTRIBUICAO_RANGE: 'Distribuição em range',
   DISTRIBUICAO_UAT: 'Distribuição (UAT)',
-  DISTRIBUICAO_SPRING: 'Distribuição com spring',
   ACUMULACAO_RANGE: 'Acumulação em range',
   ACUMULACAO_SPRING: 'Acumulação com spring',
+  ACUMULACAO_SC: 'Acumulação (clímax de venda)',
+  ACUMULACAO_AR: 'Acumulação (repique automático)',
+  ACUMULACAO_ST: 'Acumulação (teste secundário)',
+  RANGE_SEM_EVENTO: 'Range sem evento',
   MARKUP: 'Markup',
   MARKDOWN: 'Markdown',
   INDETERMINADO: 'Indeterminado',
@@ -62,8 +71,17 @@ const BIAS_LABEL: Record<string, string> = {
 // A8 (V6.9): manchete deixa de ser fixa "Plano não recomendado" — quando existe um alvo posterior
 // (TP2/TP3) que já atende o R/R mínimo, nomeia esse alvo em vez de soar como reprovação total do
 // plano (execution.alvo_que_atende, ExecucaoService::primeiroAlvoAcimaDoMinimo() no backend).
-const manchetePlano = (alvoQueAtende: string | null | undefined): string =>
-  alvoQueAtende ? `Plano atende o ${alvoQueAtende}` : 'Plano não recomendado';
+// Spec genesis-v6-10-implementacao (Fase 9, item 9.3, doc §9.3): quando NENHUM alvo isolado atinge
+// o mínimo (nem TP1 nem um posterior — o caso que ainda caía no fallback "Plano não recomendado"),
+// o rótulo passa a descrever o plano pelo R:R combinado real (item 9.2), nunca mais um veredito
+// "não recomendado" — achado real do documento: um plano com TP2 pagando 1:0,63 e stop bem
+// colocado não é reprovado, é um plano de R:R modesto. O botão continua ativo nos dois casos
+// (podeInteragir nunca depende de recommendedAtivo, ver bloco condicional abaixo).
+const manchetePlano = (alvoQueAtende: string | null | undefined, rrCombinadoExibir: string | null | undefined): string => {
+  if (alvoQueAtende) return `Plano atende o ${alvoQueAtende}`;
+
+  return rrCombinadoExibir ? `Plano de risco-retorno combinado ${rrCombinadoExibir}` : 'Plano de risco-retorno modesto';
+};
 
 // G12 (V6.9): Fear & Greed chegava só como número (0-100), sem a faixa qualitativa que dá
 // significado a ele (a maioria dos membros não decora os limiares do índice de cor).
@@ -92,7 +110,12 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, onSaveTrade, onRe
   // G13 (V6.9): Plano A pré-selecionado — o backend já publica os dois planos completos e
   // paritários (ExecucaoService::montar(), $planoBCompleto com os mesmos 9 campos de A), só a
   // seleção inicial ficava em null, deixando "Selecione um Plano" mesmo com A pronto pra uso.
-  const [selectedZone, setSelectedZone] = useState<'A' | 'B' | null>('A');
+  // Spec genesis-v6-10-implementacao (Fase 5, item 5.4, doc §5.3): `null` agora significa "o membro
+  // ainda não escolheu explicitamente" — o plano efetivamente exibido (`zonaEfetiva`, abaixo, só
+  // calculável depois que `execution` existe) cai em `execution.plano_primario` (declarado pela
+  // IA), nunca mais hardcoded em 'A'. Um clique explícito em A ou B sempre grava aqui e passa a
+  // valer por cima do primário declarado.
+  const [selectedZone, setSelectedZone] = useState<'A' | 'B' | null>(null);
   const [zoneSaveStatus, setZoneSaveStatus] = useState<'idle' | 'saving' | 'success' | 'error'>('idle');
   const [zoneSaveError, setZoneSaveError] = useState<string | null>(null);
 
@@ -103,7 +126,10 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, onSaveTrade, onRe
   // decidido sem nenhuma ação do membro nesta análise. Reseta sempre que a identidade da análise muda.
   const analiseIdentidade = analiseId ?? data?.analysis_id ?? null;
   useEffect(() => {
-    setSelectedZone('A');
+    // Fase 5 (item 5.4): reseta pra "sem escolha explícita" — o render deriva o plano efetivamente
+    // exibido (`zonaEfetiva`) a partir do primário declarado por ESTA análise, nunca herdado de uma
+    // escolha manual feita na análise anterior.
+    setSelectedZone(null);
     setZoneSaveStatus('idle');
     setZoneSaveError(null);
   }, [analiseIdentidade]);
@@ -196,6 +222,13 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, onSaveTrade, onRe
   }
 
   const { analysis, execution } = data;
+  // Spec genesis-v6-10-implementacao (Fase 5, item 5.1/5.3/5.4, doc §5.3): plano que a IA declarou
+  // como primário (pré-selecionado na tela) — 'A' é o fallback de uma decisão antiga/cacheada sem o
+  // campo, mesmo padrão do backend (AnalysisPersistenceService). `zonaEfetiva` é o plano realmente
+  // exibido: a escolha explícita do membro (`selectedZone`) quando existir, senão o primário — o
+  // Plano A continua existindo e clicável, ninguém perde a opção de entrar a mercado.
+  const planoPrimario: 'A' | 'B' = execution.plano_primario === 'B' ? 'B' : 'A';
+  const zonaEfetiva: 'A' | 'B' = selectedZone ?? planoPrimario;
   const setup = execution.candidate_setup;
   const score = analysis.conviccao_modelo;
   // V6.9 pacote final (spec genesis-v6-9-pacote-final, Fase 13, item 13.14, doc §18): a antiga
@@ -225,7 +258,7 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, onSaveTrade, onRe
   // (formato completo e independente pros dois planos) — cai em candidate_setup só se a resposta for
   // de uma decisão cacheada antes deste campo existir (planos ausente/vazio).
   const planos = execution.planos ?? [];
-  const planoAtivo = (selectedZone && planos.find((p) => p.plano === selectedZone))
+  const planoAtivo = planos.find((p) => p.plano === zonaEfetiva)
     || planos.find((p) => p.plano === 'A')
     || planos[0]
     || null;
@@ -275,11 +308,31 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, onSaveTrade, onRe
   // Plano B selecionado) — agora troca junto com o plano ativo.
   // V6.5 (G02): backend para de montar a frase com o nível cru embutido (ex.: "$65370.9262", sem
   // separador de milhar) — direção + nível chegam numéricos, o texto é montado aqui com formatPrice().
+  // Spec genesis-v6-10-implementacao (Fase 6, item 6.6, doc §6.6): este é o nível que invalida a
+  // OPERAÇÃO (a âncora estrutural do stop, "o preço nega a entrada") — renomeado de "a tese perde
+  // validade" (rótulo antigo, de antes do G02 existir, que sobrou descrevendo um campo que já não
+  // é mais sobre tese). "Invalidação da tese" de verdade é um conceito PRÓPRIO agora
+  // (invalidacaoTese, abaixo), nunca mais confundido com este.
   const invalidacaoDirecao = planoAtivo?.invalidacao_direcao ?? execution.zonaInteresse?.invalidacao_direcao ?? null;
   const invalidacaoNivel = planoAtivo?.invalidacao_nivel ?? execution.zonaInteresse?.invalidacao_nivel ?? null;
   const invalidacaoAtiva = invalidacaoDirecao && invalidacaoNivel != null
-    ? `A tese perde validade com fechamento ${invalidacaoDirecao} de ${formatPrice(invalidacaoNivel, tickDecimals)}.`
+    ? `O preço nega a entrada com fechamento ${invalidacaoDirecao} de ${formatPrice(invalidacaoNivel, tickDecimals)}.`
     : (publicText(analysis.invalidacao_tese) || null);
+
+  // Fase 6 (item 6.6): dois níveis de invalidação já publicados pelo backend
+  // (ExecucaoService.php, item 13 de correção-tecnica) e nunca consumidos aqui — zero ocorrências
+  // confirmadas antes desta fase. Cada um só existe quando há um nível real e justificável do
+  // mesmo catálogo; omitido (não "indisponível") quando ausente.
+  const invalidacaoEstruturaDirecao = planoAtivo?.invalidacao_estrutura_direcao ?? null;
+  const invalidacaoEstruturaNivel = planoAtivo?.invalidacao_estrutura_nivel ?? null;
+  const invalidacaoEstruturaTexto = invalidacaoEstruturaDirecao && invalidacaoEstruturaNivel != null
+    ? `A estrutura que sustenta a leitura se quebra com fechamento ${invalidacaoEstruturaDirecao} de ${formatPrice(invalidacaoEstruturaNivel, tickDecimals)}.`
+    : null;
+  const invalidacaoTeseDirecao = planoAtivo?.invalidacao_tese_direcao ?? null;
+  const invalidacaoTeseNivel = planoAtivo?.invalidacao_tese_nivel ?? null;
+  const invalidacaoTeseTexto = invalidacaoTeseDirecao && invalidacaoTeseNivel != null
+    ? `A tendência anterior é retomada com fechamento ${invalidacaoTeseDirecao} de ${formatPrice(invalidacaoTeseNivel, tickDecimals)}.`
+    : null;
 
   // V6.7 (A-14): três estados do stop — troca junto com o plano ativo, mesmo padrão de
   // invalidacaoDirecao/invalidacaoNivel acima.
@@ -295,6 +348,8 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, onSaveTrade, onRe
   const recommendedAtivo = planoAtivo?.recommended ?? setup?.recommended ?? execution.recommended;
   const motivoAtivo = planoAtivo?.motivo ?? setup?.motivo ?? execution.motivo;
   const alvoQueAtendeAtivo = planoAtivo?.alvo_que_atende ?? setup?.alvo_que_atende ?? execution.alvo_que_atende;
+  // Item 9.3 (doc §9.3): usado no rótulo (manchetePlano) quando nenhum alvo isolado atinge o mínimo.
+  const rrLiquidoCombinadoExibirAtivo = planoAtivo?.rr_liquido_combinado_exibir ?? setup?.rr_liquido_combinado_exibir ?? null;
 
   // R3.2 — Adendo Seção 32: contrato canônico em inglês primeiro, com
   // fallback ao português legado. `execution.motivo` nunca alimenta a
@@ -442,6 +497,19 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, onSaveTrade, onRe
             direction={direction}
             macroScore={macroInfo?.score ?? null}
             sentimentScore={sentimento?.score ?? null}
+            // Spec genesis-v6-10-implementacao (Fase 6, item 6.3, doc §6.3): disponível quando
+            // QUALQUER campo do bloco chegou — score, números reais (VIX/DXY/S&P500,
+            // Fear&Greed/dominância do BTC) ou a própria narrativa. Faltando só o score/narrativa,
+            // o selo "Indisponível" não aparece mais (antes seguia só o score).
+            macroDisponivel={
+              macroInfo?.score != null || macroInfo?.vix != null
+              || macroInfo?.dxy_change_pct != null || macroInfo?.sp500_change_pct != null
+              || !!macroInfo?.resumo
+            }
+            sentimentDisponivel={
+              sentimento?.score != null || sentimento?.fear_greed != null
+              || sentimento?.btc_dominance != null || !!sentimento?.narrativa
+            }
           />
 
           {/* V6.5 (G14): cobertura_baixa é derivado de verdade (coverage_percent < 70), nunca
@@ -474,11 +542,18 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, onSaveTrade, onRe
           {/* V6.5 (G15, Decisão 8 do PO): separa as 3 perguntas que a tela misturava — convicção
               (direção), qualidade da entrada (localização do preço) e risco/retorno — em vez do
               membro ler o número gigante do topo como "operação aprovada". */}
+          {/* Spec genesis-v6-10-implementacao (Fase 9, item 9.2, doc §9.2): cabeçalho mostra o R:R
+              COMBINADO dos três alvos (parciais configuráveis, default 50/30/20), não mais o R:R
+              do TP1 isolado — cada alvo continua com o seu próprio R:R nos cards abaixo
+              (rrPorAlvo.tp1/tp2/tp3), sem mudança. rrAbaixoDoMinimo compara o mesmo número exibido
+              aqui (combinado), nunca o TP1 isolado — evitaria a incoerência de mostrar "1:1,60
+              (abaixo do mínimo)" com o aviso calculado sobre outro número. */}
           <BlocoConviccaoQualidade
-            rrExibir={planoAtivo?.rr_liquido_exibir ?? setup?.rr_liquido_exibir ?? null}
+            rrExibir={planoAtivo?.rr_liquido_combinado_exibir ?? setup?.rr_liquido_combinado_exibir ?? null}
             rrBrutoExibir={planoAtivo?.rr_bruto_exibir ?? setup?.rr_bruto_exibir ?? null}
             rrMinimo={planoAtivo?.rr_minimo_referencia ?? setup?.rr_minimo_referencia ?? null}
-            rrAbaixoDoMinimo={planoAtivo?.rr_abaixo_do_minimo ?? setup?.rr_abaixo_do_minimo ?? false}
+            rrAbaixoDoMinimo={planoAtivo?.rr_liquido_combinado_abaixo_do_minimo ?? setup?.rr_liquido_combinado_abaixo_do_minimo ?? false}
+            parciaisAlvo={planoAtivo?.parciais_alvo ?? setup?.parciais_alvo ?? null}
             fatores={planoAtivo?.qualidade_entrada ?? setup?.qualidade_entrada ?? []}
             direcao={direction === 'SHORT' ? 'SHORT' : 'LONG'}
           />
@@ -491,10 +566,11 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, onSaveTrade, onRe
           </div>
         </div>
 
-        {/* F1: Avisos do reconciliador */}
-        {execution.avisos.length > 0 && (
+        {/* F1: avisos do plano ativo. NUNCA execution.avisos, que é a união dos dois planos e
+            vaza o aviso do Plano B para a tela do Plano A (item 2.1, A1). */}
+        {(planoAtivo?.avisos ?? []).length > 0 && (
           <div className="bg-amber-950/20 border border-amber-600/30 rounded-lg p-3 mb-6">
-            {execution.avisos.map((a: string, i: number) => (
+            {(planoAtivo?.avisos ?? []).map((a: string, i: number) => (
               <p key={i} className="text-[11px] text-amber-300 leading-relaxed">{a}</p>
             ))}
           </div>
@@ -551,7 +627,7 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, onSaveTrade, onRe
           <div className="bg-amber-950/20 border border-amber-600/30 rounded-lg p-3 mb-6 flex items-start gap-2.5">
             <AlertTriangle size={14} className="text-amber-400 shrink-0 mt-0.5" />
             <div>
-              <p className="text-[11px] font-bold text-amber-300 uppercase tracking-wider mb-1">{manchetePlano(alvoQueAtendeAtivo)}</p>
+              <p className="text-[11px] font-bold text-amber-300 uppercase tracking-wider mb-1">{manchetePlano(alvoQueAtendeAtivo, rrLiquidoCombinadoExibirAtivo)}</p>
               <p className="text-[11px] text-amber-200/90 leading-relaxed">
                 {publicText(motivoAtivo) || 'Esta configuração não atingiu os limiares recomendados de risco-retorno ou convicção. A decisão de seguir é sua.'}
               </p>
@@ -609,6 +685,23 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, onSaveTrade, onRe
             </span>
           </div>
         </div>
+
+        {/* Spec genesis-v6-10-implementacao (Fase 6, item 6.7, doc §6.7): o arredondamento da
+            quantidade pro stepSize real do contrato pode reduzir o risco realizado bem abaixo do
+            planejado sem nenhum aviso (sintoma real do documento: $10,00 planejados viram $7,20
+            realizados, 28% abaixo, e a tela mostrava só "0,7%" sem nota). Só aparece quando o
+            desvio passa de 10% — abaixo disso é ruído normal de arredondamento. */}
+        {(planoAtivo?.risco_desvio_pct ?? setup.risco_desvio_pct) != null && (
+          <div className="bg-amber-950/20 border border-amber-600/30 rounded-[10px] p-[16px] mb-6 flex items-start gap-2" title="O arredondamento da quantidade para o lote mínimo negociável do contrato reduziu o risco realizado em relação ao planejado.">
+            <AlertTriangle size={14} className="text-amber-400 shrink-0 mt-0.5" />
+            <div>
+              <p className="text-[11px] font-bold text-amber-300 uppercase tracking-wider mb-1">Risco realizado divergente do planejado</p>
+              <p className="text-[11px] text-amber-200/90 leading-relaxed">
+                Planejado: {formatUsd(Number(planoAtivo?.risco_planejado ?? setup.risco_planejado))} · Realizado: {formatUsd(Number(planoAtivo?.risco_real ?? setup.risco_real))} ({(planoAtivo?.risco_desvio_pct ?? setup.risco_desvio_pct)}% de desvio, por causa do arredondamento da quantidade para o lote mínimo negociável).
+              </p>
+            </div>
+          </div>
+        )}
 
         {/* V6.9 pacote final (spec genesis-v6-9-pacote-final, Fase 11, item 11.10, doc §16): três
             linhas SEMPRE distintas, nunca misturadas na mesma frase — diferente do card "Risco de
@@ -688,13 +781,13 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, onSaveTrade, onRe
                     disabled={!podeInteragir}
                     onClick={() => handleZoneSelect('A')}
                     className={`w-full text-left p-2.5 rounded-lg border transition-all duration-200 ${!podeInteragir ? 'opacity-40 cursor-not-allowed' : ''} ${
-                      selectedZone === 'A'
+                      zonaEfetiva === 'A'
                         ? 'bg-genesis-accent/10 border-genesis-accent ring-1 ring-genesis-accent'
                         : 'bg-black/20 border-white/5 hover:border-white/10 hover:bg-black/30'
                     }`}
                   >
                     <div className="flex justify-between items-baseline mb-1">
-                      <span className={`text-[10px] font-bold ${selectedZone === 'A' ? 'text-genesis-accent' : 'text-gray-400'}`}>Plano A (Primário)</span>
+                      <span className={`text-[10px] font-bold ${zonaEfetiva === 'A' ? 'text-genesis-accent' : 'text-gray-400'}`}>{`Plano A${planoPrimario === 'A' ? ' (Primário)' : ' (Alternativo)'}`}</span>
                       <span className="font-mono font-bold text-sm text-white">{setup.entrada != null ? formatPrice(Number(setup.entrada), tickDecimals) : '—'}</span>
                     </div>
                     <p className="text-[9px] text-gray-400 font-mono tracking-wide leading-tight mt-1">
@@ -708,13 +801,13 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, onSaveTrade, onRe
                       disabled={!podeInteragir}
                       onClick={() => handleZoneSelect('B')}
                       className={`w-full text-left p-2.5 rounded-lg border transition-all duration-200 ${!podeInteragir ? 'opacity-40 cursor-not-allowed' : ''} ${
-                        selectedZone === 'B'
+                        zonaEfetiva === 'B'
                           ? 'bg-genesis-accent/10 border-genesis-accent ring-1 ring-genesis-accent'
                           : 'bg-black/20 border-white/5 hover:border-white/10 hover:bg-black/30'
                       }`}
                     >
                       <div className="flex justify-between items-baseline mb-1">
-                        <span className={`text-[10px] font-bold ${selectedZone === 'B' ? 'text-genesis-accent' : 'text-gray-400'}`}>Plano B (Alternativo)</span>
+                        <span className={`text-[10px] font-bold ${zonaEfetiva === 'B' ? 'text-genesis-accent' : 'text-gray-400'}`}>{`Plano B${planoPrimario === 'B' ? ' (Primário)' : ' (Alternativo)'}`}</span>
                         <span className="font-mono font-bold text-xs text-white">{formatPrice(Number(planoB.entrada), tickDecimals)}</span>
                       </div>
                       <p className="text-[9px] text-gray-400 font-mono tracking-wide leading-tight mt-1">
@@ -742,18 +835,20 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, onSaveTrade, onRe
               {/* Botão de Confirmação */}
               <div className="mt-4 pt-3 border-t border-white/5 relative group">
                 <button
-                  disabled={!podeInteragir || !selectedZone}
+                  disabled={!podeInteragir}
                   onClick={() => { if (onSaveTrade) onSaveTrade(planoAtivo); }}
                   className={`w-full flex items-center justify-center gap-2 py-2 px-3 rounded-md text-xs font-mono uppercase tracking-wider font-bold transition-all duration-[180ms] ${
-                    !selectedZone || !podeInteragir
+                    !podeInteragir
                       ? 'bg-white/5 text-gray-600 cursor-not-allowed'
                       : 'bg-genesis-accent text-black hover:bg-[#39ff14] hover:text-black hover:shadow-[0_4px_16px_rgba(57,255,20,0.25)] active:scale-[0.98]'
                   }`}
                 >
                   <Shield size={14} />
-                  {!podeInteragir ? 'Execução não disponível' : selectedZone ? 'Confirmar Posição' : 'Selecione um Plano'}
+                  {/* Fase 5 (item 5.4): sempre há um plano efetivo pré-selecionado (zonaEfetiva) —
+                      "Selecione um Plano" nunca é mais um estado real, só "disponível"/"indisponível". */}
+                  {!podeInteragir ? 'Execução não disponível' : 'Confirmar Posição'}
                 </button>
-                {selectedZone && podeInteragir && (
+                {podeInteragir && (
                   <div className="confirmar-alerta absolute bottom-full left-0 z-[9999] flex gap-2 items-start mb-2 max-w-[300px] p-2.5 bg-[#2a2103] border border-[#b45309] rounded-[10px] text-[#fde68a] text-[12.5px] leading-relaxed opacity-0 invisible transition-opacity duration-150 pointer-events-none group-hover:opacity-100 group-hover:visible">
                     <span className="flex-shrink-0 mt-px">⚠️</span>
                     <span>Espera um segundo. Cheque o macro, o geopolítico e o sentimento da moeda no rodapé antes de entrar. O contexto pode reforçar ou enfraquecer esse setup.</span>
@@ -842,10 +937,14 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, onSaveTrade, onRe
               ) : (
                 <>
                   {/* D4: invalidação primeiro — é o nível estrutural que define tudo o resto (o
-                      "porquê"); o stop (abaixo) é a consequência prática dele (o "como operar"). */}
+                      "porquê"); o stop (abaixo) é a consequência prática dele (o "como operar").
+                      Spec genesis-v6-10-implementacao (Fase 6, item 6.6, doc §6.6): "Invalidação da
+                      tese" (rótulo antigo) renomeado pra "Invalidação da operação" — é a âncora que
+                      nega ESTA entrada, nunca foi sobre a tese de mercado em si (esse conceito
+                      próprio vem nos dois blocos condicionais abaixo). */}
                   <div className="bg-red-950/30 p-3 rounded border-red-900/50 mb-2">
                     <span className="text-[9px] font-bold text-genesis-negative/80 block mb-1.5 uppercase tracking-wider">
-                      Invalidação da tese
+                      Invalidação da operação
                     </span>
                     <p className="text-[10px] text-gray-400 font-mono leading-relaxed">
                       {invalidacaoAtiva || "Zona de invalidação não calculada."}
@@ -856,6 +955,29 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, onSaveTrade, onRe
                       </p>
                     )}
                   </div>
+
+                  {/* Fase 6 (item 6.6): dois níveis a mais, já publicados pelo backend — cada um só
+                      aparece quando existe um nível real (nunca "indisponível" no lugar). */}
+                  {invalidacaoEstruturaTexto && (
+                    <div className="bg-red-950/20 p-3 rounded border-red-900/30 mb-2">
+                      <span className="text-[9px] font-bold text-genesis-negative/60 block mb-1.5 uppercase tracking-wider">
+                        Invalidação da estrutura
+                      </span>
+                      <p className="text-[10px] text-gray-400 font-mono leading-relaxed">
+                        {invalidacaoEstruturaTexto}
+                      </p>
+                    </div>
+                  )}
+                  {invalidacaoTeseTexto && (
+                    <div className="bg-red-950/20 p-3 rounded border-red-900/30 mb-2">
+                      <span className="text-[9px] font-bold text-genesis-negative/60 block mb-1.5 uppercase tracking-wider">
+                        Invalidação da tese
+                      </span>
+                      <p className="text-[10px] text-gray-400 font-mono leading-relaxed">
+                        {invalidacaoTeseTexto}
+                      </p>
+                    </div>
+                  )}
 
                   <div className="mb-1 mt-2 flex items-baseline gap-2">
                     <span className="text-[9px] font-bold text-gray-500 uppercase tracking-wider">Stop de proteção</span>
@@ -1044,7 +1166,11 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, onSaveTrade, onRe
                     <span className="text-[9px] text-gray-500 uppercase font-bold tracking-wider">Wyckoff</span>
                   </div>
                   <span className={`text-[10px] font-mono ${anyData.wyckoff?.cor || 'text-white'}`}>
-                    {WYCKOFF_LABEL[anyData.wyckoff?.fase] || anyData.wyckoff?.fase || 'N/A'}
+                    {/* Fase 6 (item 6.1): `||` caía pra chave crua (`anyData.wyckoff?.fase`) antes
+                        de chegar em 'N/A', porque a chave truthy vencia o operador — nunca chegava
+                        a proteger contra fase desconhecida. `??` só cai no fallback quando a busca
+                        no dicionário for null/undefined. */}
+                    {WYCKOFF_LABEL[anyData.wyckoff?.fase] ?? 'Fase não classificada'}
                   </span>
                 </div>
 
@@ -1143,8 +1269,12 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, onSaveTrade, onRe
                   </div>
                 </div>
               )}
+              {/* Spec genesis-v6-10-implementacao (Fase 6, item 6.2, doc §6.2): "(orçamento de IA
+                  esgotado ou serviço fora do ar)" removido — estado interno (orçamento, serviço,
+                  fila, endpoint) vai pro log, nunca pro membro. Card de Sentimento (abaixo) já
+                  estava limpo desde uma sessão anterior; só este de Macro ainda vazava o motivo. */}
               <p className={`text-[10px] text-gray-400 leading-relaxed mb-4 mt-3 ${!macroInfo?.resumo ? 'italic' : ''}`}>
-                  {publicText(macroInfo?.resumo) || "Contexto informativo indisponível para esta análise (orçamento de IA esgotado ou serviço fora do ar)."}
+                  {publicText(macroInfo?.resumo) || "Contexto informativo indisponível para esta análise."}
               </p>
               {/* V6.9 pacote final (spec genesis-v6-9-pacote-final, Fase 11, item 11.1/11.4, doc §16):
                   achado real — eventos sempre foram objetos com fonte/URL/horário reais

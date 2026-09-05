@@ -77,3 +77,23 @@ describe('ScoreBasisBars — selo categórico em vez de percentual inventado', (
     expect(fonte).not.toContain("contraria:");
   });
 });
+
+// Spec genesis-v6-10-implementacao (Fase 6, item 6.3, doc §6.3): o selo "Indisponível" de Macro
+// seguia só o score da narrativa — aparecia mesmo com VIX/DXY/S&P500 reais presentes no card de
+// números mais abaixo da tela. "O card só é indisponível quando NADA chegou". O item citou só
+// Macro; a mesma inconsistência existia idêntica em Sentimento (mesmo BlocoNumerico) — corrigida
+// junto.
+describe('ScoreBasisBars — Fase 6, item 6.3: selo Indisponível não segue mais só o score', () => {
+  it('BlocoNumerico decide o selo por uma prop disponivel, não mais por pct == null', () => {
+    expect(fonte).toContain('disponivel: boolean');
+    expect(fonte).toContain('{!disponivel && <Selo severidade="indisponivel" rotulo="Indisponível" />}');
+    expect(fonte).not.toContain('{pct == null && <Selo');
+  });
+
+  it('Props do componente recebem macroDisponivel/sentimentDisponivel do chamador', () => {
+    expect(fonte).toContain('macroDisponivel: boolean');
+    expect(fonte).toContain('sentimentDisponivel: boolean');
+    expect(fonte).toContain('disponivel={macroDisponivel}');
+    expect(fonte).toContain('disponivel={sentimentDisponivel}');
+  });
+});

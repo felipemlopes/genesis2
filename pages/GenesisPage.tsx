@@ -23,7 +23,7 @@ import SectorSentiment from '../components/SectorSentiment';
 import { analyzeChart, scanChartMetadata, ChartMetadataBlockedError } from '../services/geminiService';
 import { normalizarPar } from '../services/normalizarPar';
 import { GenesisAnalysisResult, ChartMetadata, UnifiedChartResult, PlanoSetup } from '../types';
-import { fetchBinanceData, fetchBybitData, fetchBitgetData, fetchOkxData, formatPrice, ExchangeData } from '../services/cryptoApi';
+import { fetchBinanceData, fetchBybitData, fetchBitgetData, fetchOkxData, ExchangeData } from '../services/cryptoApi';
 
 const TRADING_QUOTES = [
   "Lucro bom é lucro no bolso.",

@@ -47,6 +47,11 @@ interface Props {
   // única fonte, sem o risco de duas formatações divergentes que motivou o resto desta mudança.
   rrMinimo?: number | null;
   rrAbaixoDoMinimo?: boolean;
+  // Spec genesis-v6-10-implementacao (Fase 9, item 9.2, doc §9.2): rrExibir agora é o R:R
+  // COMBINADO dos três alvos (parciais configuráveis) — "o esquema de parciais aparece na tela,
+  // para o membro saber de onde saiu o número". null quando o backend não populou (decisão
+  // antiga/cacheada anterior a esta fase); nesse caso a legenda simplesmente não aparece.
+  parciaisAlvo?: Record<string, number> | null;
   fatores: FatorQualidadeEntrada[];
   direcao: 'LONG' | 'SHORT';
 }
@@ -86,7 +91,20 @@ const montarConclusao = (rrExibir: string | null, fatores: FatorQualidadeEntrada
   return `${comRr}. A decisão é sua.`;
 };
 
-export const BlocoConviccaoQualidade: React.FC<Props> = ({ rrExibir, rrBrutoExibir, rrMinimo, rrAbaixoDoMinimo, fatores, direcao }) => (
+// Item 9.2 (doc §9.2): "50% TP1 + 30% TP2 + 20% TP3" — a ordem segue tp1/tp2/tp3 sempre, não a
+// ordem de inserção do objeto (que o backend não garante).
+const ORDEM_ALVO = ['tp1', 'tp2', 'tp3'] as const;
+const ROTULO_ALVO: Record<string, string> = { tp1: 'TP1', tp2: 'TP2', tp3: 'TP3' };
+const formatarEsquemaDeParciais = (parciaisAlvo: Record<string, number> | null | undefined): string | null => {
+  if (!parciaisAlvo) return null;
+  const partes = ORDEM_ALVO
+    .filter((chave) => parciaisAlvo[chave] != null)
+    .map((chave) => `${Math.round(parciaisAlvo[chave] * 100)}% ${ROTULO_ALVO[chave]}`);
+
+  return partes.length > 0 ? partes.join(' + ') : null;
+};
+
+export const BlocoConviccaoQualidade: React.FC<Props> = ({ rrExibir, rrBrutoExibir, rrMinimo, rrAbaixoDoMinimo, parciaisAlvo, fatores, direcao }) => (
   <section className="bg-black/40 rounded-lg p-[16px] border border-white/[0.05] relative z-10 mb-5">
     <div className="grid grid-cols-1 gap-4 mb-4">
       <div>
@@ -109,15 +127,22 @@ export const BlocoConviccaoQualidade: React.FC<Props> = ({ rrExibir, rrBrutoExib
                 </div>
               )}
               {rrExibir != null && (
-                <div className="flex items-baseline gap-2 flex-wrap">
-                  <strong className="text-lg font-mono text-white">{rrExibir}</strong>
-                  <span className="text-[9px] text-gray-500">líquido</span>
-                  {rrAbaixoDoMinimo && (
-                    <span className="text-[10px] text-amber-500">
-                      (cuidado, risco retorno abaixo do recomendado, 1:{(rrMinimo ?? 0).toFixed(2)})
-                    </span>
+                <>
+                  <div className="flex items-baseline gap-2 flex-wrap">
+                    <strong className="text-lg font-mono text-white">{rrExibir}</strong>
+                    <span className="text-[9px] text-gray-500">combinado</span>
+                    {rrAbaixoDoMinimo && (
+                      <span className="text-[10px] text-amber-500">
+                        (cuidado, risco retorno abaixo do recomendado, 1:{(rrMinimo ?? 0).toFixed(2)})
+                      </span>
+                    )}
+                  </div>
+                  {/* Item 9.2 (doc §9.2): "O esquema de parciais aparece na tela, para o membro
+                      saber de onde saiu o número" — só quando o backend populou (decisão nova). */}
+                  {formatarEsquemaDeParciais(parciaisAlvo) && (
+                    <span className="text-[9px] text-gray-500 block">{formatarEsquemaDeParciais(parciaisAlvo)}</span>
                   )}
-                </div>
+                </>
               )}
             </>
           )}
