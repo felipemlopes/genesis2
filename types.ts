@@ -319,6 +319,15 @@ export interface GenesisAnalysisResult {
     candidate_setup: CandidateSetup | null;
     executable_setup: CandidateSetup | null;
     planoB: ExecutionPlanB | null;
+    // Spec genesis-v6-10-implementacao (Fase 5, item 5.1/5.3): qual plano (A/B) a IA declarou como
+    // primário — lido em AnalysisResult.tsx desde a V6.10, mas nunca declarado aqui nem repassado
+    // por mapGraphicalToLegacy() até a V6.11 (achado real ao implementar o item 3.6): sem isto, a
+    // tela sempre caía no fallback 'A', mesmo quando o backend declarava 'B'.
+    plano_primario?: 'A' | 'B' | null;
+    // Spec genesis-v6-11-correcao-tecnica (Fase 3, item 3.4/3.6): motivo de planoB indisponível, e
+    // sinal de que o primário declarado (B) precisou degradar pra A nesta análise.
+    planoB_motivo?: string | null;
+    plano_primario_degradado?: boolean;
     // V6.5 (E08): 1 item (só Plano A) ou 2 (A e B), mesmo formato completo pros dois — ver PlanoSetup.
     planos: PlanoSetup[];
     // V6.5 (G02): invalidacao (string) substituída por direção + nível numéricos — campo legado,

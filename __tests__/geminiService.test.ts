@@ -299,6 +299,47 @@ describe('analyzeChart preserva evidências antes descartadas (Fase 7)', () => {
     ]);
   });
 
+  /**
+   * Spec genesis-v6-11-correcao-tecnica (Fase 3, item 3.4/3.6): achado real ao implementar este
+   * item — `execution.plano_primario` já era lido em AnalysisResult.tsx desde a V6.10, mas
+   * `mapGraphicalToLegacy()` nunca copiava esse campo (nem os dois novos desta fase) pro objeto
+   * `execution` que a tela de fato recebe. Sem este teste, a tela sempre caía no fallback 'A' em
+   * silêncio, mesmo quando o backend declarava 'B' — nenhum teste existente cobria a passagem por
+   * este adaptador com um `execution` real (não-null).
+   */
+  it('preserva plano_primario/planoB_motivo/plano_primario_degradado do execution real', async () => {
+    const { analyzeChart } = await import('../services/geminiService');
+    const resposta = respostaCompleta();
+    (resposta as any).execution = {
+      status: 'BLOQUEADA_ANALISE_INCONSISTENTE',
+      executable: false,
+      recommended: false,
+      action: null,
+      direction_reference: 'LONG',
+      reason_code: null,
+      motivo: 'motivo',
+      candidate_setup: null,
+      executable_setup: null,
+      planoB: null,
+      planoB_motivo: 'ENTRADA_B_DENTRO_DA_INVALIDACAO_DO_A',
+      plano_primario: 'A',
+      plano_primario_degradado: true,
+      planos: [],
+      zonaInteresse: null,
+      avisos: [],
+      stop_ancora: null,
+    };
+    globalThis.fetch = vi.fn(async () => new Response(JSON.stringify(resposta), { status: 200 })) as any;
+
+    const mockFile = new File(['test'], 'chart.png', { type: 'image/png' });
+    const metadata = { pair: 'BTCUSDT', exchange: 'Binance', timeframe: '4h' } as any;
+    const result = await analyzeChart(mockFile, metadata, '', 10);
+
+    expect((result.execution as any).plano_primario).toBe('A');
+    expect((result.execution as any).planoB_motivo).toBe('ENTRADA_B_DENTRO_DA_INVALIDACAO_DO_A');
+    expect((result.execution as any).plano_primario_degradado).toBe(true);
+  });
+
   // V6.9 pacote final (Fase 13, item 13.14): data_traceability chega pronto da API — precisa
   // sobreviver ao adaptador, substitui nota_cobertura (G5, V6.9).
   it('preserva a rastreabilidade de dados (data_traceability)', async () => {

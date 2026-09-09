@@ -387,6 +387,17 @@ const mapGraphicalToLegacy = (v64: GraphicalAnalysisResult): GenesisAnalysisResu
       candidate_setup: exec.candidate_setup ?? emptyCandidateSetup,
       executable_setup: exec.executable_setup,
       planoB: exec.planoB,
+      // Spec genesis-v6-10-implementacao (Fase 5, item 5.1/5.3): qual plano vem pré-selecionado —
+      // achado real ao implementar o item 3.6 da V6.11: este campo nunca tinha sido acrescentado
+      // aqui, então `execution.plano_primario` (lido em AnalysisResult.tsx desde a V6.10) sempre
+      // chegava `undefined` na tela, caindo silenciosamente no fallback 'A' em toda análise, mesmo
+      // quando o backend declarava 'B'.
+      plano_primario: exec.plano_primario ?? null,
+      // Spec genesis-v6-11-correcao-tecnica (Fase 3, item 3.4/3.6): motivo da indisponibilidade do
+      // Plano B (PlanoBService::indisponivel()) e sinal de que o primário declarado (B) não pôde
+      // ser honrado — os dois ausentes até esta fase, a tela colapsava em frases fixas.
+      planoB_motivo: exec.planoB_motivo ?? null,
+      plano_primario_degradado: exec.plano_primario_degradado ?? false,
       // V6.5 (E08): campo novo do backend — vazio quando a resposta vier de uma decisão cacheada
       // antes deste campo existir (a tela cai no fallback de candidate_setup/planoB nesse caso).
       planos: exec.planos ?? [],
@@ -404,6 +415,9 @@ const mapGraphicalToLegacy = (v64: GraphicalAnalysisResult): GenesisAnalysisResu
       candidate_setup: emptyCandidateSetup,
       executable_setup: null,
       planoB: null,
+      plano_primario: null,
+      planoB_motivo: null,
+      plano_primario_degradado: false,
       planos: [],
       zonaInteresse: null,
       avisos: [],

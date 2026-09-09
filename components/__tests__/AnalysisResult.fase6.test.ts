@@ -39,9 +39,27 @@ describe('AnalysisResult — Fase 6, item 6.2: estado interno não vaza pro text
   it('card de Macro não cita mais orçamento/serviço fora do ar', () => {
     expect(fonte).not.toContain('orçamento de IA esgotado ou serviço fora do ar');
   });
+});
 
-  it('fallback genérico continua existindo (só sem o motivo interno)', () => {
-    expect(fonte).toContain('"Contexto informativo indisponível para esta análise."');
+/**
+ * Spec genesis-v6-11-correcao-tecnica (Fase 4, item 4.6, doc §Fase 7 do checklist): a frase fixa
+ * "Contexto informativo indisponível para esta análise" saiu por completo — dado que não veio não
+ * aparece (R7), nunca mais um texto genérico ao lado de VIX/DXY/S&P500 reais. Este teste EXIGIA a
+ * frase (Fase 6 da V6.10, item 6.2 — "fallback genérico continua existindo") e é exatamente o
+ * teste que o próprio documento da V6.11 já antecipa quebrar de propósito — reescrito pra provar a
+ * regra nova, nunca contornado pra manter a frase viva.
+ */
+describe('AnalysisResult — Fase 4, item 4.6: sem frase fixa quando o resumo/narrativa não vem', () => {
+  it('a frase fixa "Contexto informativo indisponível para esta análise" não existe mais no código', () => {
+    expect(fonte).not.toContain('Contexto informativo indisponível para esta análise');
+  });
+
+  it('o parágrafo de Macro só renderiza quando publicText(macroInfo?.resumo) existe', () => {
+    expect(fonte).toContain('{publicText(macroInfo?.resumo) && (');
+  });
+
+  it('o parágrafo de Sentimento só renderiza quando publicText(sentimento?.narrativa) existe', () => {
+    expect(fonte).toContain('{publicText(sentimento?.narrativa) && (');
   });
 });
 
@@ -52,9 +70,27 @@ describe('AnalysisResult — Fase 6, item 6.3: disponibilidade de Macro/Sentimen
     expect(fonte).toContain('!!macroInfo?.resumo');
   });
 
-  it('sentimentDisponivel considera score, fear_greed, btc_dominance e narrativa', () => {
-    expect(fonte).toContain('sentimento?.score != null || sentimento?.fear_greed != null');
-    expect(fonte).toContain('sentimento?.btc_dominance != null || !!sentimento?.narrativa');
+});
+
+/**
+ * Spec genesis-v6-11-correcao-tecnica (Fase 4, item 4.8): Fear&Greed e dominância do BTC são
+ * sentimento de MERCADO (card superior), não do ativo — sentimentDisponivel parou de olhar os
+ * dois. Este teste (Fase 6 da V6.10, item 6.3) exigia o comportamento antigo e foi reescrito pra
+ * provar o novo, não contornado.
+ */
+describe('AnalysisResult — Fase 4, item 4.8: sentimentDisponivel não olha mais sentimento de mercado', () => {
+  it('sentimentDisponivel considera só score e narrativa do ativo', () => {
+    expect(fonte).toContain('sentimentDisponivel={sentimento?.score != null || !!sentimento?.narrativa}');
+  });
+
+  // Nota: não testamos "o arquivo inteiro nunca contém sentimento?.fear_greed" — o item 4.7
+  // (mesma fase) passou a usar esses mesmos campos para montar `sentimentValoresBrutos` (os
+  // números brutos mostrados quando falta score), um uso legítimo e diferente da disponibilidade.
+  // A asserção acima (linha exata de sentimentDisponivel) já prova o que este item pede.
+
+  it('macroDisponivel continua olhando todos os campos de mercado, intocado por esta correção', () => {
+    expect(fonte).toContain('macroInfo?.score != null || macroInfo?.vix != null');
+    expect(fonte).toContain('macroInfo?.dxy_change_pct != null || macroInfo?.sp500_change_pct != null');
   });
 });
 

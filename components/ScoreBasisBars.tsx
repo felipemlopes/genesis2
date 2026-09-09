@@ -74,6 +74,11 @@ interface Props {
   // recebe. Faltando só a narrativa/score, o card mostra o que vier (barra some, selo não aparece).
   macroDisponivel: boolean;
   sentimentDisponivel: boolean;
+  // Spec genesis-v6-11-correcao-tecnica (Fase 4, item 4.7): texto pronto com os campos numéricos
+  // reais (VIX/DXY/S&P500 ou Fear&Greed/dominância do BTC) — mostrado quando `disponivel=true` mas
+  // não há score (pct=null) pra desenhar a barra, em vez de deixar a caixa vazia.
+  macroValoresBrutos?: string | null;
+  sentimentValoresBrutos?: string | null;
 }
 
 const Selo: React.FC<{ severidade: Severidade; rotulo: string }> = ({ severidade, rotulo }) => (
@@ -96,22 +101,26 @@ const BlocoCategorico: React.FC<{ nome: string; rotulo: string; severidade: Seve
 // "Indisponível" dos categóricos; `pct=null` com `disponivel=true` (só a narrativa/score faltou,
 // outros números do bloco vieram) não mostra selo nem barra — item 6.3, nunca alarma indisponível
 // sobre um card que tem dado real.
-const BlocoNumerico: React.FC<{ nome: string; pct: number | null; disponivel: boolean; legenda: string }> = ({ nome, pct, disponivel, legenda }) => (
+const BlocoNumerico: React.FC<{ nome: string; pct: number | null; disponivel: boolean; legenda: string; valoresBrutos?: string | null }> = ({ nome, pct, disponivel, legenda, valoresBrutos }) => (
   <div className="bg-black/40 rounded p-3 border border-white/[0.05]">
     <div className="flex justify-between items-center mb-2">
       <span className="text-[9px] font-bold text-gray-500 uppercase tracking-wider">{nome}</span>
       {!disponivel && <Selo severidade="indisponivel" rotulo="Indisponível" />}
     </div>
-    {pct != null && (
+    {pct != null ? (
       <div className="relative w-full bg-gray-900 rounded-full h-1.5 overflow-hidden">
         <div className={`h-full ${COR.normal.barra}`} style={{ width: `${Math.max(0, Math.min(pct, 100))}%` }} />
       </div>
+    ) : (
+      // Spec genesis-v6-11-correcao-tecnica (Fase 4, item 4.7): disponível sem score deixava a
+      // caixa completamente vazia na tela. Mostra o que de fato chegou, em vez de nada.
+      valoresBrutos && <div className="text-[9px] text-gray-400 font-mono">{valoresBrutos}</div>
     )}
     <p className="text-[8px] text-gray-500 mt-1">{legenda}</p>
   </div>
 );
 
-const ScoreBasisBars: React.FC<Props> = ({ scoreBasis, derivativesContext, macroScore, sentimentScore, macroDisponivel, sentimentDisponivel }) => {
+const ScoreBasisBars: React.FC<Props> = ({ scoreBasis, derivativesContext, macroScore, sentimentScore, macroDisponivel, sentimentDisponivel, macroValoresBrutos, sentimentValoresBrutos }) => {
   const coherence = scoreBasis?.technical_coherence as TechnicalCoherence | undefined;
   const strength = (derivativesContext?.strength as DerivativesStrength | undefined) ?? 'UNAVAILABLE';
 
@@ -136,8 +145,8 @@ const ScoreBasisBars: React.FC<Props> = ({ scoreBasis, derivativesContext, macro
         severidade={derivativosSeveridade}
         legenda="Força dos derivativos sobre o cenário"
       />
-      <BlocoNumerico nome="Macro e Geopolítico" pct={macroScore} disponivel={macroDisponivel} legenda="Contexto macro/geopolítico — informativo" />
-      <BlocoNumerico nome="Sentimento" pct={sentimentScore} disponivel={sentimentDisponivel} legenda="Sentimento do ativo — informativo" />
+      <BlocoNumerico nome="Macro e Geopolítico" pct={macroScore} disponivel={macroDisponivel} legenda="Contexto macro/geopolítico — informativo" valoresBrutos={macroValoresBrutos} />
+      <BlocoNumerico nome="Sentimento" pct={sentimentScore} disponivel={sentimentDisponivel} legenda="Sentimento do ativo — informativo" valoresBrutos={sentimentValoresBrutos} />
     </div>
   );
 };

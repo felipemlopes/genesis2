@@ -27,11 +27,15 @@ describe('BlocoConviccaoQualidade — bloco de risco e retorno (bruto x líquido
 
   // Spec genesis-v6-10-implementacao (Fase 9, item 9.2, doc §9.2): o número que rrExibir carrega
   // deixou de ser o R:R líquido do TP1 isolado — agora é o combinado dos três alvos (parciais
-  // configuráveis). A legenda ao lado precisa dizer isso, não mais "líquido" sozinho (que agora
-  // seria enganoso: parece o líquido de UM alvo, quando é uma combinação de três).
-  it('a legenda do número principal diz "combinado", não mais "líquido" sozinho', () => {
-    expect(fonte).toContain('<span className="text-[9px] text-gray-500">combinado</span>');
-    expect(fonte).not.toContain('<span className="text-[9px] text-gray-500">líquido</span>');
+  // configuráveis). A legenda ao lado precisa dizer isso, não mais "líquido" sozinho (que seria
+  // enganoso: parece o líquido de UM alvo, quando é uma combinação de três).
+  // Spec genesis-v6-11-correcao-tecnica (Fase 4, item 4.9): a legenda dizia só "combinado", sem
+  // deixar claro que o número já é LÍQUIDO (com custo) — ao lado do bruto (rrBrutoExibir), que não
+  // tem essa distinção. "combinado, líquido" resolve as duas exigências ao mesmo tempo: continua
+  // combinado (não é o líquido de um alvo só, a preocupação da V6.10), e agora deixa claro que é
+  // líquido (a lacuna que a V6.11 corrigiu) — não é uma reversão da V6.10, é as duas juntas.
+  it('a legenda do número principal diz "combinado, líquido"', () => {
+    expect(fonte).toContain('<span className="text-[9px] text-gray-500">combinado, líquido</span>');
   });
 
   it('mostra o esquema de parciais que originou o número combinado, quando o backend populou', () => {

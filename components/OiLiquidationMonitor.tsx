@@ -161,16 +161,20 @@ const OiLiquidationMonitor: React.FC = () => {
                         
                         <div className="flex items-center gap-2 mb-8">
                             <Layers size={16} className="text-genesis-accent" />
-                            <h3 className="text-sm font-bold uppercase tracking-widest text-white">Open Interest (Aggregated)</h3>
+                            {/* Spec genesis-v6-11-correcao-tecnica (Fase 4, item 4.11, decisão D3):
+                                "Aggregated" implicava soma entre as 4 exchanges do card de
+                                comparação abaixo — nunca foi isso, sempre foi só a Binance (o único
+                                valor genuinamente em dólar). Rótulo agora diz a fonte real. */}
+                            <h3 className="text-sm font-bold uppercase tracking-widest text-white">Open Interest (Binance)</h3>
                         </div>
 
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-center mb-8">
                             <div>
                                 <span className="text-5xl font-mono font-bold text-white tracking-tighter block mb-2">
-                                    {formatCurrency(data.openInterest.totalUsd)}
+                                    {formatCurrency(data.openInterest.binanceTotalUsd)}
                                 </span>
                                 <div className="flex items-center gap-2 text-xs uppercase font-bold text-gray-500">
-                                    <span>Total Value (USD)</span>
+                                    <span>Total Value (USD) — Binance</span>
                                 </div>
                             </div>
 

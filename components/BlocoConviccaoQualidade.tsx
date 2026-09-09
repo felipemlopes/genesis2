@@ -128,9 +128,16 @@ export const BlocoConviccaoQualidade: React.FC<Props> = ({ rrExibir, rrBrutoExib
               )}
               {rrExibir != null && (
                 <>
+                  {/* Spec genesis-v6-11-correcao-tecnica (Fase 4, item 4.12): "85 CONVICÇÃO FORTE"
+                      ocupava o topo em corpo grande (text-4xl, AnalysisResult.tsx), enquanto
+                      qualidade/R:R — o outro eixo, igualmente correto e igualmente decisivo —
+                      ficava em corpo pequeno de rodapé. Os dois eixos continuam existindo e
+                      corretos; o que muda é peso visual: o R:R sobe para perto do destaque do
+                      número de convicção. Nada de layout/interação muda (botão continua ativo,
+                      qualidade continua em texto, nunca porcentagem). */}
                   <div className="flex items-baseline gap-2 flex-wrap">
-                    <strong className="text-lg font-mono text-white">{rrExibir}</strong>
-                    <span className="text-[9px] text-gray-500">combinado</span>
+                    <strong className="text-3xl font-mono text-white">{rrExibir}</strong>
+                    <span className="text-[9px] text-gray-500">combinado, líquido</span>
                     {rrAbaixoDoMinimo && (
                       <span className="text-[10px] text-amber-500">
                         (cuidado, risco retorno abaixo do recomendado, 1:{(rrMinimo ?? 0).toFixed(2)})
@@ -151,15 +158,17 @@ export const BlocoConviccaoQualidade: React.FC<Props> = ({ rrExibir, rrBrutoExib
     </div>
 
     <div className="border-t border-white/[0.05] pt-3">
-      <h4 className="text-[9px] font-bold text-gray-500 uppercase tracking-wider mb-2">
+      {/* Item 4.12: cabeçalho e itens sobem de tamanho junto do R:R acima — mesmo eixo de
+          hierarquia visual, sem virar porcentagem nem mudar layout/interação. */}
+      <h4 className="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-2">
         Qualidade da entrada {direcao === 'SHORT' ? '(SHORT)' : '(LONG)'}
       </h4>
       {fatores.length === 0 ? (
-        <p className="text-xs text-gray-500">Sem dados de localização suficientes para avaliar esta entrada.</p>
+        <p className="text-sm text-gray-500">Sem dados de localização suficientes para avaliar esta entrada.</p>
       ) : (
-        <ul className="space-y-1.5">
+        <ul className="space-y-2">
           {fatores.map((f) => (
-            <li key={f.fator} className="flex items-start gap-2 text-xs">
+            <li key={f.fator} className="flex items-start gap-2 text-sm">
               <span className={`shrink-0 mt-0.5 ${COR[f.avaliacao]}`}>{ICONE[f.avaliacao]}</span>
               <span className="text-gray-300">
                 <span className="font-semibold text-white">{f.fator}:</span> {f.detalhe}

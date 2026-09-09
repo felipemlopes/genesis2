@@ -12,6 +12,16 @@ import { fetchDerivativesComparison, DerivativesDisplayMetric } from './api';
  * `totalOiUsd` agora soma só as fontes `AVAILABLE` (nunca preenche uma indisponível com um número
  * fabricado); o histórico/tendência (série 24h) continua vindo só da Binance, que é quem realmente
  * expõe essa série — as outras exchanges entram só no card de comparação por fonte.
+ *
+ * Spec genesis-v6-11-correcao-tecnica (Fase 4, item 4.11, decisão D3 do Felipe "parar de somar,
+ * renomear o campo"): achado real ao corrigir — a soma acima ("só as fontes AVAILABLE") somava
+ * CONTRATOS de até 4 exchanges (unidades heterogêneas: `byExchange.*.unit === 'contracts'`, cada
+ * uma com seu próprio tamanho de contrato) e publicava o resultado como se fosse dólar, e essa
+ * soma SOBRESCREVIA o único valor que já era dólar de verdade (`binanceData.val`, de
+ * `sumOpenInterestValue` — a Binance devolve o Open Interest NOCIONAL, em USD, nesse endpoint
+ * específico, diferente do endpoint de contratos que `byExchange.binance` usa). O campo agora só
+ * usa a fonte genuinamente em dólar (Binance); `byExchange` continua existindo pra comparação por
+ * exchange, cada uma na própria unidade, nunca somada com as outras.
  */
 
 // Spec genesis-v6-10-implementacao (Fase 8, item 8.1, doc §8.1): campos que dependiam de uma
@@ -24,7 +34,10 @@ export interface OiLiquidationData {
     change24h: number | null;
   };
   openInterest: {
-    totalUsd: number | null;
+    // Spec genesis-v6-11-correcao-tecnica (Fase 4, item 4.11): renomeado de `totalUsd` — nunca foi
+    // (e não é) uma soma entre exchanges; é o Open Interest nocional (USD) da própria Binance
+    // (`sumOpenInterestValue`), a única fonte que devolve dólar de verdade nesta tela.
+    binanceTotalUsd: number | null;
     change5m: number | null;
     change1h: number | null;
     change24h: number | null;
@@ -132,15 +145,13 @@ export const fetchOiLiquidationData = async (symbol: string = 'BTCUSDT'): Promis
         okx: comparacao?.exchanges.okx.open_interest ?? indisponivel,
     };
 
-    // totalOiUsd soma só o que é real e disponível — nunca preenche uma fonte ausente com número
-    // inventado. Unidades divergem por exchange (contratos, não USD) — usado aqui só como proxy
-    // relativo de tamanho agregado real, nunca como valor monetário exato somável entre exchanges.
-    // Item 8.1: `binanceData.val` agora pode ser `null` de verdade (falha de coleta) — o fallback
-    // só serve quando a soma das exchanges é zero (nenhuma disponível), nunca mascara um null real.
-    const somaExchanges = Object.values(byExchange)
-        .filter((m) => m.status === 'AVAILABLE' && m.value !== null)
-        .reduce((acc, m) => acc + (m.value as number), 0);
-    const totalOiUsd = somaExchanges > 0 ? somaExchanges : binanceData.val;
+    // Spec genesis-v6-11-correcao-tecnica (Fase 4, item 4.11, decisão D3): a soma cross-exchange
+    // saiu — `byExchange.*.value` está em CONTRATOS (unidades diferentes por exchange, ver
+    // MultiExchangeDerivativesDisplayService no backend), nunca somável em dólar. `binanceData.val`
+    // é o único valor genuinamente em USD (Open Interest nocional da Binance, endpoint
+    // openInterestHist/sumOpenInterestValue) — usado direto, sem fallback sobre uma soma que nunca
+    // devia existir.
+    const binanceTotalUsd = binanceData.val;
 
     // 4. GENERATE ANALYSIS TEXT (Focused strictly on OI)
     // Item 8.1 (doc §8.1): chg1h pode ser null (falha de coleta) — antes null>0/null<-0.5 caíam
@@ -175,7 +186,7 @@ export const fetchOiLiquidationData = async (symbol: string = 'BTCUSDT'): Promis
             change24h: ticker.change
         },
         openInterest: {
-            totalUsd: totalOiUsd,
+            binanceTotalUsd,
             change5m: binanceData.chg5m,
             change1h: binanceData.chg1h,
             change24h: binanceData.chg24h,

@@ -102,6 +102,18 @@ const SESSAO_LABEL: Record<string, string> = {
   OVERNIGHT: 'Overnight',
 };
 
+// Spec genesis-v6-11-correcao-tecnica (Fase 3, item 3.6): tradução do motivo interno (backend,
+// PlanoBService::indisponivel()) para linguagem de tela — o código em si nunca aparece publicado.
+const MOTIVO_PLANO_B: Record<string, string> = {
+  ENTRADA_B_NAO_SELECIONADA: 'Nenhum nível técnico foi apontado para uma entrada alternativa nesta análise.',
+  ENTRADA_B_DO_LADO_ERRADO: 'O nível apontado para a entrada alternativa está do lado contrário ao da operação.',
+  ENTRADA_B_DENTRO_DA_INVALIDACAO_DO_A: 'O nível da entrada alternativa fica dentro da faixa que já invalida esta leitura.',
+  ZONA_ESTRUTURAL_INVERTIDA: 'Os níveis que delimitariam a zona de entrada estão fora de ordem neste momento.',
+  SEM_STOP_ESTRUTURAL_NA_ENTRADA_B: 'Não há nível estrutural que sirva de proteção para a entrada alternativa.',
+  STOP_COLADO_NA_ENTRADA_B: 'A proteção da entrada alternativa ficaria colada nela, sem espaço operacional.',
+  PADRAO: 'Entrada alternativa indisponível nesta análise.',
+};
+
 const limparTexto = (t: string) =>
   t.replace(/[ \t]{2,}/g, ' ').replace(/[ \t]+\n/g, '\n').trim();
 
@@ -250,7 +262,12 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, onSaveTrade, onRe
   const isLong = direction === 'LONG';
   const isShort = direction === 'SHORT';
 
-  const planoB = execution.planoB as { entrada?: number; descricao?: string; zona?: string } | null;
+  const planoB = execution.planoB as {
+    entrada?: number; descricao?: string; zona?: string;
+    // Spec genesis-v6-11-correcao-tecnica (Fase 3, item 3.6): gatilho declarado pela IA, verificado
+    // pelo backend contra vela fechada (PlanoBService::gerar()).
+    trigger?: { tipo?: string | null; descricao?: string | null; estado?: 'ATINGIDO' | 'AGUARDANDO' } | null;
+  } | null;
 
   // V6.5 (E08): antes só a 'entrada' trocava ao selecionar o Plano B — stop/TP1-3/RR/alavancagem/
   // liquidação/tamanho/invalidação continuavam mostrando os números do Plano A, mesmo com "Plano B"
@@ -497,6 +514,18 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, onSaveTrade, onRe
             direction={direction}
             macroScore={macroInfo?.score ?? null}
             sentimentScore={sentimento?.score ?? null}
+            // Spec genesis-v6-11-correcao-tecnica (Fase 4, item 4.7): disponível sem score deixava
+            // a caixa completamente vazia na tela (nem barra, nem selo, nem número) — mostra o que
+            // de fato chegou (os campos numéricos reais) em vez de nada.
+            macroValoresBrutos={[
+              macroInfo?.vix != null ? `VIX ${Number(macroInfo.vix).toFixed(1)}` : null,
+              macroInfo?.dxy_change_pct != null ? `DXY ${Number(macroInfo.dxy_change_pct) >= 0 ? '+' : ''}${Number(macroInfo.dxy_change_pct).toFixed(2)}%` : null,
+              macroInfo?.sp500_change_pct != null ? `S&P 500 ${Number(macroInfo.sp500_change_pct) >= 0 ? '+' : ''}${Number(macroInfo.sp500_change_pct).toFixed(2)}%` : null,
+            ].filter(Boolean).join(' · ') || null}
+            sentimentValoresBrutos={[
+              sentimento?.fear_greed != null ? `Fear & Greed ${Number(sentimento.fear_greed).toFixed(0)}` : null,
+              sentimento?.btc_dominance != null ? `Dominância BTC ${Number(sentimento.btc_dominance).toFixed(1)}%` : null,
+            ].filter(Boolean).join(' · ') || null}
             // Spec genesis-v6-10-implementacao (Fase 6, item 6.3, doc §6.3): disponível quando
             // QUALQUER campo do bloco chegou — score, números reais (VIX/DXY/S&P500,
             // Fear&Greed/dominância do BTC) ou a própria narrativa. Faltando só o score/narrativa,
@@ -506,10 +535,11 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, onSaveTrade, onRe
               || macroInfo?.dxy_change_pct != null || macroInfo?.sp500_change_pct != null
               || !!macroInfo?.resumo
             }
-            sentimentDisponivel={
-              sentimento?.score != null || sentimento?.fear_greed != null
-              || sentimento?.btc_dominance != null || !!sentimento?.narrativa
-            }
+            // Spec genesis-v6-11-correcao-tecnica (Fase 4, item 4.8): Fear&Greed e dominância do
+            // BTC são sentimento de MERCADO (card superior) — o bloco de Sentimento do ATIVO é
+            // sobre notícias/redes daquela cripto, tarefa distinta. macroDisponivel (acima)
+            // permanece intocado — só este cálculo muda.
+            sentimentDisponivel={sentimento?.score != null || !!sentimento?.narrativa}
           />
 
           {/* V6.5 (G14): cobertura_baixa é derivado de verdade (coverage_percent < 70), nunca
@@ -651,7 +681,7 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, onSaveTrade, onRe
           </div>
 
           <div className="bg-[#050505]  rounded-[10px] p-[16px] flex flex-col justify-center items-center text-center col-span-2 md:col-span-1">
-            <span className="text-[10px] text-gray-500 font-bold uppercase tracking-widest mb-2">Liquidação (estimada)</span>
+            <span className="text-[10px] text-gray-500 font-bold uppercase tracking-widest mb-2">Liquidação</span>
             <span className="text-xl font-mono text-orange-400 font-bold">
               {(planoAtivo?.liquidacao ?? setup.liquidacao) != null ? formatPrice(Number(planoAtivo?.liquidacao ?? setup.liquidacao), tickDecimals) : '—'}
             </span>
@@ -793,10 +823,21 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, onSaveTrade, onRe
                     <p className="text-[9px] text-gray-400 font-mono tracking-wide leading-tight mt-1">
                       Entrada a mercado no preço analisado.
                     </p>
+                    {/* Spec genesis-v6-11-correcao-tecnica (Fase 3, item 3.5/3.6): a leitura
+                        apontava o Plano B como primário e ele não pôde ser montado nesta análise —
+                        antes o membro via "Plano A (Primário)" sem nenhum sinal disso. */}
+                    {execution?.plano_primario_degradado && (
+                      <span className="text-[9px] text-genesis-accent font-mono block mt-1">
+                        A leitura apontava entrada técnica, que não pôde ser montada nesta análise.
+                      </span>
+                    )}
                   </button>
 
-                  {/* Plano B */}
-                  {planoB?.entrada != null && (
+                  {/* Plano B — Spec genesis-v6-11-correcao-tecnica (Fase 3, item 3.6): o card
+                      aparece SEMPRE, com dois estados. Antes o botão só era renderizado com
+                      planoB.entrada preenchido, e a ausência virava uma frase fixa que afirmava
+                      duas causas de um total de oito possíveis. */}
+                  {planoB?.entrada != null ? (
                     <button
                       disabled={!podeInteragir}
                       onClick={() => handleZoneSelect('B')}
@@ -811,21 +852,17 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, onSaveTrade, onRe
                         <span className="font-mono font-bold text-xs text-white">{formatPrice(Number(planoB.entrada), tickDecimals)}</span>
                       </div>
                       <p className="text-[9px] text-gray-400 font-mono tracking-wide leading-tight mt-1">
-                        {planoBDescricaoCompleta}
+                        {publicText(planoB.trigger?.descricao) || planoBDescricaoCompleta}
                       </p>
+                      <span className={`text-[9px] font-mono ${planoB.trigger?.estado === 'ATINGIDO' ? 'text-genesis-positive' : 'text-genesis-accent'}`}>
+                        {planoB.trigger?.estado === 'ATINGIDO' ? 'Zona alcançada' : 'Aguardando o preço'}
+                      </span>
                     </button>
-                  )}
-                  {/* V6.7 (D-29): antes a ausência do Plano B só ocultava o botão, sem explicação —
-                      o membro não tinha como saber se era "não existe" ou "ainda não carregou". Com
-                      D-29 (zona sempre do lado certo do preço), Plano B fica indisponível com mais
-                      frequência — a tela agora explica por quê, em vez de só sumir. */}
-                  {planoB?.entrada == null && (
+                  ) : (
                     <div className="w-full text-left p-2.5 rounded-lg border border-dashed border-white/10 bg-black/10">
                       <span className="text-[10px] font-bold text-gray-500">Plano B (Alternativo)</span>
                       <p className="text-[9px] text-gray-500 font-mono tracking-wide leading-tight mt-1">
-                        Sem espaço estrutural para uma entrada alternativa nesta análise — a zona de
-                        pullback/repique ficaria colada no preço atual ou sem uma âncora técnica
-                        confiável do lado certo.
+                        {MOTIVO_PLANO_B[execution?.planoB_motivo ?? ''] ?? MOTIVO_PLANO_B.PADRAO}
                       </p>
                     </div>
                   )}
@@ -1272,10 +1309,17 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, onSaveTrade, onRe
               {/* Spec genesis-v6-10-implementacao (Fase 6, item 6.2, doc §6.2): "(orçamento de IA
                   esgotado ou serviço fora do ar)" removido — estado interno (orçamento, serviço,
                   fila, endpoint) vai pro log, nunca pro membro. Card de Sentimento (abaixo) já
-                  estava limpo desde uma sessão anterior; só este de Macro ainda vazava o motivo. */}
-              <p className={`text-[10px] text-gray-400 leading-relaxed mb-4 mt-3 ${!macroInfo?.resumo ? 'italic' : ''}`}>
-                  {publicText(macroInfo?.resumo) || "Contexto informativo indisponível para esta análise."}
-              </p>
+                  estava limpo desde uma sessão anterior; só este de Macro ainda vazava o motivo.
+                  Spec genesis-v6-11-correcao-tecnica (Fase 4, item 4.6): a frase fixa "Contexto
+                  informativo indisponível para esta análise" saiu por completo — dado que não
+                  veio não aparece (R7), nunca vira um texto genérico ao lado de VIX/DXY/S&P500
+                  reais (o bug real do BTC de 08/09: macroStats preenchido, resumo nulo, e a
+                  frase fixa aparecia mesmo assim). */}
+              {publicText(macroInfo?.resumo) && (
+                <p className="text-[10px] text-gray-400 leading-relaxed mb-4 mt-3">
+                    {publicText(macroInfo.resumo)}
+                </p>
+              )}
               {/* V6.9 pacote final (spec genesis-v6-9-pacote-final, Fase 11, item 11.1/11.4, doc §16):
                   achado real — eventos sempre foram objetos com fonte/URL/horário reais
                   (GeminiContextService, backend), nunca strings soltas; renderizar {evt} direto
@@ -1326,9 +1370,13 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, onSaveTrade, onRe
                   </div>
                 </div>
               )}
-              <p className="text-[10px] text-gray-400 leading-relaxed mb-4  pb-3 mt-3">
-                  {publicText(sentimento?.narrativa) || "Contexto informativo indisponível para esta análise."}
-              </p>
+              {/* Spec genesis-v6-11-correcao-tecnica (Fase 4, item 4.6): mesma correção do card de
+                  Macro acima — a frase fixa sai, dado que não veio não aparece (R7). */}
+              {publicText(sentimento?.narrativa) && (
+                <p className="text-[10px] text-gray-400 leading-relaxed mb-4  pb-3 mt-3">
+                    {publicText(sentimento.narrativa)}
+                </p>
+              )}
               <div className="grid grid-cols-2 gap-3">
                   <div>
                     <span className="text-[8px] text-gray-600 uppercase tracking-widest block mb-2 font-bold">Gatilhos (+)</span>

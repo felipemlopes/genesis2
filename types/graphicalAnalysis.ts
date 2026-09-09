@@ -573,6 +573,14 @@ export interface ExecutionPipelineResult {
   // plano continua existindo e clicável. 'A' é o valor de uma decisão antiga/cacheada sem o campo
   // (mesmo fallback aplicado no backend, AnalysisPersistenceService).
   plano_primario: 'A' | 'B';
+  // Spec genesis-v6-11-correcao-tecnica (Fase 3, item 3.4/3.6): motivo da indisponibilidade do
+  // Plano B (PlanoBService::indisponivel()) — null quando planoB existe, ou quando a análise vem
+  // de uma decisão antiga/cacheada pré-Fase-3 (o campo simplesmente não existia ainda).
+  planoB_motivo?: string | null;
+  // Sinal de que a IA declarou 'B' como primário e ele não pôde ser montado nesta análise —
+  // degrada pra 'A' em silêncio no `plano_primario` acima; este campo é o que permite a tela
+  // avisar em vez de só trocar sem explicação.
+  plano_primario_degradado?: boolean;
   zonaInteresse: { tipo: string; zona: string; invalidacao_direcao: 'acima' | 'abaixo' | null; invalidacao_nivel: number | null } | null;
   avisos: string[];
   stop_ancora: { tipo: string; valor: number } | null;

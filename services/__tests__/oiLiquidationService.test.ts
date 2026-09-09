@@ -28,7 +28,7 @@ describe('oiLiquidationService — Fase 8, item 8.1: falha de coleta nunca vira 
 
   it('a interface pública é nullable nos campos que dependem de rede', () => {
     expect(fonte).toContain('price: number | null;');
-    expect(fonte).toContain('totalUsd: number | null;');
+    expect(fonte).toContain('binanceTotalUsd: number | null;');
     expect(fonte).toContain("trend: 'Rising' | 'Falling' | 'Stable' | 'Unavailable';");
   });
 
@@ -37,7 +37,20 @@ describe('oiLiquidationService — Fase 8, item 8.1: falha de coleta nunca vira 
     expect(fonte).toContain("status = 'Unavailable';");
   });
 
-  it('totalOiUsd só cai no fallback de binanceData.val quando a soma real das exchanges é zero, nunca mascara um null', () => {
-    expect(fonte).toContain('const totalOiUsd = somaExchanges > 0 ? somaExchanges : binanceData.val;');
+});
+
+/**
+ * Spec genesis-v6-11-correcao-tecnica (Fase 4, item 4.11, decisão D3 do Felipe "parar de somar,
+ * renomear o campo"): `byExchange.*.value` está em CONTRATOS — unidades diferentes por exchange
+ * (ver MultiExchangeDerivativesDisplayService, backend), nunca somável em dólar. A soma antiga
+ * (`somaExchanges`) sobrescrevia o único valor genuinamente em USD (`binanceData.val`, do
+ * endpoint openInterestHist/sumOpenInterestValue da própria Binance) sempre que qualquer exchange
+ * tinha dado disponível — o teste anterior desta suíte (Fase 8, item 8.1) até documentava esse
+ * fallback como comportamento correto, sem perceber que a ORDEM de preferência estava invertida.
+ */
+describe('oiLiquidationService — Fase 4, item 4.11: sem soma cross-exchange, só a fonte real em USD', () => {
+  it('não soma mais byExchange (contratos heterogêneos) — usa direto o Open Interest nocional da Binance', () => {
+    expect(fonte).not.toContain('somaExchanges');
+    expect(fonte).toContain('const binanceTotalUsd = binanceData.val;');
   });
 });
