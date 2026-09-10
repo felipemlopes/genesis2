@@ -1,5 +1,18 @@
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
 
+// spec genesis-microservico-auth-creditos, Fase 7 — CONSTRUÍDO, NÃO ATIVADO por padrão (mesma
+// decisão da Fase 5: ativar agora quebraria login de contas que só existem em genesis-api, já que
+// a Fase 9/migração de dados está travada). VITE_AUTH_API_URL vazio (default) preserva o
+// comportamento de hoje (auth/créditos via genesis-api); só passa a chamar o [AUTH] quando alguém
+// setar essa env explicitamente — e mesmo assim, sem conta migrada lá, login continua falhando até
+// a Fase 9 rodar.
+const AUTH_API_URL = import.meta.env.VITE_AUTH_API_URL || '';
+const AUTH_API_BASE = AUTH_API_URL ? `${AUTH_API_URL.replace(/\/$/, '')}/api` : API_BASE;
+
+function authPath(novoPath: string, legadoPath: string): string {
+  return AUTH_API_URL ? `${AUTH_API_BASE}${novoPath}` : `${API_BASE}${legadoPath}`;
+}
+
 function getAuthHeaders(): Record<string, string> {
   const token = localStorage.getItem('genesis_token');
   const headers: Record<string, string> = {
@@ -37,7 +50,7 @@ async function assertOk(res: Response): Promise<void> {
 // ─── AUTH ──────────────────────────────────────────────────────
 
 export async function login(email: string, password: string) {
-  const res = await fetch(`${API_BASE}/v1/login`, {
+  const res = await fetch(authPath('/auth/login', '/v1/login'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
     body: JSON.stringify({ email, password }),
@@ -51,14 +64,14 @@ export async function login(email: string, password: string) {
 }
 
 export async function getMe() {
-  const res = await fetch(`${API_BASE}/v1/me`, { headers: getAuthHeaders() });
+  const res = await fetch(authPath('/auth/me', '/v1/me'), { headers: getAuthHeaders() });
   await assertOk(res);
   return res.json();
 }
 
 export async function logout() {
   try {
-    await fetch(`${API_BASE}/v1/logout`, { method: 'POST', headers: getAuthHeaders() });
+    await fetch(authPath('/auth/logout', '/v1/logout'), { method: 'POST', headers: getAuthHeaders() });
   } catch (_) {}
   localStorage.removeItem('genesis_token');
 }
@@ -68,7 +81,7 @@ export function isAuthenticated(): boolean {
 }
 
 export async function fetchCredits(): Promise<number | null> {
-  const res = await fetch(`${API_BASE}/v1/credits`, { headers: getAuthHeaders() });
+  const res = await fetch(authPath('/credits/balance', '/v1/credits'), { headers: getAuthHeaders() });
   await assertOk(res);
   const data = await res.json();
   return data.credits ?? null;
@@ -248,7 +261,7 @@ export async function selecionarZona(analiseId: string | number, zona: 'A' | 'B'
 export async function consumeCredits(type: string, idempotencyKey?: string): Promise<{ success: boolean; credits?: number; error?: string }> {
   const body: Record<string, string> = { type };
   if (idempotencyKey) body.idempotency_key = idempotencyKey;
-  const res = await fetch(`${API_BASE}/v1/credits/consume/${type}`, {
+  const res = await fetch(authPath(`/credits/consume/${type}`, `/v1/credits/consume/${type}`), {
     method: 'POST',
     headers: getAuthHeaders(),
     body: JSON.stringify(body),
