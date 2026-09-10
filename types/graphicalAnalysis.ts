@@ -269,19 +269,18 @@ export interface ExecutionCandidateSetup {
   // item 13.7: strings prontas ("1:%.2f"), mesma doutrina de TargetRiskReward acima.
   rr_bruto_exibir: string | null;
   rr_liquido_exibir: string | null;
-  // Spec genesis-v6-10-implementacao (Fase 9, item 9.2, doc §9.2): R:R combinado dos três alvos
-  // pelas parciais configuradas (ExecucaoService::calcularRrLiquidoCombinado()) — é o número que o
-  // cabeçalho (BlocoConviccaoQualidade) exibe agora, não mais rr_liquido_estimado (TP1 isolado,
-  // que continua existindo aqui e em rr_por_alvo.tp1, sem mudança).
-  rr_liquido_combinado: number | null;
-  rr_liquido_combinado_exibir: string | null;
-  rr_liquido_combinado_abaixo_do_minimo: boolean;
-  parciais_alvo: Record<string, number>;
+  // Hotfix V6.11 final (spec genesis-v6-11-hotfix-final, Fase 3, item P0.10, 10/09/2026):
+  // rr_liquido_combinado/rr_liquido_combinado_exibir/rr_liquido_combinado_abaixo_do_minimo/
+  // parciais_alvo (spec genesis-v6-10-implementacao, Fase 9, item 9.2) foram REMOVIDOS — decisão
+  // de produto. Cada alvo mostra exclusivamente o próprio R:R (rr_por_alvo.tp1/tp2/tp3).
   rr_aviso: string | null;
   rr_minimo_referencia: number | null;
   rr_abaixo_do_minimo: boolean;
   custos_bps: Record<string, number>;
   entrada_ts: string;
+  // Hotfix V6.11 final (Fase 4, item P0.9): plan_a_risk_notes/plan_b_entry_notes da decisão,
+  // mesclados em entry_notes por AnalysisPersistenceService — mesmo campo pros dois planos.
+  entry_notes: string | null;
   // item 13.6: UNAVAILABLE — os 4 fatores aparecem sempre agora, nunca somem por falta de insumo.
   qualidade_entrada: { fator: string; avaliacao: 'BOM' | 'MEDIO' | 'RUIM' | 'UNAVAILABLE'; detalhe: string }[] | null;
   // V6.7 (A-13): campos novos do contrato do stop.
@@ -480,12 +479,9 @@ export interface ExecutionPlanoSetup {
   // item 13.7: strings prontas ("1:%.2f"), mesma doutrina de TargetRiskReward acima.
   rr_bruto_exibir: string | null;
   rr_liquido_exibir: string | null;
-  // Spec genesis-v6-10-implementacao (Fase 9, item 9.2, doc §9.2): mesmo contrato de
-  // ExecutionCandidateSetup acima.
-  rr_liquido_combinado: number | null;
-  rr_liquido_combinado_exibir: string | null;
-  rr_liquido_combinado_abaixo_do_minimo: boolean;
-  parciais_alvo: Record<string, number>;
+  // Hotfix V6.11 final (spec genesis-v6-11-hotfix-final, Fase 3, item P0.10, 10/09/2026): mesmo
+  // contrato de ExecutionCandidateSetup acima — os quatro campos de R:R combinado (spec
+  // genesis-v6-10-implementacao, Fase 9, item 9.2) foram REMOVIDOS.
   rr_aviso: string | null;
   rr_minimo_referencia: number | null;
   rr_abaixo_do_minimo: boolean;
@@ -514,8 +510,14 @@ export interface ExecutionPlanoSetup {
   zona_ate: number | null;
   fonte: string | null;
   descricao: string | null;
+  // Spec genesis-v6-11-correcao-tecnica (Fase 3, item 3.6): gatilho declarado pela IA, verificado
+  // pelo backend contra vela fechada (PlanoBService::gerar()) — null no Plano A (só existe pro B).
+  trigger: { tipo: string | null; nivel: number | null; descricao: string | null; estado: 'ATINGIDO' | 'AGUARDANDO'; verificacao: unknown } | null;
   custos_bps: Record<string, number>;
   entrada_ts: string | null;
+  // Hotfix V6.11 final (Fase 4, item P0.9): plan_a_risk_notes/plan_b_entry_notes da decisão,
+  // mesclados em entry_notes por AnalysisPersistenceService — mesmo campo pros dois planos.
+  entry_notes: string | null;
   // V6.5 (G15): 4 fatores de LOCALIZAÇÃO de QualidadeEntradaService — null quando não computado
   // (hoje, sempre null no Plano B: ver ExecucaoService.php).
   // item 13.6: UNAVAILABLE — os 4 fatores aparecem sempre agora, nunca somem por falta de insumo.

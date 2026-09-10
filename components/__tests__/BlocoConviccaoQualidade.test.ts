@@ -1,11 +1,11 @@
 /**
- * V6.8 (CODE-P1-11, spec genesis-v6-8-correcao-tecnica) — a nota de custos ("não considera taxas,
- * spread e slippage") migrou da legenda do líquido para a do bruto. Determinação do PO: nenhuma
- * mudança de layout/hierarquia/cor/ordem — só duas linhas de legenda trocando de lugar. Sem
- * `@testing-library/react` neste projeto (nenhum outro componente é renderizado em teste, ver
- * `services/__tests__/integration.e2e.test.ts` para o mesmo padrão de asserção sobre texto-fonte),
- * este teste confere o arquivo-fonte diretamente — é exatamente o critério de aceite literal do
- * manual do PO (`grep -c "líquido (taxas" ... retorna 0`).
+ * Hotfix V6.11 final (spec genesis-v6-11-hotfix-final, Fase 3, item P0.10, 10/09/2026): a coluna
+ * "Risco e retorno" (R:R combinado dos três alvos, bruto/líquido, esquema de parciais) foi
+ * REMOVIDA por completo deste componente — decisão de produto. Este arquivo testava exatamente
+ * esse bloco (bruto x líquido, legenda "combinado, líquido", esquema de parciais); reescrito para
+ * provar a ausência dele e que o componente volta a ser só sobre Qualidade da entrada.
+ * Sem `@testing-library/react` neste projeto — mesmo padrão de asserção sobre texto-fonte do
+ * resto da suíte.
  */
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
@@ -16,45 +16,34 @@ const fonte = readFileSync(
   'utf-8',
 );
 
-describe('BlocoConviccaoQualidade — bloco de risco e retorno (bruto x líquido)', () => {
-  it('a nota de custos não está mais na legenda do líquido', () => {
-    expect(fonte).not.toContain('líquido (taxas');
+describe('BlocoConviccaoQualidade — bloco de risco e retorno removido (P0.10)', () => {
+  it('não recebe mais nenhuma prop de R:R', () => {
+    expect(fonte).not.toContain('rrExibir');
+    expect(fonte).not.toContain('rrBrutoExibir');
+    expect(fonte).not.toContain('rrMinimo');
+    expect(fonte).not.toContain('rrAbaixoDoMinimo');
   });
 
-  it('a nota de custos está na legenda do bruto', () => {
-    expect(fonte).toContain('bruto (não considera taxas, spread e slippage)');
+  it('não referencia mais o esquema de parciais', () => {
+    expect(fonte).not.toContain('parciaisAlvo');
+    expect(fonte).not.toContain('formatarEsquemaDeParciais');
+    expect(fonte).not.toContain('parciais_alvo');
   });
 
-  // Spec genesis-v6-10-implementacao (Fase 9, item 9.2, doc §9.2): o número que rrExibir carrega
-  // deixou de ser o R:R líquido do TP1 isolado — agora é o combinado dos três alvos (parciais
-  // configuráveis). A legenda ao lado precisa dizer isso, não mais "líquido" sozinho (que seria
-  // enganoso: parece o líquido de UM alvo, quando é uma combinação de três).
-  // Spec genesis-v6-11-correcao-tecnica (Fase 4, item 4.9): a legenda dizia só "combinado", sem
-  // deixar claro que o número já é LÍQUIDO (com custo) — ao lado do bruto (rrBrutoExibir), que não
-  // tem essa distinção. "combinado, líquido" resolve as duas exigências ao mesmo tempo: continua
-  // combinado (não é o líquido de um alvo só, a preocupação da V6.10), e agora deixa claro que é
-  // líquido (a lacuna que a V6.11 corrigiu) — não é uma reversão da V6.10, é as duas juntas.
-  it('a legenda do número principal diz "combinado, líquido"', () => {
-    expect(fonte).toContain('<span className="text-[9px] text-gray-500">combinado, líquido</span>');
+  it('a legenda "combinado, líquido" não existe mais', () => {
+    expect(fonte).not.toContain('combinado, líquido');
   });
 
-  it('mostra o esquema de parciais que originou o número combinado, quando o backend populou', () => {
-    expect(fonte).toContain('parciaisAlvo');
-    expect(fonte).toContain('formatarEsquemaDeParciais');
+  it('o aviso de R/R abaixo do mínimo não existe mais neste bloco', () => {
+    expect(fonte).not.toContain('cuidado, risco retorno abaixo do recomendado');
   });
 
-  it('o aviso de R/R abaixo do mínimo continua no mesmo lugar (fallback não mudou)', () => {
-    expect(fonte).toContain('cuidado, risco retorno abaixo do recomendado');
-  });
-
-  // V6.9 pacote final (spec genesis-v6-9-pacote-final, Fase 13, item 13.7, doc §18): rr/rrBruto
-  // (número) viraram rrExibir/rrBrutoExibir (string pronta do backend) — asserção atualizada pro
-  // novo nome de prop, mesmo critério de ordem (bruto antes do líquido no JSX).
-  it('layout, ordem e classes do bloco não mudaram — bruto continua antes do líquido no JSX', () => {
-    const indiceBruto = fonte.indexOf('rrBrutoExibir != null');
-    const indiceLiquido = fonte.indexOf('{rrExibir != null && (');
-    expect(indiceBruto).toBeGreaterThan(-1);
-    expect(indiceLiquido).toBeGreaterThan(-1);
-    expect(indiceBruto).toBeLessThan(indiceLiquido);
+  it('Props só tem fatores e direcao', () => {
+    const inicio = fonte.indexOf('interface Props');
+    const fim = fonte.indexOf('}', inicio);
+    const bloco = fonte.slice(inicio, fim);
+    expect(bloco).toContain('fatores: FatorQualidadeEntrada[]');
+    expect(bloco).toContain("direcao: 'LONG' | 'SHORT'");
+    expect(bloco).not.toContain('rr');
   });
 });

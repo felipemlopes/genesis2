@@ -178,6 +178,9 @@ export interface CandidateSetup {
   capital_base_usd: number | null;
   margem_comprometida_usd: number | null;
   margem_comprometida_pct_capital: number | null;
+  // Hotfix V6.11 final (spec genesis-v6-11-hotfix-final, Fase 4, item P0.9, 10/09/2026):
+  // plan_a_risk_notes da decisão, mesclado em entry_notes por AnalysisPersistenceService.
+  entry_notes: string | null;
 }
 
 // V6.5 (E08): Plano A e Plano B chegavam com formatos diferentes — CandidateSetup completo para A,
@@ -265,6 +268,13 @@ export interface PlanoSetup {
   verificacao: 'SEGURO' | 'INSEGURO' | null;
   verificacao_motivo: string | null;
   liquidacao_classificacao: 'LIQ_ANTES_DO_STOP' | 'LIQ_FOLGA_CURTA' | null;
+  // Hotfix V6.11 final (spec genesis-v6-11-hotfix-final, Fase 4, item P0.9, 10/09/2026):
+  // plan_a_risk_notes/plan_b_entry_notes da decisão, mesclados em entry_notes por
+  // AnalysisPersistenceService — mesmo campo pros dois planos.
+  entry_notes: string | null;
+  // Spec genesis-v6-11-correcao-tecnica (Fase 3, item 3.6): gatilho declarado pela IA, verificado
+  // pelo backend contra vela fechada (PlanoBService::gerar()) — null no Plano A.
+  trigger: { tipo: string | null; nivel: number | null; descricao: string | null; estado: 'ATINGIDO' | 'AGUARDANDO'; verificacao: unknown } | null;
 }
 
 export interface GenesisAnalysisResult {

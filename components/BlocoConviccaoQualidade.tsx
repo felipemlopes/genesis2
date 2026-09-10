@@ -16,6 +16,12 @@ import { Check, Minus, X, HelpCircle } from 'lucide-react';
  * topo de AnalysisResult.tsx (com o mesmo faixaDeConviccao()), a duplicação que a doutrina G15
  * original já pretendia evitar. Risco e retorno passa a ser a única coluna, grid-cols-2 →
  * grid-cols-1.
+ *
+ * Hotfix V6.11 final (spec genesis-v6-11-hotfix-final, Fase 3, item P0.10, 10/09/2026): a coluna
+ * "Risco e retorno" (R:R combinado dos três alvos, spec genesis-v6-10-implementacao Fase 9 item
+ * 9.2) foi REMOVIDA por completo — decisão de produto. Cada alvo mostra exclusivamente o próprio
+ * R:R nos cards de TP1/TP2/TP3 (AnalysisResult.tsx, rrPorAlvo.tp1/tp2/tp3); este bloco volta a ser
+ * só sobre Qualidade da entrada.
  */
 
 // V6.9 pacote final (spec genesis-v6-9-pacote-final, Fase 13, item 13.6, doc §18): achado real —
@@ -33,25 +39,6 @@ export interface FatorQualidadeEntrada {
 }
 
 interface Props {
-  // V6.9 pacote final (spec genesis-v6-9-pacote-final, Fase 13, item 13.7, doc §18): achado real —
-  // este componente fazia seu próprio `rr.toFixed(2)`/`rrBruto.toFixed(2)`, uma segunda origem de
-  // formatação além do backend (ExecucaoService::formatarRrExibir()) — mesmo padrão de risco já
-  // eliminado em outros pontos da tela (canonicalMoney.ts, Fase 11). Agora recebe as strings
-  // prontas ("1:%.2f") direto do payload, nunca reconstrói.
-  rrExibir: string | null;
-  rrBrutoExibir?: string | null;
-  // V6.6 (F01, DF-02): risco e retorno passa a existir só aqui — dentro do mínimo, mostra só o
-  // número; abaixo do mínimo, o número ganha a observação entre parênteses. rrMinimo/rrAbaixoDoMinimo
-  // vêm prontos do backend (rr_minimo_referencia/rr_abaixo_do_minimo, ver E04) — nunca recalculados.
-  // rrMinimo continua número puro (não string pronta): é config fixo (genesis.rr_minimo), uma
-  // única fonte, sem o risco de duas formatações divergentes que motivou o resto desta mudança.
-  rrMinimo?: number | null;
-  rrAbaixoDoMinimo?: boolean;
-  // Spec genesis-v6-10-implementacao (Fase 9, item 9.2, doc §9.2): rrExibir agora é o R:R
-  // COMBINADO dos três alvos (parciais configuráveis) — "o esquema de parciais aparece na tela,
-  // para o membro saber de onde saiu o número". null quando o backend não populou (decisão
-  // antiga/cacheada anterior a esta fase); nesse caso a legenda simplesmente não aparece.
-  parciaisAlvo?: Record<string, number> | null;
   fatores: FatorQualidadeEntrada[];
   direcao: 'LONG' | 'SHORT';
 }
@@ -74,7 +61,9 @@ const COR: Record<AvaliacaoFator, string> = {
 // eram ruins, "são favoráveis" nos outros casos) e o bloco vazio citava "os quatro fatores" mesmo
 // quando só existiam três (contagem sempre dinâmica em produção, nunca fixa em quatro). Gramática
 // única e contagem dinâmica, mesmo texto para qualquer combinação de fatores.
-const montarConclusao = (rrExibir: string | null, fatores: FatorQualidadeEntrada[]): string => {
+// Hotfix V6.11 final (item P0.10): não cita mais o R:R (combinado, removido) — só os fatores de
+// localização, que são o que este bloco de fato mede.
+const montarConclusao = (fatores: FatorQualidadeEntrada[]): string => {
   const total = fatores.length;
 
   if (total === 0) {
@@ -85,79 +74,12 @@ const montarConclusao = (rrExibir: string | null, fatores: FatorQualidadeEntrada
   const plural = total === 1 ? 'fator' : 'fatores';
   const verbo = favoraveis === 1 ? 'é favorável' : 'são favoráveis';
 
-  const base = `${favoraveis} de ${total} ${plural} de localização ${verbo} a este preço de entrada`;
-  const comRr = rrExibir !== null ? `${base}, com R:R de ${rrExibir}` : base;
-
-  return `${comRr}. A decisão é sua.`;
+  return `${favoraveis} de ${total} ${plural} de localização ${verbo} a este preço de entrada. A decisão é sua.`;
 };
 
-// Item 9.2 (doc §9.2): "50% TP1 + 30% TP2 + 20% TP3" — a ordem segue tp1/tp2/tp3 sempre, não a
-// ordem de inserção do objeto (que o backend não garante).
-const ORDEM_ALVO = ['tp1', 'tp2', 'tp3'] as const;
-const ROTULO_ALVO: Record<string, string> = { tp1: 'TP1', tp2: 'TP2', tp3: 'TP3' };
-const formatarEsquemaDeParciais = (parciaisAlvo: Record<string, number> | null | undefined): string | null => {
-  if (!parciaisAlvo) return null;
-  const partes = ORDEM_ALVO
-    .filter((chave) => parciaisAlvo[chave] != null)
-    .map((chave) => `${Math.round(parciaisAlvo[chave] * 100)}% ${ROTULO_ALVO[chave]}`);
-
-  return partes.length > 0 ? partes.join(' + ') : null;
-};
-
-export const BlocoConviccaoQualidade: React.FC<Props> = ({ rrExibir, rrBrutoExibir, rrMinimo, rrAbaixoDoMinimo, parciaisAlvo, fatores, direcao }) => (
+export const BlocoConviccaoQualidade: React.FC<Props> = ({ fatores, direcao }) => (
   <section className="bg-black/40 rounded-lg p-[16px] border border-white/[0.05] relative z-10 mb-5">
-    <div className="grid grid-cols-1 gap-4 mb-4">
-      <div>
-        <span className="text-[9px] font-bold text-gray-500 uppercase tracking-wider">Risco e retorno</span>
-        {/* V6.7 (C-26): bruto e líquido lado a lado, cada um rotulado — nenhum dos dois some. */}
-        <div className="mt-0.5 space-y-0.5">
-          {rrExibir == null && rrBrutoExibir == null ? (
-            <span className="text-sm text-gray-500">sem alvo ancorado em barreira real</span>
-          ) : (
-            <>
-              {rrBrutoExibir != null && (
-                <div className="flex items-baseline gap-1.5 flex-wrap">
-                  <strong className="text-sm font-mono text-gray-300">{rrBrutoExibir}</strong>
-                  {/* V6.8 (CODE-P1-11, Adendo A.2, determinação do PO): a observação sobre custos
-                      sai do líquido e vem para o bruto. "Líquido" já significa, por definição,
-                      valor com tudo descontado — a legenda ali só repetia a palavra. Quem precisa
-                      de explicação é o bruto: o membro vê 1:0,72 acima de 1:0,65 e a legenda diz
-                      por quê. */}
-                  <span className="text-[9px] text-gray-500">bruto (não considera taxas, spread e slippage)</span>
-                </div>
-              )}
-              {rrExibir != null && (
-                <>
-                  {/* Spec genesis-v6-11-correcao-tecnica (Fase 4, item 4.12): "85 CONVICÇÃO FORTE"
-                      ocupava o topo em corpo grande (text-4xl, AnalysisResult.tsx), enquanto
-                      qualidade/R:R — o outro eixo, igualmente correto e igualmente decisivo —
-                      ficava em corpo pequeno de rodapé. Os dois eixos continuam existindo e
-                      corretos; o que muda é peso visual: o R:R sobe para perto do destaque do
-                      número de convicção. Nada de layout/interação muda (botão continua ativo,
-                      qualidade continua em texto, nunca porcentagem). */}
-                  <div className="flex items-baseline gap-2 flex-wrap">
-                    <strong className="text-3xl font-mono text-white">{rrExibir}</strong>
-                    <span className="text-[9px] text-gray-500">combinado, líquido</span>
-                    {rrAbaixoDoMinimo && (
-                      <span className="text-[10px] text-amber-500">
-                        (cuidado, risco retorno abaixo do recomendado, 1:{(rrMinimo ?? 0).toFixed(2)})
-                      </span>
-                    )}
-                  </div>
-                  {/* Item 9.2 (doc §9.2): "O esquema de parciais aparece na tela, para o membro
-                      saber de onde saiu o número" — só quando o backend populou (decisão nova). */}
-                  {formatarEsquemaDeParciais(parciaisAlvo) && (
-                    <span className="text-[9px] text-gray-500 block">{formatarEsquemaDeParciais(parciaisAlvo)}</span>
-                  )}
-                </>
-              )}
-            </>
-          )}
-        </div>
-      </div>
-    </div>
-
-    <div className="border-t border-white/[0.05] pt-3">
+    <div>
       {/* Item 4.12: cabeçalho e itens sobem de tamanho junto do R:R acima — mesmo eixo de
           hierarquia visual, sem virar porcentagem nem mudar layout/interação. */}
       <h4 className="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-2">
@@ -180,7 +102,7 @@ export const BlocoConviccaoQualidade: React.FC<Props> = ({ rrExibir, rrBrutoExib
     </div>
 
     <p className="text-[10px] text-gray-500 mt-3 pt-3 border-t border-white/[0.05]">
-      {montarConclusao(rrExibir, fatores)}
+      {montarConclusao(fatores)}
     </p>
   </section>
 );

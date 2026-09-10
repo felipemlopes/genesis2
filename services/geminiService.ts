@@ -289,6 +289,9 @@ const emptyCandidateSetup: CandidateSetup = {
   capital_base_usd: null,
   margem_comprometida_usd: null,
   margem_comprometida_pct_capital: null,
+  // Hotfix V6.11 final (spec genesis-v6-11-hotfix-final, Fase 4, item P0.9, 10/09/2026): campo
+  // novo do contrato — placeholder também precisa dele.
+  entry_notes: null,
 };
 
 // Adaptador (2026-07-27): traduz a resposta do motor V6.4 (rota /v1/graphical-analysis) para o

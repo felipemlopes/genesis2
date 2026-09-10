@@ -68,20 +68,12 @@ const BIAS_LABEL: Record<string, string> = {
   MIXED: 'MISTO',
 };
 
-// A8 (V6.9): manchete deixa de ser fixa "Plano não recomendado" — quando existe um alvo posterior
-// (TP2/TP3) que já atende o R/R mínimo, nomeia esse alvo em vez de soar como reprovação total do
-// plano (execution.alvo_que_atende, ExecucaoService::primeiroAlvoAcimaDoMinimo() no backend).
-// Spec genesis-v6-10-implementacao (Fase 9, item 9.3, doc §9.3): quando NENHUM alvo isolado atinge
-// o mínimo (nem TP1 nem um posterior — o caso que ainda caía no fallback "Plano não recomendado"),
-// o rótulo passa a descrever o plano pelo R:R combinado real (item 9.2), nunca mais um veredito
-// "não recomendado" — achado real do documento: um plano com TP2 pagando 1:0,63 e stop bem
-// colocado não é reprovado, é um plano de R:R modesto. O botão continua ativo nos dois casos
-// (podeInteragir nunca depende de recommendedAtivo, ver bloco condicional abaixo).
-const manchetePlano = (alvoQueAtende: string | null | undefined, rrCombinadoExibir: string | null | undefined): string => {
-  if (alvoQueAtende) return `Plano atende o ${alvoQueAtende}`;
-
-  return rrCombinadoExibir ? `Plano de risco-retorno combinado ${rrCombinadoExibir}` : 'Plano de risco-retorno modesto';
-};
+// Hotfix V6.11 final (spec genesis-v6-11-hotfix-final, Fase 3/4, itens P0.10/P0.11, 10/09/2026):
+// a manchete não cita mais um alvo posterior (P0.11 aposentou "o alvo que atende" — nenhum TP
+// posterior "conserta" o TP1) nem o R:R combinado (P0.10 removeu o número agregado do cabeçalho —
+// decisão de produto). O motivo real (motivoAtivo, exibido logo abaixo) já explica o porquê; a
+// manchete fica genérica de propósito, sem fabricar uma leitura mais favorável que os números.
+const manchetePlano = (): string => 'Plano fora dos critérios recomendados';
 
 // G12 (V6.9): Fear & Greed chegava só como número (0-100), sem a faixa qualitativa que dá
 // significado a ele (a maioria dos membros não decora os limiares do índice de cor).
@@ -254,9 +246,16 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, onSaveTrade, onRe
 
   // V6.5 (E02): renomeado de isOperavel — antes, RR baixo ou convicção baixa também zeravam
   // execution.executable (bloqueio total). Agora executable só significa "a matemática fechou";
-  // podeInteragir continua definido por execution.executable + execution.action, mas isso já não
-  // inclui mais RR/convicção baixos, que viram aviso (temAviso) em vez de bloqueio.
-  const podeInteragir = execution.executable && execution.action !== null;
+  // esta flag continua definida por execution.action (execution.executable e action!==null são a
+  // mesma condição — ExecucaoService::montar() só popula 'action' quando 'executable' é true), o
+  // que já não inclui mais RR/convicção baixos, que viram aviso (temAviso) em vez de bloqueio.
+  // Hotfix V6.11 final (spec genesis-v6-11-hotfix-final, Fase 4, item P0.13, 10/09/2026): renomeado
+  // de podeInteragir — passa a gatear só a SELEÇÃO de plano (trocar entre A/B pra ver a
+  // configuração). Confirmar posição é uma pergunta diferente (podeConfirmarPosicao, abaixo, exige
+  // também o plano ativo completo e — no Plano B — o gatilho já ter sido atingido); antes as duas
+  // perguntas eram a mesma flag, permitindo em tese "confirmar" um Plano B que ainda nem existe
+  // (entrada/stop/TP nulos) ou cujo gatilho ainda está aguardando.
+  const podeSelecionarPlano = execution.action !== null;
 
   const direction = analysis.direction;
   const isLong = direction === 'LONG';
@@ -271,19 +270,46 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, onSaveTrade, onRe
 
   // V6.5 (E08): antes só a 'entrada' trocava ao selecionar o Plano B — stop/TP1-3/RR/alavancagem/
   // liquidação/tamanho/invalidação continuavam mostrando os números do Plano A, mesmo com "Plano B"
-  // selecionado na tela. planoAtivo troca TODOS os 9 campos juntos, lendo de execution.planos[]
-  // (formato completo e independente pros dois planos) — cai em candidate_setup só se a resposta for
-  // de uma decisão cacheada antes deste campo existir (planos ausente/vazio).
-  const planos = execution.planos ?? [];
-  const planoAtivo = planos.find((p) => p.plano === zonaEfetiva)
-    || planos.find((p) => p.plano === 'A')
-    || planos[0]
-    || null;
+  // selecionado na tela.
+  // Hotfix V6.11 final (spec genesis-v6-11-hotfix-final, Fase 4, item P0.12, 10/09/2026): antes,
+  // quando a zona efetiva não era encontrada em planos[], o fallback caía em
+  // `planos.find(p => p.plano === 'A') || planos[0]` — um Plano B ausente/incompleto podia
+  // silenciosamente resolver pro Plano A, ou pro primeiro plano do array, sem nenhum aviso.
+  // Cada plano agora é resolvido isoladamente (null quando ausente) e planoAtivo é EXATAMENTE um
+  // dos dois, nunca um terceiro fallback cruzado. legacyMode (decisão cacheada antes de
+  // execution.planos[] existir, planos ausente/vazio) é o ÚNICO caso em que o Plano A cai em
+  // candidate_setup — nunca o Plano B, que não existia nesse formato antigo.
+  const planos = Array.isArray(execution.planos) ? execution.planos : [];
+  const legacyMode = planos.length === 0;
+  const planoADados = planos.find((p) => p.plano === 'A') ?? (legacyMode ? setup : null);
   const planoBDados = planos.find((p) => p.plano === 'B') ?? null;
+  const planoAtivo = zonaEfetiva === 'B' ? planoBDados : planoADados;
+
+  // Hotfix V6.11 final (item P0.13): "selecionar plano" (ver a configuração) e "confirmar posição"
+  // (gravar a entrada) são perguntas diferentes. O membro pode clicar no Plano B pra estudar a
+  // configuração mesmo enquanto o gatilho está aguardando — mas não pode confirmar uma entrada B
+  // que ainda não aconteceu, nem confirmar um plano que não existe (dados nulos, decisão cacheada
+  // antiga ou Plano B indisponível nesta análise — planoAtivo === null nesses casos).
+  // `Number.isFinite(Number(x))` (em vez de `x != null`) é deliberado: `Number(null)` é `0`
+  // (finito), então um campo null dentro de um plano que EXISTE (ex.: stop indisponível,
+  // STOP_UNAVAILABLE) não derruba este check sozinho — preserva DP-03 (execução nunca bloqueia por
+  // dado ausente/recomendação, só por o plano em si não existir). Só `undefined` (chave que nem
+  // veio no objeto) reprova de verdade.
+  const planoAtivoCompleto = !!planoAtivo
+    && Number.isFinite(Number(planoAtivo.entrada))
+    && Number.isFinite(Number(planoAtivo.stop))
+    && Number.isFinite(Number(planoAtivo.tp1));
+  // planoBDados (execution.planos[], fonte única per P0.12) — não o `planoB` bruto abaixo
+  // (execution.planoB, saída direta de PlanoBService::gerar() antes de virar linha do array). Os
+  // dois carregam o mesmo trigger.estado hoje, mas planoBDados é a fonte que este hotfix já usa
+  // pra tudo o mais do Plano B — usar outra aqui reabriria a mesma inconsistência que P0.12 fecha.
+  const gatilhoBPronto = zonaEfetiva !== 'B' || planoBDados?.trigger?.estado === 'ATINGIDO';
+  const podeConfirmarPosicao = podeSelecionarPlano && planoAtivoCompleto && gatilhoBPronto;
+
   // V6.9 pacote final (spec genesis-v6-9-pacote-final, Fase 11, item 11.7, doc §16): tick real do
   // contrato (PriceNormalizer, backend) — mesmo tick pro par inteiro, reaproveitado em toda
   // formatação de PREÇO desta análise (entrada/stop/TP/EMAs/etc.), não só no plano ativo.
-  const tickDecimals = planoAtivo?.tick_decimals ?? setup?.tick_decimals ?? null;
+  const tickDecimals = planoAtivo?.tick_decimals ?? null;
   // V6.5 (G02): zona_de/zona_ate chegam numéricos agora (antes vinham embutidos na frase de
   // 'descricao', sem separador de milhar) — formatados aqui, junto do texto qualitativo do backend.
   const planoBDescricaoCompleta = (() => {
@@ -298,13 +324,13 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, onSaveTrade, onRe
   // unidade da quantidade ("0.05 BTCUSDT" — errado, a unidade real é só o ativo base, BTC). Backend
   // agora só devolve os números; a frase é montada aqui.
   const tamanhoSugeridoTexto = (() => {
-    const nocional = planoAtivo?.nocional_estimado ?? setup?.nocional_estimado;
-    const quantidadeBase = planoAtivo?.quantidade_base_estimada ?? setup?.quantidade_base_estimada;
-    const ativoBase = planoAtivo?.ativo_base ?? setup?.ativo_base;
-    const riscoUsd = planoAtivo?.risco_usd_estimado ?? setup?.risco_usd_estimado;
+    const nocional = planoAtivo?.nocional_estimado;
+    const quantidadeBase = planoAtivo?.quantidade_base_estimada;
+    const ativoBase = planoAtivo?.ativo_base;
+    const riscoUsd = planoAtivo?.risco_usd_estimado;
     // D7 (V6.9): renomeado de 'risco_margem_pct' — sempre foi risco sobre o capital-base (saldo
     // total), não sobre a margem desta posição. Texto atualizado pra dizer o nome certo.
-    const riscoPctCapitalBase = planoAtivo?.risco_pct_capital_base ?? setup?.risco_pct_capital_base;
+    const riscoPctCapitalBase = planoAtivo?.risco_pct_capital_base;
     if (nocional == null || quantidadeBase == null || !ativoBase) return null;
     // V6.9 pacote final (Fase 11, item 11.7): nocional/risco são valores em DÓLAR, não preço de
     // ativo — usd() (sempre 2 casas), nunca price() (casas do tick do ativo).
@@ -316,7 +342,7 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, onSaveTrade, onRe
   // V6.9 pacote final (spec genesis-v6-9-pacote-final, Fase 11, item 11.8, doc §16): risco-retorno
   // por alvo chega pronto do backend (ExecucaoService::calcularRrPorAlvo(), TP2/TP3 incluídos) —
   // utils/riscoRetorno.ts (recálculo local, sem validação de lado do alvo) apagado.
-  const rrPorAlvo = planoAtivo?.rr_por_alvo ?? setup?.rr_por_alvo ?? null;
+  const rrPorAlvo = planoAtivo?.rr_por_alvo ?? null;
 
   const badgeColor = isLong ? 'text-genesis-positive' : isShort ? 'text-genesis-negative' : 'text-yellow-500';
   const progressColor = isLong ? 'bg-genesis-positive' : isShort ? 'bg-genesis-negative' : 'bg-yellow-500/60';
@@ -330,8 +356,13 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, onSaveTrade, onRe
   // validade" (rótulo antigo, de antes do G02 existir, que sobrou descrevendo um campo que já não
   // é mais sobre tese). "Invalidação da tese" de verdade é um conceito PRÓPRIO agora
   // (invalidacaoTese, abaixo), nunca mais confundido com este.
-  const invalidacaoDirecao = planoAtivo?.invalidacao_direcao ?? execution.zonaInteresse?.invalidacao_direcao ?? null;
-  const invalidacaoNivel = planoAtivo?.invalidacao_nivel ?? execution.zonaInteresse?.invalidacao_nivel ?? null;
+  // Hotfix V6.11 final (item P0.12): fallback pra execution.zonaInteresse REMOVIDO — esse campo
+  // legado é sempre a invalidação do Plano A (calculada uma vez em ExecucaoService::montar(),
+  // nunca por plano); usá-lo como fallback do plano ATIVO reintroduziria a mesma contaminação
+  // cruzada A→B que este item existe pra eliminar. planoADados já cobre o caso legado (planos[]
+  // vazio) por si só, sem precisar deste segundo fallback.
+  const invalidacaoDirecao = planoAtivo?.invalidacao_direcao ?? null;
+  const invalidacaoNivel = planoAtivo?.invalidacao_nivel ?? null;
   const invalidacaoAtiva = invalidacaoDirecao && invalidacaoNivel != null
     ? `O preço nega a entrada com fechamento ${invalidacaoDirecao} de ${formatPrice(invalidacaoNivel, tickDecimals)}.`
     : (publicText(analysis.invalidacao_tese) || null);
@@ -353,20 +384,22 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, onSaveTrade, onRe
 
   // V6.7 (A-14): três estados do stop — troca junto com o plano ativo, mesmo padrão de
   // invalidacaoDirecao/invalidacaoNivel acima.
-  const stopStatusAtivo = planoAtivo?.stop_status ?? setup?.stop_status ?? 'STOP_UNAVAILABLE';
-  const stopAncoraAtiva = planoAtivo?.stop_ancora ?? setup?.stop_ancora ?? null;
-  const stopBufferAtivo = planoAtivo?.stop_buffer ?? setup?.stop_buffer ?? null;
-  const stopMotivoAtivo = planoAtivo?.stop_motivo ?? setup?.stop_motivo ?? null;
+  const stopStatusAtivo = planoAtivo?.stop_status ?? 'STOP_UNAVAILABLE';
+  const stopAncoraAtiva = planoAtivo?.stop_ancora ?? null;
+  const stopBufferAtivo = planoAtivo?.stop_buffer ?? null;
+  const stopMotivoAtivo = planoAtivo?.stop_motivo ?? null;
 
   // V6.9 pacote final (spec genesis-v6-9-pacote-final, Fase 11, item 11.9, doc §16): cada plano
   // tem sua PRÓPRIA recomendação agora (ExecucaoService::montar()/PlanRecommendationService,
   // Fase 8) — antes só existia uma, em execution.recommended/motivo/alvo_que_atende, implicitamente
   // do Plano A, que não trocava ao selecionar o Plano B na tela.
-  const recommendedAtivo = planoAtivo?.recommended ?? setup?.recommended ?? execution.recommended;
-  const motivoAtivo = planoAtivo?.motivo ?? setup?.motivo ?? execution.motivo;
-  const alvoQueAtendeAtivo = planoAtivo?.alvo_que_atende ?? setup?.alvo_que_atende ?? execution.alvo_que_atende;
-  // Item 9.3 (doc §9.3): usado no rótulo (manchetePlano) quando nenhum alvo isolado atinge o mínimo.
-  const rrLiquidoCombinadoExibirAtivo = planoAtivo?.rr_liquido_combinado_exibir ?? setup?.rr_liquido_combinado_exibir ?? null;
+  // Hotfix V6.11 final (item P0.12): fallback pra execution.recommended/motivo REMOVIDO — mesmo
+  // motivo do zonaInteresse acima, esses campos no nível de execution são sempre do Plano A (nunca
+  // recalculados por plano), e cair neles quando o Plano B está ativo reintroduz a contaminação
+  // cruzada que este item elimina. alvoQueAtendeAtivo saiu — hotfix V6.11 final (item P0.11)
+  // aposentou o apontamento de "alvo que atende" (backend sempre devolve null agora).
+  const recommendedAtivo = planoAtivo?.recommended ?? false;
+  const motivoAtivo = planoAtivo?.motivo ?? null;
 
   // R3.2 — Adendo Seção 32: contrato canônico em inglês primeiro, com
   // fallback ao português legado. `execution.motivo` nunca alimenta a
@@ -463,13 +496,13 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, onSaveTrade, onRe
                       a alavancagem inteira da tela) — agora sempre visível quando há um valor calculado.
                       V6.7 (B-17, DP-06): o número exibido é sempre a escolha do membro (o sistema não
                       reduz mais) — o alerta agora significa "acima da faixa segura", não "foi reduzida". */}
-                  {(planoAtivo?.alavancagem ?? setup?.alavancagem) != null && (
+                  {(planoAtivo?.alavancagem) != null && (
                     <span
                       className={`px-3 py-1 rounded bg-white/5 text-xl font-bold font-mono ${badgeColor} inline-flex items-center gap-1.5`}
-                      title={(planoAtivo?.alavancagem_info ?? setup?.alavancagem_info)?.motivo ?? undefined}
+                      title={(planoAtivo?.alavancagem_info)?.motivo ?? undefined}
                     >
-                      {planoAtivo?.alavancagem ?? setup?.alavancagem}x
-                      {(planoAtivo?.alavancagem_info ?? setup?.alavancagem_info)?.excede_seguro && (
+                      {planoAtivo?.alavancagem}x
+                      {(planoAtivo?.alavancagem_info)?.excede_seguro && (
                         <AlertTriangle size={14} className="text-yellow-500" />
                       )}
                     </span>
@@ -572,19 +605,13 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, onSaveTrade, onRe
           {/* V6.5 (G15, Decisão 8 do PO): separa as 3 perguntas que a tela misturava — convicção
               (direção), qualidade da entrada (localização do preço) e risco/retorno — em vez do
               membro ler o número gigante do topo como "operação aprovada". */}
-          {/* Spec genesis-v6-10-implementacao (Fase 9, item 9.2, doc §9.2): cabeçalho mostra o R:R
-              COMBINADO dos três alvos (parciais configuráveis, default 50/30/20), não mais o R:R
-              do TP1 isolado — cada alvo continua com o seu próprio R:R nos cards abaixo
-              (rrPorAlvo.tp1/tp2/tp3), sem mudança. rrAbaixoDoMinimo compara o mesmo número exibido
-              aqui (combinado), nunca o TP1 isolado — evitaria a incoerência de mostrar "1:1,60
-              (abaixo do mínimo)" com o aviso calculado sobre outro número. */}
+          {/* Hotfix V6.11 final (spec genesis-v6-11-hotfix-final, Fase 3, item P0.10, 10/09/2026):
+              o R:R COMBINADO do cabeçalho (spec genesis-v6-10-implementacao, Fase 9, item 9.2) foi
+              REMOVIDO — decisão de produto. Cada alvo mostra exclusivamente o próprio R:R, nos
+              cards de TP1/TP2/TP3 abaixo (rrPorAlvo.tp1/tp2/tp3) — BlocoConviccaoQualidade não
+              recebe mais nenhum prop de R:R. */}
           <BlocoConviccaoQualidade
-            rrExibir={planoAtivo?.rr_liquido_combinado_exibir ?? setup?.rr_liquido_combinado_exibir ?? null}
-            rrBrutoExibir={planoAtivo?.rr_bruto_exibir ?? setup?.rr_bruto_exibir ?? null}
-            rrMinimo={planoAtivo?.rr_minimo_referencia ?? setup?.rr_minimo_referencia ?? null}
-            rrAbaixoDoMinimo={planoAtivo?.rr_liquido_combinado_abaixo_do_minimo ?? setup?.rr_liquido_combinado_abaixo_do_minimo ?? false}
-            parciaisAlvo={planoAtivo?.parciais_alvo ?? setup?.parciais_alvo ?? null}
-            fatores={planoAtivo?.qualidade_entrada ?? setup?.qualidade_entrada ?? []}
+            fatores={planoAtivo?.qualidade_entrada ?? []}
             direcao={direction === 'SHORT' ? 'SHORT' : 'LONG'}
           />
 
@@ -642,22 +669,23 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, onSaveTrade, onRe
         {setup && (
         <>
         {/* V6.7 (C-25): recommended/motivo/reason_code chegavam no payload desde a V6.5 (E02) e
-            nenhum componente lia — SEM_BARREIRA_REAL, RR_LIQUIDO_ABAIXO_MINIMO e
+            nenhum componente lia — SEM_BARREIRA_REAL, RR_LIQUIDO_TP1_ABAIXO_MINIMO e
             CONVICCAO_ABAIXO_MINIMO ficavam invisíveis para o membro. Restrição obrigatória (DP-03/
-            DP-05): este bloco só avisa, nunca desabilita nada — podeInteragir continua amarrado
-            exclusivamente a execution.executable, não a recommendedAtivo.
-            A8 (V6.9): reason_code (código interno tipo "RR_LIQUIDO_ABAIXO_MINIMO") saiu da tela —
-            continua no payload/banco para histórico e estatística, só não é mais exibido. Manchete
-            deixa de ser fixa "Plano não recomendado" quando existe um alvo posterior que já atende
-            o R/R mínimo — manchetePlano() nomeia esse alvo em vez de soar como reprovação total.
-            V6.9 pacote final (Fase 11, item 11.9): recommended/motivo/alvo_que_atende agora vêm do
-            PLANO ATIVO (recommendedAtivo/motivoAtivo/alvoQueAtendeAtivo) — troca junto com A/B, não
-            fica preso ao Plano A quando o membro seleciona o B. */}
+            DP-05): este bloco só avisa, nunca desabilita nada — a seleção de plano continua
+            amarrada exclusivamente a execution.action, não a recommendedAtivo.
+            A8 (V6.9): reason_code (código interno) saiu da tela — continua no payload/banco para
+            histórico e estatística, só não é mais exibido.
+            V6.9 pacote final (Fase 11, item 11.9): recommended/motivo agora vêm do PLANO ATIVO
+            (recommendedAtivo/motivoAtivo) — troca junto com A/B, não fica preso ao Plano A quando
+            o membro seleciona o B.
+            Hotfix V6.11 final (itens P0.10/P0.11): manchetePlano() deixou de nomear um alvo
+            posterior ou citar o R:R combinado (os dois foram removidos) — fica genérica de
+            propósito, o motivo real (motivoAtivo, abaixo) explica o porquê. */}
         {!recommendedAtivo && (
           <div className="bg-amber-950/20 border border-amber-600/30 rounded-lg p-3 mb-6 flex items-start gap-2.5">
             <AlertTriangle size={14} className="text-amber-400 shrink-0 mt-0.5" />
             <div>
-              <p className="text-[11px] font-bold text-amber-300 uppercase tracking-wider mb-1">{manchetePlano(alvoQueAtendeAtivo, rrLiquidoCombinadoExibirAtivo)}</p>
+              <p className="text-[11px] font-bold text-amber-300 uppercase tracking-wider mb-1">{manchetePlano()}</p>
               <p className="text-[11px] text-amber-200/90 leading-relaxed">
                 {publicText(motivoAtivo) || 'Esta configuração não atingiu os limiares recomendados de risco-retorno ou convicção. A decisão de seguir é sua.'}
               </p>
@@ -676,14 +704,14 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, onSaveTrade, onRe
           <div className="bg-[#050505]  rounded-[10px] p-[16px] flex flex-col justify-center items-center text-center relative overflow-hidden cursor-help" title="Distância percentual entre a entrada e o stop — não é quanto do seu saldo está em risco (ver Risco de Capital).">
             <span className="text-[10px] text-gray-500 font-bold uppercase tracking-widest mb-2">Distância até o Stop</span>
             <span className="text-2xl font-mono text-genesis-negative font-bold">
-              {(planoAtivo?.risco_preco_pct ?? setup.risco_preco_pct) != null ? `${planoAtivo?.risco_preco_pct ?? setup.risco_preco_pct}%` : '—'}
+              {(planoAtivo?.risco_preco_pct) != null ? `${planoAtivo?.risco_preco_pct}%` : '—'}
             </span>
           </div>
 
           <div className="bg-[#050505]  rounded-[10px] p-[16px] flex flex-col justify-center items-center text-center col-span-2 md:col-span-1">
             <span className="text-[10px] text-gray-500 font-bold uppercase tracking-widest mb-2">Liquidação</span>
             <span className="text-xl font-mono text-orange-400 font-bold">
-              {(planoAtivo?.liquidacao ?? setup.liquidacao) != null ? formatPrice(Number(planoAtivo?.liquidacao ?? setup.liquidacao), tickDecimals) : '—'}
+              {(planoAtivo?.liquidacao) != null ? formatPrice(Number(planoAtivo?.liquidacao), tickDecimals) : '—'}
             </span>
           </div>
 
@@ -699,14 +727,14 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, onSaveTrade, onRe
             <div className="w-full bg-gray-900 rounded-full h-1.5 mb-2 overflow-hidden">
               <div
                 className="h-full bg-orange-400 opacity-80"
-                style={{ width: `${Math.min(((planoAtivo?.risco_pct_capital_base ?? setup.risco_pct_capital_base ?? 0) / TETO_RISCO) * 100, 100)}%` }}
+                style={{ width: `${Math.min(((planoAtivo?.risco_pct_capital_base ?? 0) / TETO_RISCO) * 100, 100)}%` }}
               />
             </div>
             <span className="text-[9px] font-mono text-gray-400 text-center md:text-left">
               {(() => {
-                const riscoPctCapitalBase = planoAtivo?.risco_pct_capital_base ?? setup.risco_pct_capital_base;
-                const riscoPctMargem = planoAtivo?.risco_pct_margem ?? setup.risco_pct_margem;
-                const riscoUsd = planoAtivo?.risco_usd_estimado ?? setup.risco_usd_estimado;
+                const riscoPctCapitalBase = planoAtivo?.risco_pct_capital_base;
+                const riscoPctMargem = planoAtivo?.risco_pct_margem;
+                const riscoUsd = planoAtivo?.risco_usd_estimado;
                 if (riscoPctCapitalBase == null) return 'Exposição não calculada';
                 const usdSufixo = riscoUsd != null ? ` (${formatUsd(riscoUsd)})` : '';
                 const margemTexto = riscoPctMargem != null ? ` · ${riscoPctMargem.toFixed(1)}% da margem desta posição` : '';
@@ -721,13 +749,13 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, onSaveTrade, onRe
             planejado sem nenhum aviso (sintoma real do documento: $10,00 planejados viram $7,20
             realizados, 28% abaixo, e a tela mostrava só "0,7%" sem nota). Só aparece quando o
             desvio passa de 10% — abaixo disso é ruído normal de arredondamento. */}
-        {(planoAtivo?.risco_desvio_pct ?? setup.risco_desvio_pct) != null && (
+        {(planoAtivo?.risco_desvio_pct) != null && (
           <div className="bg-amber-950/20 border border-amber-600/30 rounded-[10px] p-[16px] mb-6 flex items-start gap-2" title="O arredondamento da quantidade para o lote mínimo negociável do contrato reduziu o risco realizado em relação ao planejado.">
             <AlertTriangle size={14} className="text-amber-400 shrink-0 mt-0.5" />
             <div>
               <p className="text-[11px] font-bold text-amber-300 uppercase tracking-wider mb-1">Risco realizado divergente do planejado</p>
               <p className="text-[11px] text-amber-200/90 leading-relaxed">
-                Planejado: {formatUsd(Number(planoAtivo?.risco_planejado ?? setup.risco_planejado))} · Realizado: {formatUsd(Number(planoAtivo?.risco_real ?? setup.risco_real))} ({(planoAtivo?.risco_desvio_pct ?? setup.risco_desvio_pct)}% de desvio, por causa do arredondamento da quantidade para o lote mínimo negociável).
+                Planejado: {formatUsd(Number(planoAtivo?.risco_planejado))} · Realizado: {formatUsd(Number(planoAtivo?.risco_real))} ({(planoAtivo?.risco_desvio_pct)}% de desvio, por causa do arredondamento da quantidade para o lote mínimo negociável).
               </p>
             </div>
           </div>
@@ -737,22 +765,22 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, onSaveTrade, onRe
             linhas SEMPRE distintas, nunca misturadas na mesma frase — diferente do card "Risco de
             Capital (real)" acima, que mede quanto se PERDE se o stop for atingido; este mede
             quanto está TRAVADO nesta posição agora, independente de o stop ser atingido ou não. */}
-        {(planoAtivo?.capital_base_usd ?? setup.capital_base_usd) != null && (
+        {(planoAtivo?.capital_base_usd) != null && (
           <div className="bg-[#050505]  rounded-[10px] p-[16px] mb-6 grid grid-cols-3 gap-[16px]" title="Capital-base é o seu saldo total informado. Margem comprometida é o que esta posição especificamente trava na corretora (nocional ÷ alavancagem).">
             <div className="text-center">
               <span className="text-[9px] text-gray-500 font-bold uppercase tracking-widest block mb-1">Capital-base</span>
-              <span className="text-sm font-mono text-white font-bold">{formatUsd(planoAtivo?.capital_base_usd ?? setup.capital_base_usd)}</span>
+              <span className="text-sm font-mono text-white font-bold">{formatUsd(planoAtivo?.capital_base_usd)}</span>
             </div>
             <div className="text-center">
               <span className="text-[9px] text-gray-500 font-bold uppercase tracking-widest block mb-1">Margem comprometida</span>
               <span className="text-sm font-mono text-white font-bold">
-                {(planoAtivo?.margem_comprometida_usd ?? setup.margem_comprometida_usd) != null ? formatUsd(planoAtivo?.margem_comprometida_usd ?? setup.margem_comprometida_usd) : '—'}
+                {(planoAtivo?.margem_comprometida_usd) != null ? formatUsd(planoAtivo?.margem_comprometida_usd) : '—'}
               </span>
             </div>
             <div className="text-center">
               <span className="text-[9px] text-gray-500 font-bold uppercase tracking-widest block mb-1">% do capital-base</span>
               <span className="text-sm font-mono text-white font-bold">
-                {(planoAtivo?.margem_comprometida_pct_capital ?? setup.margem_comprometida_pct_capital) != null ? `${(planoAtivo?.margem_comprometida_pct_capital ?? setup.margem_comprometida_pct_capital)!.toFixed(1)}%` : '—'}
+                {(planoAtivo?.margem_comprometida_pct_capital) != null ? `${(planoAtivo?.margem_comprometida_pct_capital)!.toFixed(1)}%` : '—'}
               </span>
             </div>
           </div>
@@ -764,11 +792,11 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, onSaveTrade, onRe
             D1 (V6.9): a mensagem afirmava sempre "sua posição liquida antes do stop" pros dois
             cenários de INSEGURO — mesmo quando o stop seria atingido primeiro (só sem a folga mínima
             de segurança). liquidacao_classificacao distingue os dois casos reais. */}
-        {(planoAtivo?.verificacao ?? setup.verificacao) === 'INSEGURO' && (
+        {(planoAtivo?.verificacao) === 'INSEGURO' && (
           <div className="mb-6 -mt-3 p-3 rounded-md bg-red-950/30 border border-red-500/30 flex items-start gap-2">
             <AlertTriangle size={14} className="text-red-500 shrink-0 mt-0.5" />
             <p className="text-[10px] text-red-400 leading-relaxed">
-              {(planoAtivo?.liquidacao_classificacao ?? setup.liquidacao_classificacao) === 'LIQ_FOLGA_CURTA'
+              {(planoAtivo?.liquidacao_classificacao) === 'LIQ_FOLGA_CURTA'
                 ? 'Nesta alavancagem, o stop deve ser atingido primeiro, mas sem a folga mínima de segurança até a liquidação.'
                 : 'Nesta alavancagem, sua posição liquida antes do stop.'}
             </p>
@@ -808,9 +836,9 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, onSaveTrade, onRe
                 <div className="space-y-3">
                   {/* Plano A */}
                   <button
-                    disabled={!podeInteragir}
+                    disabled={!podeSelecionarPlano}
                     onClick={() => handleZoneSelect('A')}
-                    className={`w-full text-left p-2.5 rounded-lg border transition-all duration-200 ${!podeInteragir ? 'opacity-40 cursor-not-allowed' : ''} ${
+                    className={`w-full text-left p-2.5 rounded-lg border transition-all duration-200 ${!podeSelecionarPlano ? 'opacity-40 cursor-not-allowed' : ''} ${
                       zonaEfetiva === 'A'
                         ? 'bg-genesis-accent/10 border-genesis-accent ring-1 ring-genesis-accent'
                         : 'bg-black/20 border-white/5 hover:border-white/10 hover:bg-black/30'
@@ -818,11 +846,20 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, onSaveTrade, onRe
                   >
                     <div className="flex justify-between items-baseline mb-1">
                       <span className={`text-[10px] font-bold ${zonaEfetiva === 'A' ? 'text-genesis-accent' : 'text-gray-400'}`}>{`Plano A${planoPrimario === 'A' ? ' (Primário)' : ' (Alternativo)'}`}</span>
-                      <span className="font-mono font-bold text-sm text-white">{setup.entrada != null ? formatPrice(Number(setup.entrada), tickDecimals) : '—'}</span>
+                      <span className="font-mono font-bold text-sm text-white">{planoADados?.entrada != null ? formatPrice(Number(planoADados.entrada), tickDecimals) : '—'}</span>
                     </div>
                     <p className="text-[9px] text-gray-400 font-mono tracking-wide leading-tight mt-1">
                       Entrada a mercado no preço analisado.
                     </p>
+                    {/* Hotfix V6.11 final (spec genesis-v6-11-hotfix-final, Fase 4, item P0.9,
+                        10/09/2026): justificativa técnica do Plano A (plan_a_risk_notes da decisão,
+                        mesclada em entry_notes por AnalysisPersistenceService) — antes gerada e
+                        persistida, mas nunca exibida; o card mostrava só a frase fixa acima. */}
+                    {planoADados?.entry_notes && (
+                      <p className="text-[9px] text-gray-400 font-mono tracking-wide leading-tight mt-1">
+                        {publicText(planoADados.entry_notes)}
+                      </p>
+                    )}
                     {/* Spec genesis-v6-11-correcao-tecnica (Fase 3, item 3.5/3.6): a leitura
                         apontava o Plano B como primário e ele não pôde ser montado nesta análise —
                         antes o membro via "Plano A (Primário)" sem nenhum sinal disso. */}
@@ -839,9 +876,9 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, onSaveTrade, onRe
                       duas causas de um total de oito possíveis. */}
                   {planoB?.entrada != null ? (
                     <button
-                      disabled={!podeInteragir}
+                      disabled={!podeSelecionarPlano}
                       onClick={() => handleZoneSelect('B')}
-                      className={`w-full text-left p-2.5 rounded-lg border transition-all duration-200 ${!podeInteragir ? 'opacity-40 cursor-not-allowed' : ''} ${
+                      className={`w-full text-left p-2.5 rounded-lg border transition-all duration-200 ${!podeSelecionarPlano ? 'opacity-40 cursor-not-allowed' : ''} ${
                         zonaEfetiva === 'B'
                           ? 'bg-genesis-accent/10 border-genesis-accent ring-1 ring-genesis-accent'
                           : 'bg-black/20 border-white/5 hover:border-white/10 hover:bg-black/30'
@@ -869,13 +906,16 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, onSaveTrade, onRe
                 </div>
               </div>
 
-              {/* Botão de Confirmação */}
+              {/* Botão de Confirmação — Hotfix V6.11 final (item P0.13): separado da seleção de
+                  plano. O membro pode clicar em A/B pra ver a configuração (podeSelecionarPlano),
+                  mas só confirma quando o plano ativo está completo e — no Plano B — o gatilho já
+                  foi atingido (podeConfirmarPosicao). */}
               <div className="mt-4 pt-3 border-t border-white/5 relative group">
                 <button
-                  disabled={!podeInteragir}
+                  disabled={!podeConfirmarPosicao}
                   onClick={() => { if (onSaveTrade) onSaveTrade(planoAtivo); }}
                   className={`w-full flex items-center justify-center gap-2 py-2 px-3 rounded-md text-xs font-mono uppercase tracking-wider font-bold transition-all duration-[180ms] ${
-                    !podeInteragir
+                    !podeConfirmarPosicao
                       ? 'bg-white/5 text-gray-600 cursor-not-allowed'
                       : 'bg-genesis-accent text-black hover:bg-[#39ff14] hover:text-black hover:shadow-[0_4px_16px_rgba(57,255,20,0.25)] active:scale-[0.98]'
                   }`}
@@ -883,9 +923,9 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, onSaveTrade, onRe
                   <Shield size={14} />
                   {/* Fase 5 (item 5.4): sempre há um plano efetivo pré-selecionado (zonaEfetiva) —
                       "Selecione um Plano" nunca é mais um estado real, só "disponível"/"indisponível". */}
-                  {!podeInteragir ? 'Execução não disponível' : 'Confirmar Posição'}
+                  {!podeConfirmarPosicao ? 'Execução não disponível' : 'Confirmar Posição'}
                 </button>
-                {podeInteragir && (
+                {podeConfirmarPosicao && (
                   <div className="confirmar-alerta absolute bottom-full left-0 z-[9999] flex gap-2 items-start mb-2 max-w-[300px] p-2.5 bg-[#2a2103] border border-[#b45309] rounded-[10px] text-[#fde68a] text-[12.5px] leading-relaxed opacity-0 invisible transition-opacity duration-150 pointer-events-none group-hover:opacity-100 group-hover:visible">
                     <span className="flex-shrink-0 mt-px">⚠️</span>
                     <span>Espera um segundo. Cheque o macro, o geopolítico e o sentimento da moeda no rodapé antes de entrar. O contexto pode reforçar ou enfraquecer esse setup.</span>
@@ -908,9 +948,9 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, onSaveTrade, onRe
                 <div className="flex justify-between items-center group">
                     <span className="text-gray-500 text-[10px] font-bold">TP1</span>
                     <div className="text-right">
-                      <span className="text-genesis-positive font-mono font-bold text-sm bg-genesis-positive/10 px-2 py-0.5 rounded">{(planoAtivo?.tp1 ?? setup.tp1) != null ? formatPrice(Number(planoAtivo?.tp1 ?? setup.tp1), tickDecimals) : '—'}</span>
+                      <span className="text-genesis-positive font-mono font-bold text-sm bg-genesis-positive/10 px-2 py-0.5 rounded">{(planoAtivo?.tp1) != null ? formatPrice(Number(planoAtivo?.tp1), tickDecimals) : '—'}</span>
                       {/* C7 (V6.9): tp1_rotulo (linguagem de trader, com toques/confluências) tem prioridade — rotularFonte(tp1_fonte) so como fallback pra decisao cacheada anterior a este item. */}
-                      {(planoAtivo?.tp1_rotulo ?? setup.tp1_rotulo ?? rotularFonte(planoAtivo?.tp1_fonte ?? setup.tp1_fonte)) && <div className="text-[8px] text-gray-500 mt-0.5">{planoAtivo?.tp1_rotulo ?? setup.tp1_rotulo ?? rotularFonte(planoAtivo?.tp1_fonte ?? setup.tp1_fonte)}</div>}
+                      {(planoAtivo?.tp1_rotulo ?? rotularFonte(planoAtivo?.tp1_fonte)) && <div className="text-[8px] text-gray-500 mt-0.5">{planoAtivo?.tp1_rotulo ?? rotularFonte(planoAtivo?.tp1_fonte)}</div>}
                       {/* V6.7 (C-27): RR por alvo — antes só o RR do TP1 (geral) era visível na tela.
                           V6.9 pacote final (Fase 11, item 11.8): rr_por_alvo vem pronto do backend agora
                           (campos rr_bruto/rr_liquido, não bruto/liquido — utils/riscoRetorno.ts apagado).
@@ -922,20 +962,20 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, onSaveTrade, onRe
                 <div className="flex justify-between items-center group">
                     <span className="text-gray-500 text-[10px] font-bold">TP2</span>
                     <div className="text-right">
-                      <span className="text-genesis-positive font-mono font-bold text-sm bg-genesis-positive/10 px-2 py-0.5 rounded">{(planoAtivo?.tp2 ?? setup.tp2) != null ? formatPrice(Number(planoAtivo?.tp2 ?? setup.tp2), tickDecimals) : '—'}</span>
-                      {(planoAtivo?.tp2 ?? setup.tp2) != null
-                        ? ((planoAtivo?.tp2_rotulo ?? setup.tp2_rotulo ?? rotularFonte(planoAtivo?.tp2_fonte ?? setup.tp2_fonte)) && <div className="text-[8px] text-gray-500 mt-0.5">{planoAtivo?.tp2_rotulo ?? setup.tp2_rotulo ?? rotularFonte(planoAtivo?.tp2_fonte ?? setup.tp2_fonte)}</div>)
-                        : ((planoAtivo?.tp2_motivo ?? setup.tp2_motivo) && <div className="text-[8px] text-gray-500 mt-0.5">{planoAtivo?.tp2_motivo ?? setup.tp2_motivo}</div>)}
+                      <span className="text-genesis-positive font-mono font-bold text-sm bg-genesis-positive/10 px-2 py-0.5 rounded">{(planoAtivo?.tp2) != null ? formatPrice(Number(planoAtivo?.tp2), tickDecimals) : '—'}</span>
+                      {(planoAtivo?.tp2) != null
+                        ? ((planoAtivo?.tp2_rotulo ?? rotularFonte(planoAtivo?.tp2_fonte)) && <div className="text-[8px] text-gray-500 mt-0.5">{planoAtivo?.tp2_rotulo ?? rotularFonte(planoAtivo?.tp2_fonte)}</div>)
+                        : ((planoAtivo?.tp2_motivo) && <div className="text-[8px] text-gray-500 mt-0.5">{planoAtivo?.tp2_motivo}</div>)}
                       {rrPorAlvo?.tp2.rr_liquido_exibir != null && <div className="text-[8px] text-genesis-positive/80 font-mono mt-0.5">RR {rrPorAlvo.tp2.rr_liquido_exibir}</div>}
                     </div>
                 </div>
                 <div className="flex justify-between items-center group">
                     <span className="text-gray-500 text-[10px] font-bold">TP3</span>
                     <div className="text-right">
-                      <span className="text-genesis-positive font-mono font-bold text-sm bg-genesis-positive/10 px-2 py-0.5 rounded">{(planoAtivo?.tp3 ?? setup.tp3) != null ? formatPrice(Number(planoAtivo?.tp3 ?? setup.tp3), tickDecimals) : '—'}</span>
-                      {(planoAtivo?.tp3 ?? setup.tp3) != null
-                        ? ((planoAtivo?.tp3_rotulo ?? setup.tp3_rotulo ?? rotularFonte(planoAtivo?.tp3_fonte ?? setup.tp3_fonte)) && <div className="text-[8px] text-gray-500 mt-0.5">{planoAtivo?.tp3_rotulo ?? setup.tp3_rotulo ?? rotularFonte(planoAtivo?.tp3_fonte ?? setup.tp3_fonte)}</div>)
-                        : ((planoAtivo?.tp3_motivo ?? setup.tp3_motivo) && <div className="text-[8px] text-gray-500 mt-0.5">{planoAtivo?.tp3_motivo ?? setup.tp3_motivo}</div>)}
+                      <span className="text-genesis-positive font-mono font-bold text-sm bg-genesis-positive/10 px-2 py-0.5 rounded">{(planoAtivo?.tp3) != null ? formatPrice(Number(planoAtivo?.tp3), tickDecimals) : '—'}</span>
+                      {(planoAtivo?.tp3) != null
+                        ? ((planoAtivo?.tp3_rotulo ?? rotularFonte(planoAtivo?.tp3_fonte)) && <div className="text-[8px] text-gray-500 mt-0.5">{planoAtivo?.tp3_rotulo ?? rotularFonte(planoAtivo?.tp3_fonte)}</div>)
+                        : ((planoAtivo?.tp3_motivo) && <div className="text-[8px] text-gray-500 mt-0.5">{planoAtivo?.tp3_motivo}</div>)}
                       {rrPorAlvo?.tp3.rr_liquido_exibir != null && <div className="text-[8px] text-genesis-positive/80 font-mono mt-0.5">RR {rrPorAlvo.tp3.rr_liquido_exibir}</div>}
                     </div>
                 </div>
@@ -963,7 +1003,8 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, onSaveTrade, onRe
               {stopStatusAtivo === 'STOP_UNAVAILABLE' ? (
                 // Sem stop, alavancagem/liquidação/tamanho/RR não existem (todos null no payload,
                 // já renderizam '—' sozinhos nos outros blocos). O botão de confirmar continua
-                // habilitado (DP-03) — podeInteragir depende só de execution.executable.
+                // habilitado (DP-03) — stop null não derruba planoAtivoCompleto (ver comentário na
+                // declaração, acima), só a ausência do plano em si (P0.13).
                 <p className="text-[11px] text-gray-400 leading-relaxed">
                   {/* V6.9 correção técnica (item 34): texto de fallback local alinhado ao literal
                       exato do backend (NivelService::MENSAGEM_STOP_INDISPONIVEL) — na prática
@@ -1018,7 +1059,7 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, onSaveTrade, onRe
 
                   <div className="mb-1 mt-2 flex items-baseline gap-2">
                     <span className="text-[9px] font-bold text-gray-500 uppercase tracking-wider">Stop de proteção</span>
-                    <span className="text-2xl font-mono text-genesis-negative font-bold drop--[0_0_8px_rgba(239,68,68,0.4)]">{(planoAtivo?.stop ?? setup.stop) != null ? formatPrice(Number(planoAtivo?.stop ?? setup.stop), tickDecimals) : '—'}</span>
+                    <span className="text-2xl font-mono text-genesis-negative font-bold drop--[0_0_8px_rgba(239,68,68,0.4)]">{(planoAtivo?.stop) != null ? formatPrice(Number(planoAtivo?.stop), tickDecimals) : '—'}</span>
                   </div>
 
                   {/* D4: relação explícita — o stop nunca é um número solto, é sempre a invalidação

@@ -115,10 +115,15 @@ describe('AnalysisResult — Fase 6, item 6.6: as três invalidações', () => {
 });
 
 describe('AnalysisResult — Fase 6, item 6.7: risco realizado divergente do planejado', () => {
+  // Hotfix V6.11 final (spec genesis-v6-11-hotfix-final, Fase 4, item P0.12, 10/09/2026): o
+  // fallback `?? setup.campo` foi removido — planoAtivo já resolve pra candidate_setup sozinho no
+  // caso legado (legacyMode), então um segundo fallback aqui só reabriria a mistura A/B que P0.12
+  // elimina.
   it('mostra os dois lado a lado quando risco_desvio_pct existe', () => {
     expect(fonte).toContain('Risco realizado divergente do planejado');
-    expect(fonte).toContain('planoAtivo?.risco_desvio_pct ?? setup.risco_desvio_pct');
-    expect(fonte).toContain('planoAtivo?.risco_planejado ?? setup.risco_planejado');
-    expect(fonte).toContain('planoAtivo?.risco_real ?? setup.risco_real');
+    expect(fonte).toContain('planoAtivo?.risco_desvio_pct');
+    expect(fonte).toContain('planoAtivo?.risco_planejado');
+    expect(fonte).toContain('planoAtivo?.risco_real');
+    expect(fonte).not.toMatch(/planoAtivo\?\.risco_desvio_pct \?\? setup/);
   });
 });
