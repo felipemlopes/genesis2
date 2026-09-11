@@ -158,9 +158,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // derrubava a sessão inteira (setIsAuthenticated(false) -> ProtectedRoute manda pro
     // /login) mesmo com o token continuando válido — ficou mais visível com F5 porque um
     // reload sempre dispara esta checagem de novo, enquanto navegar dentro da SPA não.
-    // Uma falha passageira de rede/backend não pode custar a sessão inteira: tenta de novo
-    // uma vez antes de desistir.
-    const tentar = async (tentativasRestantes: number): Promise<void> => {
+    //
+    // Não é validade de token: [AUTH] cria os tokens sem expiração nenhuma (config/sanctum.php,
+    // `expiration => null`; confirmado também no banco, `expires_at` sempre NULL) e um teste
+    // direto e controlado (25 chamadas seguidas com o mesmo token, sem intervalo) devolveu
+    // 200 em todas — a origem exata da instabilidade pontual não foi isolada, mas não é o
+    // backend rejeitando um token válido de forma sistemática. Reforço extra de margem aqui:
+    // 2 tentativas (3 no total) em vez de 1, com backoff crescente.
+    const tentar = async (tentativasRestantes: number, tentativaAtual: number = 0): Promise<void> => {
       try {
         const user = await getMe();
         if (cancelado) return;
@@ -172,15 +177,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       } catch (err) {
         if (cancelado) return;
         if (tentativasRestantes > 0) {
-          await new Promise(resolve => setTimeout(resolve, 1500));
-          if (!cancelado) await tentar(tentativasRestantes - 1);
+          await new Promise(resolve => setTimeout(resolve, 1500 * (tentativaAtual + 1)));
+          if (!cancelado) await tentar(tentativasRestantes - 1, tentativaAtual + 1);
         } else {
           setIsAuthenticated(false);
         }
       }
     };
 
-    tentar(1);
+    tentar(2);
 
     return () => {
       cancelado = true;
