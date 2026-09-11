@@ -145,19 +145,46 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   useEffect(() => {
-    if (isAuthenticated) {
-      getMe().then(user => {
+    if (!isAuthenticated) {
+      setIsAdmin(false);
+      return;
+    }
+
+    let cancelado = false;
+
+    // Achado real em produção (11/09/2026): getMe() falhava de forma intermitente (401
+    // esporádico contra um token válido, confirmado no log — o mesmo token voltava a
+    // funcionar segundos depois sem nenhuma ação do usuário). Antes, QUALQUER falha aqui
+    // derrubava a sessão inteira (setIsAuthenticated(false) -> ProtectedRoute manda pro
+    // /login) mesmo com o token continuando válido — ficou mais visível com F5 porque um
+    // reload sempre dispara esta checagem de novo, enquanto navegar dentro da SPA não.
+    // Uma falha passageira de rede/backend não pode custar a sessão inteira: tenta de novo
+    // uma vez antes de desistir.
+    const tentar = async (tentativasRestantes: number): Promise<void> => {
+      try {
+        const user = await getMe();
+        if (cancelado) return;
         if (!user) {
           setIsAuthenticated(false);
         } else {
           setIsAdmin(user.role === 'admin');
         }
-      }).catch(() => {
-        setIsAuthenticated(false);
-      });
-    } else {
-      setIsAdmin(false);
-    }
+      } catch (err) {
+        if (cancelado) return;
+        if (tentativasRestantes > 0) {
+          await new Promise(resolve => setTimeout(resolve, 1500));
+          if (!cancelado) await tentar(tentativasRestantes - 1);
+        } else {
+          setIsAuthenticated(false);
+        }
+      }
+    };
+
+    tentar(1);
+
+    return () => {
+      cancelado = true;
+    };
   }, [isAuthenticated]);
 
   useEffect(() => {
