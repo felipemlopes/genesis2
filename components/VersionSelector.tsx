@@ -1,7 +1,7 @@
 import React from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { Terminal, ArrowRight, Zap, Target } from "lucide-react";
+import { ArrowRight, Zap, Target } from "lucide-react";
 
 export interface VersionSelectorProps {
   onSelectVersion?: (version: 1 | 2) => void;
@@ -61,16 +61,14 @@ const VersionSelector: React.FC<VersionSelectorProps> = ({ onSelectVersion }) =>
           {/* Logo linked to home */}
           <button
             onClick={() => navigate('/')}
-            className="flex items-center gap-3 mb-10 group cursor-pointer"
+            className="flex items-center mb-10 group cursor-pointer transition-opacity duration-500 hover:opacity-80"
           >
-            <div className="w-10 h-10 rounded-xl border border-white/5 flex items-center justify-center bg-white/[0.01] transition-all duration-500 group-hover:border-genesis-accent/30 shadow-[0_0_15px_rgba(255,255,255,0.02)] group-hover:shadow-[0_0_20px_rgba(139,92,246,0.15)] relative overflow-hidden">
-              <div className="absolute inset-0 bg-gradient-to-tr from-genesis-accent/0 to-genesis-accent/0 group-hover:to-genesis-accent/10 transition-all duration-500"></div>
-              <Terminal size={18} className="text-white/70 group-hover:text-genesis-accent transition-colors duration-500 relative z-10" />
-            </div>
-            <div className="flex flex-col items-start">
-              <span className="font-medium text-white tracking-widest text-sm uppercase">Gênesis</span>
-              <span className="font-bold text-[9px] text-white/40 group-hover:text-genesis-accent uppercase tracking-[0.2em] transition-colors duration-500">Labs</span>
-            </div>
+            <img
+              src="/logo-genesis-labs.png"
+              alt="Gênesis Labs"
+              className="h-10 md:h-12 w-auto select-none"
+              draggable={false}
+            />
           </button>
           
           <h1 className="text-3xl md:text-4xl font-light text-white tracking-widest uppercase text-center" style={{ letterSpacing: "0.2em" }}>

@@ -2,7 +2,6 @@ import React, { useEffect } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
-  Terminal,
   Zap,
   BarChart2,
   Wallet,
@@ -108,14 +107,13 @@ const SidebarContent: React.FC<{ onLogoClick: () => void; onLogout: () => void; 
   return (
     <>
       <div className="h-20 flex items-center px-6 border-white/[0.03]">
-        <div className="flex items-center gap-3 cursor-pointer select-none" onClick={onLogoClick}>
-          <div className="w-7 h-7 rounded-md white/.0.05. flex items-center justify-center bg-white/[0.03]">
-            <Terminal size={18} className="text-genesis-accent" />
-          </div>
-          <div className="flex items-baseline gap-1.5 hidden lg:flex">
-            <span className="font-bold text-lg text-white" style={{ letterSpacing: '-0.01em' }}>Gênesis</span>
-            <span className="bg-genesis-accent-dim text-genesis-accent genesis-accent-text-[9px] uppercase px-[6px] py-[2px] rounded-[4px] font-bold">LABS</span>
-          </div>
+        <div className="flex items-center cursor-pointer select-none" onClick={onLogoClick}>
+          <img
+            src="/logo-genesis-labs.png"
+            alt="Gênesis Labs"
+            className="h-8 w-auto select-none"
+            draggable={false}
+          />
         </div>
       </div>
 

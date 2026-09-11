@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Terminal, Zap, Layers, BarChart2, Mail, Lock, CheckCircle2, ArrowRight } from 'lucide-react';
+import { Zap, Layers, BarChart2, Mail, Lock, CheckCircle2, ArrowRight } from 'lucide-react';
 import { motion } from "framer-motion";
 import Hologram from './Hologram';
 import EducationalQuiz from './EducationalQuiz';
@@ -117,15 +117,13 @@ const LandingPage: React.FC<LandingPageProps> = ({ onLogin }) => {
 
       {/* HEADER / NAVIGATION */}
       <nav className="h-24 px-8 md:px-16 flex items-center justify-between relative z-[50] transition-all duration-500">
-        <div className="flex items-center gap-3 cursor-pointer group" onClick={() => { setShowAbout(false); setShowPrivacy(false); setShowSupport(false); setShowRoadmap(false); }}>
-          <div className="w-10 h-10 rounded-xl border border-white/5 flex items-center justify-center bg-white/[0.01] transition-all duration-500 group-hover:border-genesis-accent/30 shadow-[0_0_15px_rgba(255,255,255,0.02)] group-hover:shadow-[0_0_20px_rgba(139,92,246,0.15)] relative overflow-hidden">
-             <div className="absolute inset-0 bg-gradient-to-tr from-genesis-accent/0 to-genesis-accent/0 group-hover:to-genesis-accent/10 transition-all duration-500"></div>
-            <Terminal size={18} className="text-white/70 group-hover:text-genesis-accent transition-colors duration-500 relative z-10" />
-          </div>
-          <div className="flex flex-col">
-            <span className="font-medium text-white tracking-widest text-sm uppercase">Gênesis</span>
-            <span className="font-bold text-[9px] text-genesis-text-secondary group-hover:text-genesis-accent uppercase tracking-[0.2em] transition-colors duration-500">Labs</span>
-          </div>
+        <div className="flex items-center cursor-pointer group" onClick={() => { setShowAbout(false); setShowPrivacy(false); setShowSupport(false); setShowRoadmap(false); }}>
+          <img
+            src="/logo-genesis-labs.png"
+            alt="Gênesis Labs"
+            className="h-8 md:h-9 w-auto select-none transition-opacity duration-500 group-hover:opacity-80"
+            draggable={false}
+          />
         </div>
         
         {/* ENHANCED NAVIGATION PILL */}

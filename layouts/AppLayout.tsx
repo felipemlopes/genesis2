@@ -115,13 +115,8 @@ const AppLayout = () => {
             <span className="text-[9px] font-bold text-genesis-text-muted tracking-[0.14em] uppercase">Terminal Ativo</span>
           </div>
 
-          <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none select-none flex items-baseline gap-2">
-            <h1 className="text-[18px] font-bold text-white" style={{ fontFamily: "'Inter', sans-serif", letterSpacing: '-0.01em' }}>
-              Gênesis
-            </h1>
-            <span className="text-[11px] font-medium uppercase text-genesis-text-muted" style={{ fontFamily: "'Inter', sans-serif", letterSpacing: '0.14em' }}>
-              Labs
-            </span>
+          <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none select-none">
+            <img src="/logo-genesis-labs.png" alt="Gênesis Labs" className="h-5 w-auto" draggable={false} />
           </div>
 
           <div className="flex items-center gap-6">
