@@ -6,8 +6,7 @@ import EducationalQuiz from './EducationalQuiz';
 import AboutPage from './AboutPage';
 import PrivacyPage from './PrivacyPage';
 import SupportPage from './SupportPage';
-import RoadmapPage from './RoadmapPage'; 
-import VersionSelector from './VersionSelector';
+import RoadmapPage from './RoadmapPage';
 import { login } from '../services/api';
 
 interface LandingPageProps {
@@ -27,7 +26,6 @@ const LandingPage: React.FC<LandingPageProps> = ({ onLogin }) => {
   // Production variables
   const [loginError, setLoginError] = useState("");
   const [isLoggingIn, setIsLoggingIn] = useState(false);
-  const [showVersionSelector, setShowVersionSelector] = useState(false);
 
   const handleStartLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -53,11 +51,6 @@ const LandingPage: React.FC<LandingPageProps> = ({ onLogin }) => {
     }
   };
 
-  const handleAcessarClick = (e: React.MouseEvent) => {
-    e.preventDefault();
-    setShowVersionSelector(true);
-  };
-
   const scrollToAccess = (e: React.MouseEvent) => {
     e.preventDefault();
     const element = document.getElementById('access');
@@ -81,22 +74,6 @@ const LandingPage: React.FC<LandingPageProps> = ({ onLogin }) => {
 
   if (showRoadmap) {
     return <RoadmapPage onBack={() => setShowRoadmap(false)} />;
-  }
-
-  if (showVersionSelector) {
-    return (
-      <VersionSelector 
-        onSelectVersion={(v) => {
-          if (v === 2) {
-            setShowVersionSelector(false);
-            setTimeout(() => {
-              const element = document.getElementById('access');
-              if (element) element.scrollIntoView({ behavior: 'smooth', block: 'start' });
-            }, 100);
-          }
-        }}
-      />
-    );
   }
 
   if (showQuiz) {
@@ -172,7 +149,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onLogin }) => {
            
            <a 
              href="#access" 
-             onClick={handleAcessarClick}
+             onClick={scrollToAccess}
              className="group hidden md:flex items-center justify-center gap-2 relative bg-genesis-accent/10 hover:bg-genesis-accent/20 border border-genesis-accent/20 hover:border-genesis-accent/40 rounded-xl px-6 py-2 transition-all duration-500 overflow-hidden"
            >
              <div className="absolute inset-0 w-full h-full bg-gradient-to-r from-transparent via-white/5 to-transparent -translate-x-full group-hover:animate-[shimmer_1.5s_infinite]"></div>
@@ -206,7 +183,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onLogin }) => {
             <div className="flex flex-col sm:flex-row gap-6">
                 <a 
                   href="#access" 
-                  onClick={handleAcessarClick}
+                  onClick={scrollToAccess}
                   className="group relative h-14 flex items-center justify-center bg-white/[0.02] border border-white/5 hover:bg-genesis-accent/10 rounded-xl px-10 transition-all duration-500 hover:border-genesis-accent/30 overflow-hidden shadow-[0_0_20px_rgba(0,0,0,0.5)] hover:shadow-[0_0_30px_rgba(139,92,246,0.15)]"
                 >
                   <div className="absolute inset-0 w-full h-full bg-gradient-to-r from-transparent via-white/5 to-transparent -translate-x-full group-hover:animate-[shimmer_1.5s_infinite]"></div>
