@@ -1,4 +1,5 @@
 ﻿import React, { useState, useEffect, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { SavedAnalysis, HistoricoPlano } from '../types';
 import { Trash2, TrendingUp, TrendingDown, Target, Clock, Filter, Activity, CheckCircle, XCircle, AlertCircle } from 'lucide-react';
 import { fetchHistoricoAnalises, updateResultadoAnalise, deleteAllAnalises, fetchEstatisticas, fetchPrice } from '../services/api';
@@ -16,6 +17,7 @@ import AssetBadge from './AssetBadge';
 // de higiene (seção 20.1) não tem como confirmar a partir daqui; avaliada, não removida.
 
 const AnalysisHistoryDashboard: React.FC = () => {
+  const navigate = useNavigate();
   const [history, setHistory] = useState<SavedAnalysis[]>([]);
   const [filterSymbol, setFilterSymbol] = useState<string>('');
   const [filterTF, setFilterTF] = useState<string>('');
@@ -47,6 +49,11 @@ const AnalysisHistoryDashboard: React.FC = () => {
 
           return {
             id: row.id.toString(),
+            // Genesis Brain V2 (Fase 7.2, item 22.2, Requisito 25.1): UUID real — AnaliseTransformer
+            // passou a expor `analysis_uuid` nesta fase; usado pra navegar pra
+            // /dashboard/genesis/analise/{uuid} ao clicar numa linha (ver onClick abaixo). Ausente
+            // em linhas legado (nunca tiveram UUID) — o clique nessas linhas não navega.
+            analysis_id: row.analysis_uuid || undefined,
             timestamp: row.created_at || row.criado_em,
             symbol: row.ativo,
             interval: row.timeframe,
@@ -529,7 +536,17 @@ const AnalysisHistoryDashboard: React.FC = () => {
                         const dateStr = `${dateObj.getDate().toString().padStart(2,'0')}/${(dateObj.getMonth()+1).toString().padStart(2,'0')} ${dateObj.getHours().toString().padStart(2,'0')}:${dateObj.getMinutes().toString().padStart(2,'0')}`;
                         
                         return (
-                           <tr key={item.id} className="hover:bg-white/[0.02] transition-colors group">
+                           <tr
+                              key={item.id}
+                              className={`hover:bg-white/[0.02] transition-colors group ${item.analysis_id ? 'cursor-pointer' : ''}`}
+                              // Genesis Brain V2 (Fase 7.2, item 22.2, Requisito 25.1, Fonte §70):
+                              // abre a análise completa (AnalysisResult.tsx, mesma tela de quando
+                              // ela foi gerada) via UUID — nunca disponível em linhas legado
+                              // (analysis_id fica undefined nesse caso, clique não faz nada).
+                              onClick={() => {
+                                 if (item.analysis_id) navigate(`/dashboard/genesis/analise/${item.analysis_id}`);
+                              }}
+                           >
                               <td className="py-4 px-2 text-xs text-gray-500 font-mono whitespace-nowrap">{dateStr}</td>
                               <td className="py-4 px-2 text-xs font-bold text-white text-center tracking-wider">
                                  <span className="inline-flex items-center justify-center gap-1.5">
@@ -645,8 +662,8 @@ const AnalysisHistoryDashboard: React.FC = () => {
                               <td className="py-4 px-2 text-right">
                                   <div className="flex items-center justify-end gap-2 opacity-100 sm:opacity-50 group-hover:opacity-100 transition-opacity">
                                       {item.status !== 'ACERTOU' && (
-                                          <button 
-                                            onClick={() => updateStatus(item.id, 'ACERTOU')}
+                                          <button
+                                            onClick={(e) => { e.stopPropagation(); updateStatus(item.id, 'ACERTOU'); }}
                                             title="Marcar como ACERTO"
                                             className="p-1.5 rounded bg-black border-green-500/20 text-gray-500 hover:text-green-400 hover:border-green-500/50 hover:bg-green-500/10 transition-all"
                                           >
@@ -654,8 +671,8 @@ const AnalysisHistoryDashboard: React.FC = () => {
                                           </button>
                                       )}
                                       {item.status !== 'ERROU' && (
-                                          <button 
-                                            onClick={() => updateStatus(item.id, 'ERROU')}
+                                          <button
+                                            onClick={(e) => { e.stopPropagation(); updateStatus(item.id, 'ERROU'); }}
                                             title="Marcar como ERRO"
                                             className="p-1.5 rounded bg-black border-red-500/20 text-gray-500 hover:text-red-400 hover:border-red-500/50 hover:bg-red-500/10 transition-all"
                                           >

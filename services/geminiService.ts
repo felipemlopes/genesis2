@@ -9,7 +9,8 @@ import type { GraphicalAnalysisResult, GraphicalAnalysisPollResult, GraphicalAna
 // do membro (ou um erro de rede) produzia chave diferente e o backend tratava como submissão nova,
 // desarmando a proteção de idempotência por completo. Substituída por
 // services/analysisIdempotency.ts, cuja chave é derivada do CONTEÚDO da submissão (símbolo,
-// timeframe, alavancagem, hash da imagem) e sobrevive a retries até a análise terminar.
+// timeframe, hash da imagem — Genesis Brain V2 Fase 0.3 item 3.6 retirou alavancagem daqui, ver
+// docblock daquele arquivo) e sobrevive a retries até a análise terminar.
 
 // Spec genesis-analise-grafica-fila-assincrona (Fase 5.3): analyzeChart() não distinguia 422/402/409
 // entre si — todo mundo virava o mesmo Error genérico, então quem chamasse não tinha como reagir
@@ -270,6 +271,10 @@ const emptyCandidateSetup: CandidateSetup = {
   stop_ancora: null,
   stop_buffer: null,
   stop_motivo: null,
+  // Genesis Brain V2 (Fase 4.1, item 12.2): idem, placeholder também precisa dos campos novos.
+  stop_recommended: null,
+  stop_effective: null,
+  stop_source: null,
   // V6.7 (B-20): idem, placeholder também precisa dos campos novos de verificação de liquidação.
   verificacao: null,
   verificacao_motivo: null,
@@ -299,7 +304,10 @@ const emptyCandidateSetup: CandidateSetup = {
 // backend manda v64.execution (pipeline restaurado — ExecucaoService/MotorExecucaoService, calculado
 // DEPOIS da decisão do Gemini, sem alterar direção/score), usa os dados reais; senão cai no
 // placeholder vazio (motor sem dado disponível para essa análise específica).
-const mapGraphicalToLegacy = (v64: GraphicalAnalysisResult): GenesisAnalysisResult => {
+// Genesis Brain V2 (Fase 7.2, item 22.2, Requisito 25.1): exportado pra GenesisPage.tsx reusar na
+// restauração de análise por UUID (GET /v1/analises/{uuid} devolve o mesmo formato bruto que o
+// polling de analyzeChart() já mapeia aqui) — nunca duplicar esta tradução num segundo lugar.
+export const mapGraphicalToLegacy = (v64: GraphicalAnalysisResult): GenesisAnalysisResult => {
   const ctx = v64.informative_context;
   // V6.9 pacote final (spec genesis-v6-9-pacote-final, Fase 11, item 11.5, doc §16):
   // CanonicalMacroContext/CanonicalSentimentContext (item 11.4) trocaram o formato — resumo/
@@ -385,11 +393,14 @@ const mapGraphicalToLegacy = (v64: GraphicalAnalysisResult): GenesisAnalysisResu
       // A8 (V6.9): chega pronto da API — mesmo padrão dos outros campos deste bloco.
       alvo_que_atende: exec.alvo_que_atende ?? null,
       // V6.7 (G-44): tipos unificados com o contrato real do backend (types/graphicalAnalysis.ts) —
-      // ExecutionCandidateSetup/ExecutionPlanoSetup/ExecutionPlanB são estruturalmente compatíveis com
-      // CandidateSetup/PlanoSetup/ExecutionPlanB (types.ts) depois da correção, sem precisar de cast.
+      // ExecutionCandidateSetup/ExecutionPlanoSetup são estruturalmente compatíveis com
+      // CandidateSetup/PlanoSetup (types.ts) depois da correção, sem precisar de cast.
       candidate_setup: exec.candidate_setup ?? emptyCandidateSetup,
       executable_setup: exec.executable_setup,
-      planoB: exec.planoB,
+      // Genesis Brain V2 (Fase 5.1, item 16.3): `planoB` (formato bruto legado) não é mais
+      // repassado — `planos[]` abaixo é a única fonte desde a task 16.3 (zero consumidor
+      // restante, grep confirmado). O backend pode continuar mandando `exec.planoB`; simplesmente
+      // não entra mais no objeto que este adaptador devolve.
       // Spec genesis-v6-10-implementacao (Fase 5, item 5.1/5.3): qual plano vem pré-selecionado —
       // achado real ao implementar o item 3.6 da V6.11: este campo nunca tinha sido acrescentado
       // aqui, então `execution.plano_primario` (lido em AnalysisResult.tsx desde a V6.10) sempre
@@ -402,7 +413,8 @@ const mapGraphicalToLegacy = (v64: GraphicalAnalysisResult): GenesisAnalysisResu
       planoB_motivo: exec.planoB_motivo ?? null,
       plano_primario_degradado: exec.plano_primario_degradado ?? false,
       // V6.5 (E08): campo novo do backend — vazio quando a resposta vier de uma decisão cacheada
-      // antes deste campo existir (a tela cai no fallback de candidate_setup/planoB nesse caso).
+      // antes deste campo existir (a tela cai no fallback de candidate_setup pro Plano A nesse
+      // caso, legacyMode em AnalysisResult.tsx — o Plano B simplesmente fica indisponível).
       planos: exec.planos ?? [],
       zonaInteresse: exec.zonaInteresse,
       avisos: exec.avisos,
@@ -417,7 +429,6 @@ const mapGraphicalToLegacy = (v64: GraphicalAnalysisResult): GenesisAnalysisResu
       motivo: 'Não foi possível calcular o setup de entrada/stop/TP para esta análise (preço ou ATR indisponível).',
       candidate_setup: emptyCandidateSetup,
       executable_setup: null,
-      planoB: null,
       plano_primario: null,
       planoB_motivo: null,
       plano_primario_degradado: false,
@@ -521,12 +532,14 @@ export const analyzeChart = async (
   if (equity && Number(equity) > 0) fd.append('equity', equity);
 
   // V6.8 (CODE-P0-19): a chave é derivada do conteúdo da submissão, não gerada às cegas a cada
-  // chamada — um retry do MESMO gráfico (símbolo, timeframe, alavancagem, hash da imagem iguais)
-  // reutiliza a mesma chave em vez de abrir uma segunda análise/cobrança.
+  // chamada — um retry do MESMO gráfico (símbolo, timeframe, hash da imagem iguais) reutiliza a
+  // mesma chave em vez de abrir uma segunda análise/cobrança. Genesis Brain V2 (Fase 0.3, item
+  // 3.6): alavancagem saiu da assinatura — mudar só a alavancagem e reenviar o mesmo gráfico não
+  // deve mais parecer uma submissão nova (o valor de `userLeverage` continua indo pro backend
+  // normalmente, via `fd.append('leverage', ...)` acima, só não entra mais na identidade).
   const submissao: SubmissaoAnalise = {
     symbol: metadata.pair,
     timeframe: metadata.timeframe,
-    alavancagem: userLeverage,
     imagemHash: await hashDaImagem(file),
   };
 

@@ -6,9 +6,17 @@
  * cadeia inteira de reserva e captura de crédito depende de idempotência, e o mecanismo estava
  * desarmado no ponto de entrada.
  *
- * A chave agora é derivada do CONTEÚDO da submissão (símbolo, timeframe, alavancagem e hash da
- * imagem) e persiste em sessionStorage até a análise atingir estado terminal. O mesmo gráfico,
- * reenviado após um erro, reutiliza a chave; um gráfico diferente gera chave nova.
+ * A chave agora é derivada do CONTEÚDO da submissão (símbolo, timeframe e hash da imagem) e
+ * persiste em sessionStorage até a análise atingir estado terminal. O mesmo gráfico, reenviado após
+ * um erro, reutiliza a chave; um gráfico diferente gera chave nova.
+ *
+ * Genesis Brain V2 (Fase 0.3, item 3.6, Fonte §54/§85): `alavancagem` saiu da assinatura — a
+ * identidade estratégica da análise (o que o cérebro decide) é símbolo+timeframe+imagem; alavancagem
+ * é parâmetro de EXECUÇÃO (tamanho/margem/liquidação), nunca de identidade. Antes, mudar só a
+ * alavancagem e reenviar o mesmo gráfico gerava uma chave nova — o backend tratava como análise
+ * nova, cobrando crédito de novo e chamando a IA de novo por algo que a IA nunca deveria opinar
+ * duas vezes. `SubmissaoAnalise` não tem mais o campo — impossível construir uma submissão que
+ * varie por alavancagem, prova mais forte que testar que "mudar o valor não muda a chave".
  */
 const PREFIXO = 'genesis:idem:';
 const VALIDADE_MS = 30 * 60 * 1000;
@@ -16,7 +24,6 @@ const VALIDADE_MS = 30 * 60 * 1000;
 export interface SubmissaoAnalise {
   symbol: string;
   timeframe: string;
-  alavancagem: number;
   imagemHash: string;
 }
 
@@ -26,7 +33,7 @@ interface RegistroIdem {
 }
 
 function assinatura(s: SubmissaoAnalise): string {
-  return [s.symbol, s.timeframe, String(s.alavancagem), s.imagemHash].join('|');
+  return [s.symbol, s.timeframe, s.imagemHash].join('|');
 }
 
 function gerarChave(): string {

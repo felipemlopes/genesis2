@@ -206,6 +206,18 @@ export async function fetchHistoricoAnalises() {
   return res.json();
 }
 
+// Genesis Brain V2 (Fase 7.2, item 22.1/22.2, Requisito 25.1, Fonte §70): restaura uma análise
+// específica direto do servidor por UUID — o mesmo formato rico que AnalysisResult.tsx já consome
+// (AnalysisPublicResponseBuilder::build(), não o formato achatado da listagem). `null` quando a
+// análise não existe/não pertence ao membro (404) — nunca lança, quem chama decide o fallback.
+export async function getAnaliseByUuid(uuid: string): Promise<any | null> {
+  const res = await fetch(`${API_BASE}/v1/analises/${encodeURIComponent(uuid)}`, {
+    headers: getAuthHeaders(),
+  });
+  if (!res.ok) return null;
+  return res.json();
+}
+
 // V6.7 (F-43): storeAnalise() removida junto com sua única chamadora
 // (saveAnalysisToHistory, components/AnalysisHistoryDashboard.tsx) — ver comentário lá.
 
@@ -253,6 +265,73 @@ export async function selecionarZona(analiseId: string | number, zona: 'A' | 'B'
     return { success: true };
   } catch (err: any) {
     return { success: false, error: err.message || 'Erro de rede ao salvar zona' };
+  }
+}
+
+// Genesis Brain V2 (Fase 4.3, item 14.2, Requisito 13.3, Fonte §38-§39): endpoint de repricing
+// determinístico — o slider (StopSlider.tsx) chama isto no onChangeEnd/debounce, nunca a cada
+// pixel arrastado. Matemática pura no backend, nenhuma chamada ao Trader AI.
+export interface RepriceResponse {
+  analysis_uuid: string;
+  plan: 'A' | 'B';
+  stop_recommended: number | null;
+  stop_effective: number;
+  stop_source: 'AI_RECOMMENDED' | 'SYSTEM_FALLBACK' | 'USER_ADJUSTED';
+  stop_risk: {
+    zone: 'TOO_CLOSE_NOISE' | 'CAUTION_CLOSE' | 'TECHNICAL_ZONE' | 'CAUTION_WIDE' | 'TOO_WIDE_LIQUIDATION_RISK' | null;
+    distance_atr: number | null;
+    distance_to_liquidation_pct: number | null;
+  };
+  rr: { tp1: number | null; tp2: number | null; tp3: number | null };
+  risk: { distance_pct: number; risk_usd: number | null };
+  position: { quantity: number | null; notional: number | null; margin: number | null };
+  liquidation: { price: number | null; status: string | null };
+}
+
+export async function reprecificar(
+  analiseId: string,
+  plan: 'A' | 'B',
+  leverage: number,
+  equity: number,
+  stopEffective: number,
+): Promise<{ success: true; data: RepriceResponse } | { success: false; error: string }> {
+  try {
+    const res = await fetch(`${API_BASE}/v1/analises/${analiseId}/reprice`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ plan, leverage, equity, stop_effective: stopEffective }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      return { success: false, error: data.error || 'Erro ao reprecificar o plano' };
+    }
+    return { success: true, data: data as RepriceResponse };
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Erro de rede ao reprecificar' };
+  }
+}
+
+// Genesis Brain V2 (Fase 6, item 20.4, Fonte §52): alavancagem máxima REAL do contrato Binance
+// pro símbolo — usada só pra restringir as opções oferecidas, nunca pra bloquear a tela. `available:
+// false` (sem bracket real, ex. API fora do ar) é uma resposta válida — quem chama cai de volta na
+// lista fixa por exchange (getLeverageOptions, services/cryptoApi.ts).
+export interface LeverageBracketResponse {
+  symbol: string;
+  available: boolean;
+  max_leverage: number | null;
+}
+
+export async function getLeverageBracket(symbol: string): Promise<LeverageBracketResponse> {
+  try {
+    const res = await fetch(`${API_BASE}/v1/leverage-brackets/${encodeURIComponent(symbol)}`, {
+      headers: getAuthHeaders(),
+    });
+    if (!res.ok) {
+      return { symbol, available: false, max_leverage: null };
+    }
+    return await res.json();
+  } catch {
+    return { symbol, available: false, max_leverage: null };
   }
 }
 

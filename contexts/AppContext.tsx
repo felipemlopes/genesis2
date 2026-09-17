@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef, useMemo } from 'react';
 import { ActiveTrade, ChartMetadata, GenesisAnalysisResult } from '../types';
 import {
   fetchBinancePairs,
@@ -14,7 +14,7 @@ import {
   ExchangeData,
 } from '../services/cryptoApi';
 import { calculateFuturesPnL } from '../services/futuresCalculations';
-import { getMe, isAuthenticated as checkAuth } from '../services/api';
+import { getMe, isAuthenticated as checkAuth, getLeverageBracket } from '../services/api';
 
 interface AppContextType {
   isAuthenticated: boolean;
@@ -111,6 +111,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [entryValue, setEntryValue] = useState<number | ''>('');
   const [marginMode, setMarginMode] = useState('Isolada');
   const [leverageOptions, setLeverageOptions] = useState<number[]>([]);
+  // Genesis Brain V2 (Fase 6, item 20.4, Fonte §52): teto real do contrato Binance pro símbolo
+  // selecionado (via GET /v1/leverage-brackets/{symbol}) — null quando indisponível (sem bracket
+  // real, ou corretora selecionada não é Binance) ou ainda não avaliado; nesse caso a lista fixa
+  // por exchange (leverageOptions acima) vale sem corte nenhum, nunca bloqueado por esta consulta.
+  const [binanceMaxLeverage, setBinanceMaxLeverage] = useState<number | null>(null);
   // V6.7 (B-22): aviso visível quando a troca de corretora força um ajuste na alavancagem escolhida
   // (a corretora nova não oferece o valor atual) — null quando não há aviso pendente.
   const [avisoAlavancagem, setAvisoAlavancagem] = useState<string | null>(null);
@@ -236,6 +241,47 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
     loadExchangeSettings();
   }, [exchange, isAuthenticated]);
+
+  // Genesis Brain V2 (Fase 6, item 20.4, Fonte §52): a análise gráfica em si sempre roda contra
+  // Binance USD-M, independente da corretora escolhida aqui pro dashboard de preços — então o
+  // teto real do contrato só se aplica (e só vale a pena consultar) quando `exchange==='Binance'`.
+  // Trocar de par sempre reavalia; nunca bloqueia a tela enquanto a consulta está em andamento.
+  useEffect(() => {
+    if (!isAuthenticated || exchange !== 'Binance' || !selectedPair) {
+      setBinanceMaxLeverage(null);
+      return;
+    }
+    let cancelado = false;
+    getLeverageBracket(selectedPair).then((resultado) => {
+      if (!cancelado) {
+        setBinanceMaxLeverage(resultado.available ? resultado.max_leverage : null);
+      }
+    });
+    return () => {
+      cancelado = true;
+    };
+  }, [exchange, selectedPair, isAuthenticated]);
+
+  // Lista efetiva oferecida ao membro — a base por exchange (getLeverageOptions), estreitada pelo
+  // teto real do contrato quando disponível. Nunca amplia, só corta; nunca fica vazia (garante ao
+  // menos o menor valor da base, mesmo abaixo do teto real, pra nunca travar o seletor sem opção).
+  const effectiveLeverageOptions = useMemo(() => {
+    if (binanceMaxLeverage === null || leverageOptions.length === 0) return leverageOptions;
+    const filtradas = leverageOptions.filter((opt) => opt <= binanceMaxLeverage);
+    return filtradas.length > 0 ? filtradas : [leverageOptions[0]];
+  }, [leverageOptions, binanceMaxLeverage]);
+
+  // Mesma disciplina do ajuste por troca de exchange (B-22, acima) — nunca inventa um padrão,
+  // sempre avisa quando o teto real do contrato força a leitura atual pra baixo.
+  useEffect(() => {
+    if (effectiveLeverageOptions.length === 0 || effectiveLeverageOptions.includes(leverage)) return;
+    const maisProximoParaBaixo = [...effectiveLeverageOptions].reverse().find((opt) => opt <= leverage) ?? effectiveLeverageOptions[0];
+    setAvisoAlavancagem(
+      `${selectedPair} aceita no máximo ${binanceMaxLeverage}x neste contrato — alavancagem ajustada para ${maisProximoParaBaixo}x.`
+    );
+    setLeverage(maisProximoParaBaixo);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [effectiveLeverageOptions]);
 
   useEffect(() => {
     if (!isAuthenticated) return;
@@ -381,7 +427,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setTargetProfit,
         leverage,
         setLeverage,
-        leverageOptions,
+        leverageOptions: effectiveLeverageOptions,
         avisoAlavancagem,
         setAvisoAlavancagem,
         marginMode,

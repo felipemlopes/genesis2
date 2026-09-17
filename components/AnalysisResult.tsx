@@ -10,10 +10,12 @@ import { price as formatPrice, usd as formatUsd } from '../utils/canonicalMoney'
 import { publicText } from '../utils/publicVocabulary';
 import { rotularFonte, rotularComponenteBuffer, rotularTimeframe } from '../utils/rotulos';
 import { faixaDeConviccao } from '../utils/conviccao';
+import { hasValidNumber } from '../utils/stopValidation';
 import AssetBadge from './AssetBadge';
 import BlocoConviccaoQualidade from './BlocoConviccaoQualidade';
 import ScoreBasisBars from './ScoreBasisBars';
 import BlocoFiguraGrafica from './BlocoFiguraGrafica';
+import StopSlider from './StopSlider';
 
 interface AnalysisResultProps {
   data: GenesisAnalysisResult;
@@ -261,13 +263,6 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, onSaveTrade, onRe
   const isLong = direction === 'LONG';
   const isShort = direction === 'SHORT';
 
-  const planoB = execution.planoB as {
-    entrada?: number; descricao?: string; zona?: string;
-    // Spec genesis-v6-11-correcao-tecnica (Fase 3, item 3.6): gatilho declarado pela IA, verificado
-    // pelo backend contra vela fechada (PlanoBService::gerar()).
-    trigger?: { tipo?: string | null; descricao?: string | null; estado?: 'ATINGIDO' | 'AGUARDANDO' } | null;
-  } | null;
-
   // V6.5 (E08): antes só a 'entrada' trocava ao selecionar o Plano B — stop/TP1-3/RR/alavancagem/
   // liquidação/tamanho/invalidação continuavam mostrando os números do Plano A, mesmo com "Plano B"
   // selecionado na tela.
@@ -299,10 +294,12 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, onSaveTrade, onRe
     && Number.isFinite(Number(planoAtivo.entrada))
     && Number.isFinite(Number(planoAtivo.stop))
     && Number.isFinite(Number(planoAtivo.tp1));
-  // planoBDados (execution.planos[], fonte única per P0.12) — não o `planoB` bruto abaixo
-  // (execution.planoB, saída direta de PlanoBService::gerar() antes de virar linha do array). Os
-  // dois carregam o mesmo trigger.estado hoje, mas planoBDados é a fonte que este hotfix já usa
-  // pra tudo o mais do Plano B — usar outra aqui reabriria a mesma inconsistência que P0.12 fecha.
+  // planoBDados (execution.planos[], fonte única per P0.12) — a ÚNICA fonte de trigger.estado
+  // desde a task 16.3 (Genesis Brain V2, Fase 5.1): `execution.planoB` (o shape bruto legado,
+  // saída direta de PlanoBService::gerar() antes de virar linha do array) foi migrado por
+  // completo — zero consumidor restante neste arquivo (grep confirmado antes de remover a
+  // declaração). planoBDados também é o único que reflete o merge de estado vivo da task 16.2
+  // (status_acionamento real de genesis_analise_planos, não mais o snapshot congelado).
   const gatilhoBPronto = zonaEfetiva !== 'B' || planoBDados?.trigger?.estado === 'ATINGIDO';
   const podeConfirmarPosicao = podeSelecionarPlano && planoAtivoCompleto && gatilhoBPronto;
 
@@ -873,8 +870,15 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, onSaveTrade, onRe
                   {/* Plano B — Spec genesis-v6-11-correcao-tecnica (Fase 3, item 3.6): o card
                       aparece SEMPRE, com dois estados. Antes o botão só era renderizado com
                       planoB.entrada preenchido, e a ausência virava uma frase fixa que afirmava
-                      duas causas de um total de oito possíveis. */}
-                  {planoB?.entrada != null ? (
+                      duas causas de um total de oito possíveis.
+                      Genesis Brain V2 (Fase 5.1, item 16.3, Requisito 14.3): migrado de `planoB`
+                      (execution.planoB, formato bruto legado) para `planoBDados`
+                      (execution.planos[], fonte única) — não é só limpeza de código: depois da
+                      task 16.2 (merge de estado vivo), só `execution.planos[].trigger.estado`
+                      reflete `status_acionamento` real de `genesis_analise_planos`; o `planoB`
+                      bruto continua congelado no snapshot original, ficando stale a partir de
+                      agora se alguém continuasse lendo dele. */}
+                  {planoBDados?.entrada != null ? (
                     <button
                       disabled={!podeSelecionarPlano}
                       onClick={() => handleZoneSelect('B')}
@@ -886,13 +890,13 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, onSaveTrade, onRe
                     >
                       <div className="flex justify-between items-baseline mb-1">
                         <span className={`text-[10px] font-bold ${zonaEfetiva === 'B' ? 'text-genesis-accent' : 'text-gray-400'}`}>{`Plano B${planoPrimario === 'B' ? ' (Primário)' : ' (Alternativo)'}`}</span>
-                        <span className="font-mono font-bold text-xs text-white">{formatPrice(Number(planoB.entrada), tickDecimals)}</span>
+                        <span className="font-mono font-bold text-xs text-white">{formatPrice(Number(planoBDados.entrada), tickDecimals)}</span>
                       </div>
                       <p className="text-[9px] text-gray-400 font-mono tracking-wide leading-tight mt-1">
-                        {publicText(planoB.trigger?.descricao) || planoBDescricaoCompleta}
+                        {publicText(planoBDados.trigger?.descricao) || planoBDescricaoCompleta}
                       </p>
-                      <span className={`text-[9px] font-mono ${planoB.trigger?.estado === 'ATINGIDO' ? 'text-genesis-positive' : 'text-genesis-accent'}`}>
-                        {planoB.trigger?.estado === 'ATINGIDO' ? 'Zona alcançada' : 'Aguardando o preço'}
+                      <span className={`text-[9px] font-mono ${planoBDados.trigger?.estado === 'ATINGIDO' ? 'text-genesis-positive' : 'text-genesis-accent'}`}>
+                        {planoBDados.trigger?.estado === 'ATINGIDO' ? 'Zona alcançada' : 'Aguardando o preço'}
                       </span>
                     </button>
                   ) : (
@@ -1085,6 +1089,30 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, onSaveTrade, onRe
                       <AlertTriangle size={11} className="text-gray-400 shrink-0 mt-0.5" />
                       <span className="text-[9px] text-gray-400 leading-relaxed">{stopMotivoAtivo}</span>
                     </div>
+                  )}
+                  {/* Genesis Brain V2 (Fase 4.2, item 13.1-13.3): slider de stop com régua de risco
+                      bidirecional — preview 100% local, nunca chama o Brain/IA (item 13.4). Só
+                      renderiza com stop válido: sem isso (STOP_UNAVAILABLE), não há
+                      stop_recommended nenhum pra usar como posição inicial. `key` força reset do
+                      estado local do slider ao trocar de plano/análise (A↔B, ou nova análise). */}
+                  {stopStatusAtivo !== 'STOP_UNAVAILABLE' && hasValidNumber(planoAtivo?.stop_recommended ?? planoAtivo?.stop) && hasValidNumber(planoAtivo?.entrada) && (isLong || isShort) && (
+                    <StopSlider
+                      key={`${zonaEfetiva}-${planoAtivo?.entrada}-${planoAtivo?.stop_recommended ?? planoAtivo?.stop}`}
+                      entrada={Number(planoAtivo?.entrada)}
+                      stopRecommended={Number(planoAtivo?.stop_recommended ?? planoAtivo?.stop)}
+                      direcao={isLong ? 'LONG' : 'SHORT'}
+                      atr={anyData.indicadores?.atr ?? null}
+                      liquidacao={planoAtivo?.liquidacao ?? null}
+                      tickDecimals={tickDecimals}
+                      // Genesis Brain V2 (Fase 4.3, item 14.2): habilita o repricing real
+                      // (debounce -> POST /reprice) só quando a análise já está persistida —
+                      // alavancagem/capital vêm do próprio plano (não há form de ajuste
+                      // separado nesta tela; o membro está ajustando o STOP, não o resto).
+                      analysisUuid={analiseId ?? null}
+                      plan={zonaEfetiva === 'B' ? 'B' : 'A'}
+                      leverage={hasValidNumber(planoAtivo?.alavancagem) ? planoAtivo!.alavancagem : null}
+                      equity={hasValidNumber(planoAtivo?.capital_base_usd) ? planoAtivo!.capital_base_usd : null}
+                    />
                   )}
                   {/* V6.6 (F08): "Condição de Disparo" mostrava executionLabel[execution.status] —
                       repetição do status pela terceira vez na tela (F01 já removeu as outras duas), e

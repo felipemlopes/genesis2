@@ -6,11 +6,11 @@
 // "famílias votantes" pré-V6, classification/modifier/rule — não usada por nenhum componente real,
 // candidata a limpeza futura, não removida aqui por estar fora do escopo desta fase) que colidiria
 // com o nome do contrato real do backend.
-import type { VisualPattern, VisualObject, FibonacciObservation, VrvpObservation, DerivativesContext as GraphicalDerivativesContext, DirectionContradiction, ExecutionPlanB, ScoreBasis, StopStatus, StopAncora, StopBuffer, RrPorAlvo, DataTraceability } from './types/graphicalAnalysis';
+import type { VisualPattern, VisualObject, FibonacciObservation, VrvpObservation, DerivativesContext as GraphicalDerivativesContext, DirectionContradiction, ScoreBasis, StopStatus, StopAncora, StopBuffer, StopSource, RrPorAlvo, DataTraceability } from './types/graphicalAnalysis';
 
 // V6.7 (A-13): reexportados para quem importa de '../types' (a maioria dos componentes) em vez de
 // '../types/graphicalAnalysis' diretamente.
-export type { StopStatus, StopAncora, StopBuffer };
+export type { StopStatus, StopAncora, StopBuffer, StopSource };
 
 export enum TradeDirection {
   LONG = 'LONG',
@@ -163,6 +163,10 @@ export interface CandidateSetup {
   stop_ancora: StopAncora | null;
   stop_buffer: StopBuffer | null;
   stop_motivo: string | null;
+  // Genesis Brain V2 (Fase 4.1, item 12.2): mesmo contrato de PlanoSetup abaixo.
+  stop_recommended: number | null;
+  stop_effective: number | null;
+  stop_source: StopSource;
   // V6.7 (B-20): verificação de segurança de liquidação — null quando não há stop.
   verificacao: 'SEGURO' | 'INSEGURO' | null;
   verificacao_motivo: string | null;
@@ -263,6 +267,14 @@ export interface PlanoSetup {
   stop_ancora: StopAncora | null;
   stop_buffer: StopBuffer | null;
   stop_motivo: string | null;
+  // Genesis Brain V2 (Fase 4.1, item 12.2, Requisito 12.2, Fonte §36): reconciliação do
+  // vocabulário de fallback que stop_motivo já carregava (V6.9 item 34) — stop_recommended é
+  // alias de `stop` (nome do contrato V2); stop_effective nasce igual e só diverge depois de um
+  // ajuste manual do membro no slider (Fase 4.2); stop_source distingue AI_RECOMMENDED/
+  // SYSTEM_FALLBACK/USER_ADJUSTED, nunca escondendo de onde o stop realmente veio.
+  stop_recommended: number | null;
+  stop_effective: number | null;
+  stop_source: StopSource;
   // V6.7 (B-20/B-21): verificação de segurança de liquidação — presente nos dois planos, cada um
   // calculado contra o próprio stop.
   verificacao: 'SEGURO' | 'INSEGURO' | null;
@@ -328,7 +340,12 @@ export interface GenesisAnalysisResult {
     alvo_que_atende?: string | null;
     candidate_setup: CandidateSetup | null;
     executable_setup: CandidateSetup | null;
-    planoB: ExecutionPlanB | null;
+    // Genesis Brain V2 (Fase 5.1, item 16.3, Requisito 14.3): `planoB` (formato bruto legado,
+    // ExecutionPlanB) removido do tipo — zero consumidor restante no frontend (grep confirmado
+    // antes da remoção; os 7 arquivos que citavam `planoB` foram auditados um a um). O backend
+    // ainda pode mandar essa chave na resposta (compatibilidade), mas o frontend não declara nem
+    // lê mais — `planos[]` (PlanoSetup[], abaixo) é a única fonte, e é a única que reflete o merge
+    // de estado vivo da task 16.2.
     // Spec genesis-v6-10-implementacao (Fase 5, item 5.1/5.3): qual plano (A/B) a IA declarou como
     // primário — lido em AnalysisResult.tsx desde a V6.10, mas nunca declarado aqui nem repassado
     // por mapGraphicalToLegacy() até a V6.11 (achado real ao implementar o item 3.6): sem isto, a

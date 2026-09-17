@@ -58,6 +58,12 @@ export const router = createBrowserRouter([
         element: <AppLayout />,
         children: [
           { index: true, element: <SuspenseWrapper><GenesisPage /></SuspenseWrapper> },
+          // Genesis Brain V2 (Fase 7.2, item 22.2/22.3, Requisito 25): restaura uma análise pelo
+          // UUID a partir do servidor (GET /v1/analises/{uuid}), não só de state React — sobrevive
+          // a um refresh ou a navegar pro Radar (geopolitica) e voltar. Mesmo componente
+          // (GenesisPage) da criação: lê `useParams().uuid`, se presente, busca e restaura antes de
+          // cair no estado vazio "Terminal Gênesis".
+          { path: 'genesis/analise/:uuid', element: <SuspenseWrapper><GenesisPage /></SuspenseWrapper> },
           { path: 'carteira', element: <SuspenseWrapper><CarteiraPage /></SuspenseWrapper> },
           { path: 'trades', element: <SuspenseWrapper><ActiveTradesPage /></SuspenseWrapper> },
           { path: 'historico', element: <SuspenseWrapper><HistoryPage /></SuspenseWrapper> },

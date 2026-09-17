@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams, useParams } from 'react-router-dom';
 import {
   Zap,
   ChevronDown,
@@ -20,8 +20,9 @@ import OrderBookImbalance from '../components/OrderBookImbalance';
 import BasisSpotPerpetualCard from '../components/BasisSpotPerpetualCard';
 import LiquidationHeatmap from '../components/LiquidationHeatmap';
 import SectorSentiment from '../components/SectorSentiment';
-import { analyzeChart, scanChartMetadata, ChartMetadataBlockedError } from '../services/geminiService';
+import { analyzeChart, scanChartMetadata, ChartMetadataBlockedError, mapGraphicalToLegacy } from '../services/geminiService';
 import { normalizarPar } from '../services/normalizarPar';
+import { getAnaliseByUuid } from '../services/api';
 import { GenesisAnalysisResult, ChartMetadata, UnifiedChartResult, PlanoSetup } from '../types';
 import { fetchBinanceData, fetchBybitData, fetchBitgetData, fetchOkxData, ExchangeData } from '../services/cryptoApi';
 
@@ -114,6 +115,7 @@ export const toNullableNumber = (value: unknown): number | null => {
 
 const GenesisPage: React.FC = () => {
   const navigate = useNavigate();
+  const { uuid: routeUuid } = useParams<{ uuid?: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
   const {
     exchange, setExchange,
@@ -154,6 +156,34 @@ const GenesisPage: React.FC = () => {
   // state, sem onClick) — agora aborta de verdade o poll em andamento (não cancela o job no
   // servidor, só para o cliente de continuar esperando por uma resposta que o membro não quer mais).
   const analysisAbortControllerRef = useRef<AbortController | null>(null);
+
+  // Genesis Brain V2 (Fase 7.2, item 22.2/22.3, Requisito 25, Fonte §70-71): restaura a análise a
+  // partir do servidor quando a rota carrega com um :uuid (/dashboard/genesis/analise/:uuid) — um
+  // refresh, um link direto, ou voltar da navegação (o React Router já preserva o state do
+  // AppContext dentro da SPA; isto cobre o caso que ele NÃO cobre, remount completo). Só busca
+  // quando o uuid da rota muda E ainda não é a análise já carregada (evita refetch a cada render).
+  useEffect(() => {
+    if (!routeUuid || routeUuid === currentAnaliseId) return;
+    let cancelado = false;
+    (async () => {
+      const raw = await getAnaliseByUuid(routeUuid);
+      if (cancelado || raw === null) return;
+      // Fonte §71: análise ainda PENDING/em processamento (link acessado cedo demais, ou
+      // atualizado bem no instante do processamento) — mapGraphicalToLegacy() espera um resultado
+      // terminal (mesma pré-condição que o polling de analyzeChart() já garante antes de chamá-lo).
+      // Escopo deliberado: não reabre o polling aqui: raro (a maioria dos acessos acontece bem
+      // depois do processamento concluir) e o polling completo já existe só dentro do fluxo de
+      // criação (analyzeChart()); reabri-lo aqui duplicaria aquela máquina de estado inteira.
+      if (raw.status !== 'COMPLETED') return;
+      setResult(mapGraphicalToLegacy(raw));
+      setCurrentAnaliseId(raw.analysis_id ?? routeUuid);
+      if (raw.pair) setSelectedPair(String(raw.pair).toUpperCase().replace('/', ''));
+    })();
+    return () => {
+      cancelado = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [routeUuid]);
 
   // Pre-fill form from URL query params (e.g. after reveal redirect from AlertCard)
   useEffect(() => {
@@ -279,6 +309,13 @@ const GenesisPage: React.FC = () => {
         // (chamados via currentAnaliseId) agora resolvem por esse UUID direto, sem precisar de uma
         // segunda linha nem de um ID numérico separado.
         setCurrentAnaliseId(data.analysis_id ?? null);
+        // Genesis Brain V2 (Fase 7.2, item 22.3, Requisito 25.2): move a URL pra rota restaurável
+        // assim que a análise termina — dar refresh ou navegar pro Radar e voltar passa a
+        // reidratar do servidor (efeito acima) em vez de cair na tela vazia. `replace: true`: esta
+        // é a MESMA visão, não uma navegação nova pro histórico do navegador.
+        if (data.analysis_id) {
+          navigate(`/dashboard/genesis/analise/${data.analysis_id}`, { replace: true });
+        }
       }
 
       setResult(data);
@@ -404,6 +441,11 @@ const GenesisPage: React.FC = () => {
     setSelectedFile(null);
     setChartMetadata(null);
     setCurrentAnaliseId(null);
+    // Genesis Brain V2 (Fase 7.2, item 22.3): sai da rota restaurável ao voltar pro upload — senão
+    // um refresh logo depois reidrataria a análise que o membro acabou de fechar.
+    if (routeUuid) {
+      navigate('/dashboard', { replace: true });
+    }
   };
 
   // V6.7 (B-24): recebe o plano selecionado na tela (A ou B) — antes não recebia nenhum argumento e

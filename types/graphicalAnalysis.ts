@@ -201,6 +201,14 @@ export interface AlavancagemInfo {
 // STOP_UNAVAILABLE (mensagem de A-08).
 export type StopStatus = 'VALID' | 'VALID_WIDE' | 'STOP_UNAVAILABLE';
 
+// Genesis Brain V2 (Fase 4.1, item 12.2, Requisito 12.2, Fonte §36): reconciliação do vocabulário
+// de fallback que stop_motivo já carregava (V6.9 item 34) — AI_RECOMMENDED quando a IA escolheu a
+// âncora especificamente, SYSTEM_FALLBACK quando NivelService usou o sistema automático de 3
+// camadas (ausência de escolha, escolha inválida, ou escolha fora do teto), USER_ADJUSTED quando o
+// membro move o slider de stop (Fase 4.2) para um valor diferente de stop_recommended. null só
+// quando stop_status é STOP_UNAVAILABLE (nada foi escolhido, não há origem a atribuir).
+export type StopSource = 'AI_RECOMMENDED' | 'SYSTEM_FALLBACK' | 'USER_ADJUSTED' | null;
+
 export interface StopAncora {
   tipo: string;
   valor: number;
@@ -288,6 +296,13 @@ export interface ExecutionCandidateSetup {
   stop_ancora: StopAncora | null;
   stop_buffer: StopBuffer | null;
   stop_motivo: string | null;
+  // Genesis Brain V2 (Fase 4.1, item 12.2): stop_recommended é o valor calculado por
+  // NivelService::stop() (alias de `stop` acima, nome do contrato V2); stop_effective nasce igual
+  // e só diverge depois de um ajuste manual do membro no slider (Fase 4.2) — persistência real de
+  // uma divergência é o endpoint de repricing (Fase 4.3, ainda não implementado).
+  stop_recommended: number | null;
+  stop_effective: number | null;
+  stop_source: StopSource;
   // V6.7 (B-20): verificação de segurança de liquidação (stop cai antes ou depois da liquidação) —
   // null quando não há stop (STOP_UNAVAILABLE), mesmo padrão de alavancagem_info/liquidacao acima.
   verificacao: 'SEGURO' | 'INSEGURO' | null;
@@ -313,39 +328,15 @@ export interface ExecutionCandidateSetup {
   margem_comprometida_pct_capital: number | null;
 }
 
-// V6.7 (G-44): faltavam zona_de/zona_ate/fonte — MotorExecucaoService::gerarPlanoB() sempre devolveu
-// os três (usados por ExecucaoService::montar() para montar zonaInteresse e planoBCompleto), mas o
-// tipo não os declarava. Este é o formato bruto de execution.planoB (compatibilidade legado); o
-// formato completo e verificado pela tela é execution.planos[] (ExecutionPlanoSetup, abaixo).
-export interface ExecutionPlanB {
-  entrada: number;
-  stop: number;
-  zona_de: number | null;
-  zona_ate: number | null;
-  fonte: string | null;
-  tp1: number | null;
-  tp1_rotulo: string | null;
-  tp2: number | null;
-  tp2_rotulo: string | null;
-  tp3: number | null;
-  tp3_rotulo: string | null;
-  alavancagem: number;
-  liquidacao: number | string | null;
-  riscoPct: number;
-  rr1: number;
-  verificacao: 'SEGURO' | 'INSEGURO';
-  verificacao_motivo: string | null;
-  liquidacao_classificacao: 'LIQ_ANTES_DO_STOP' | 'LIQ_FOLGA_CURTA' | null;
-  tipo: string;
-  descricao: string;
-  // V6.7 (A-13): stop próprio do Plano B — gerarPlanoB() devolve null (Plano B indisponível) em vez
-  // de publicar este objeto quando STOP_UNAVAILABLE, então aqui dentro stop_status é sempre 'VALID'
-  // ou 'VALID_WIDE' na prática.
-  stop_status: StopStatus;
-  stop_ancora: StopAncora | null;
-  stop_buffer: StopBuffer | null;
-  stop_motivo: string | null;
-}
+// Genesis Brain V2 (Fase 5.1, item 16.3, Requisito 14.3): `ExecutionPlanB` (formato bruto legado
+// de `execution.planoB` — MotorExecucaoService::gerarPlanoB()/ExecucaoService::montar()) removido
+// por completo — zero consumidor restante no frontend (grep confirmado antes da remoção; os 7
+// arquivos que citavam `planoB` foram auditados um a um, task 16.3). `ExecutionPlanoSetup` (o
+// formato completo em `execution.planos[]`) já era, desde o hotfix V6.11 final (P0.12), a fonte
+// única que a tela de fato usa — e é a única que reflete o merge de estado vivo da task 16.2
+// (AnalysisPublicResponseBuilder::executionComEstadoVivo(), backend). O backend pode continuar
+// mandando a chave `planoB` na resposta por enquanto (não removida lá nesta sessão); o frontend
+// simplesmente não declara nem lê mais.
 
 // V6.9 pacote final (spec genesis-v6-9-pacote-final, Fase 11, item 11.4, doc §16): zona real do
 // catálogo (TargetCandidateCatalog, backend) — a IA seleciona candidate_id, nunca devolve preço.
@@ -528,6 +519,10 @@ export interface ExecutionPlanoSetup {
   stop_ancora: StopAncora | null;
   stop_buffer: StopBuffer | null;
   stop_motivo: string | null;
+  // Genesis Brain V2 (Fase 4.1, item 12.2): mesmo contrato de ExecutionCandidateSetup acima.
+  stop_recommended: number | null;
+  stop_effective: number | null;
+  stop_source: StopSource;
   // V6.7 (B-20/B-21): verificação de segurança de liquidação — presente nos dois planos, cada um
   // calculado contra o próprio stop (B-21: Plano B não reaproveita mais o do Plano A).
   verificacao: 'SEGURO' | 'INSEGURO' | null;
@@ -567,7 +562,10 @@ export interface ExecutionPipelineResult {
   alvo_que_atende: string | null;
   candidate_setup: ExecutionCandidateSetup | null;
   executable_setup: ExecutionCandidateSetup | null;
-  planoB: ExecutionPlanB | null;
+  // Genesis Brain V2 (Fase 5.1, item 16.3, Requisito 14.3): `planoB` (ExecutionPlanB, formato
+  // bruto legado) removido — zero consumidor restante no frontend (grep confirmado). `planos[]`
+  // abaixo é a única fonte, e a única que reflete o merge de estado vivo da task 16.2
+  // (AnalysisPublicResponseBuilder::executionComEstadoVivo(), backend).
   // V6.5 (E08): 1 ou 2 itens, mesmo formato completo pros dois planos.
   planos: ExecutionPlanoSetup[];
   // Spec genesis-v6-10-implementacao (Fase 5, item 5.1/5.3, doc §5.3): qual plano (A/B) a IA

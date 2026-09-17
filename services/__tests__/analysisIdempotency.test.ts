@@ -31,9 +31,16 @@ function criarSessionStorageEmMemoria(): Storage {
 const submissaoBase: SubmissaoAnalise = {
   symbol: 'BTCUSDT',
   timeframe: '1d',
-  alavancagem: 10,
   imagemHash: 'hash-fixo-de-teste',
 };
+
+// Genesis Brain V2 (Fase 0.3, item 3.6, Fonte §54/§85, Propriedade 5 do design.md): alavancagem
+// nunca deve mudar a identidade da análise. Provado em nível de TIPO, não só em runtime —
+// `SubmissaoAnalise` não tem campo `alavancagem` nenhum, então é impossível sequer CONSTRUIR uma
+// submissão que varie por alavancagem. Se este bloco parar de dar erro de compilação (TS2353/2322),
+// alguém reintroduziu o campo — a suíte de tipo falha antes de qualquer teste rodar.
+// @ts-expect-error alavancagem não existe mais em SubmissaoAnalise — de propósito, ver acima.
+const _submissaoComAlavancagemNaoCompila: SubmissaoAnalise = { ...submissaoBase, alavancagem: 20 };
 
 describe('obterChaveIdempotencia / encerrarChaveIdempotencia', () => {
   let storageOriginal: Storage | undefined;
