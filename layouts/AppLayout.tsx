@@ -34,7 +34,36 @@ const AppLayout = () => {
   const [credits, setCredits] = useState<number | null>(null);
 
   useEffect(() => {
-    fetchCredits().then(setCredits).catch(() => setCredits(null));
+    if (!isAuthenticated) {
+      setCredits(null);
+      return;
+    }
+
+    let active = true;
+    const refreshCredits = async () => {
+      try {
+        const balance = await fetchCredits();
+        if (active) setCredits(balance);
+      } catch {
+        if (active) setCredits(null);
+      }
+    };
+    const handleRefreshCredits = () => void refreshCredits();
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') void refreshCredits();
+    };
+
+    void refreshCredits();
+    window.addEventListener('refreshCredits', handleRefreshCredits);
+    window.addEventListener('focus', handleRefreshCredits);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      active = false;
+      window.removeEventListener('refreshCredits', handleRefreshCredits);
+      window.removeEventListener('focus', handleRefreshCredits);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
   }, [isAuthenticated]);
 
   const showMarket = location.pathname === '/dashboard';

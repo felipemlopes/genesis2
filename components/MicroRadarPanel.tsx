@@ -75,6 +75,8 @@ const MicroRadarPanel: React.FC = () => {
         return;
       }
 
+      window.dispatchEvent(new Event('refreshCredits'));
+
       const { ativo, corretora, timeframe } = json.data;
       setAlerta(null);
       navigate(
