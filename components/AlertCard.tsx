@@ -103,6 +103,8 @@ export const AlertCard: React.FC<AlertCardProps> = ({ alerta, onReveal }) => {
                 return;
             }
 
+            window.dispatchEvent(new Event('refreshCredits'));
+
             const symbol = result.ativo;
             const exchange = result.corretora;
             const timeframe = result.timeframes?.[0] || timeframes?.[0] || '1h';

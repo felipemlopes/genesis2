@@ -332,6 +332,9 @@ const GenesisPage: React.FC = () => {
       }
     } finally {
       analysisAbortControllerRef.current = null;
+      // A reserva/captura/compensacao do credito ocorre no backend durante esta tentativa. O
+      // cabecalho guarda o saldo em estado React, portanto precisa consulta-lo ao terminar.
+      window.dispatchEvent(new Event('refreshCredits'));
       setIsAnalyzing(false);
     }
   };

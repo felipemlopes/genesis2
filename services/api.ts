@@ -81,7 +81,10 @@ export function isAuthenticated(): boolean {
 }
 
 export async function fetchCredits(): Promise<number | null> {
-  const res = await fetch(authPath('/credits/balance', '/v1/credits'), { headers: getAuthHeaders() });
+  const res = await fetch(authPath('/credits/balance', '/v1/credits'), {
+    headers: getAuthHeaders(),
+    cache: 'no-store',
+  });
   await assertOk(res);
   const data = await res.json();
   return data.credits ?? null;
