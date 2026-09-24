@@ -1,10 +1,16 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { motion } from 'framer-motion';
-import { Radar, Zap, Activity, ChevronDown, Sparkles, BarChart2, Layers, ShieldCheck, Search } from 'lucide-react';
+import { Radar, Zap, Activity, ChevronDown, Sparkles, BarChart2, Layers, ShieldCheck, Search, Lock } from 'lucide-react';
 import { RSI, MACD, EMA, BollingerBands } from 'technicalindicators';
 import AssetBadge from './AssetBadge';
+import { consumeCredits } from '../services/api';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
+
+// Paywall do Radar (bug relatado por cliente, 23/09/2026): o ativo só aparece depois de revelado.
+// A cobrança é o tipo 'radar' de /credits/consume — no [AUTH] o valor vem de GENESIS_COST_RADAR
+// (padrão 50, mesmo valor exibido pelo AlertCard). Se esse env mudar, atualizar aqui também.
+const RADAR_REVEAL_COST = 50;
 
 // --- ICONS ---
 const BinanceLogo = () => (
@@ -45,6 +51,10 @@ interface ScannerOpportunity {
   };
   justification: string;
   timestamp: string;
+  /** Paywall: false até o membro pagar para revelar este ativo. */
+  revealed?: boolean;
+  /** Chave de idempotência da cobrança — uma por oportunidade por scan (retry não cobra duas vezes). */
+  revealKey?: string;
 }
 
 interface OpportunityScannerProps {
@@ -103,6 +113,27 @@ const OpportunityScanner: React.FC<OpportunityScannerProps> = ({ onAnalyze, save
   const [searchInfo, setSearchInfo] = useState<Record<string, string>>({});
   const [isSearching, setIsSearching] = useState<Record<string, boolean>>({});
   const [activeSearch, setActiveSearch] = useState<string | null>(null);
+  const [revealing, setRevealing] = useState<Record<string, boolean>>({});
+  const [revealError, setRevealError] = useState<Record<string, string>>({});
+
+  const handleReveal = async (opp: ScannerOpportunity) => {
+    if (revealing[opp.id] || opp.revealed) return;
+    setRevealing(prev => ({ ...prev, [opp.id]: true }));
+    setRevealError(prev => ({ ...prev, [opp.id]: '' }));
+    try {
+      const result = await consumeCredits('radar', opp.revealKey ?? `radar-${opp.id}-${opp.timestamp}`);
+      if (!result.success) {
+        setRevealError(prev => ({ ...prev, [opp.id]: result.error || 'Não foi possível revelar o ativo.' }));
+        return;
+      }
+      setOpportunities(prev => prev.map(o => (o.id === opp.id ? { ...o, revealed: true } : o)));
+      window.dispatchEvent(new Event('refreshCredits'));
+    } catch {
+      setRevealError(prev => ({ ...prev, [opp.id]: 'Falha de conexão. Tente novamente.' }));
+    } finally {
+      setRevealing(prev => ({ ...prev, [opp.id]: false }));
+    }
+  };
 
   const fetchSearchInfo = async (symbol: string) => {
     if (searchInfo[symbol]) {
@@ -439,7 +470,9 @@ const OpportunityScanner: React.FC<OpportunityScannerProps> = ({ onAnalyze, save
                             orderBookImbalance
                         },
                         justification,
-                        timestamp: new Date().toLocaleTimeString()
+                        timestamp: new Date().toLocaleTimeString(),
+                        revealed: false,
+                        revealKey: crypto.randomUUID(),
                     });
                 }
             } catch (e) {}
@@ -515,7 +548,7 @@ const OpportunityScanner: React.FC<OpportunityScannerProps> = ({ onAnalyze, save
              <span className="font-bold text-purple-400  pb-1 mb-2 block uppercase tracking-wider">Score de Fluxo</span>
              <p className="text-gray-300 mb-2">Mede a pressão institucional e o posicionamento do mercado em tempo real.</p>
              <ul className="text-gray-400 space-y-1 list-disc pl-4">
-                <li><strong className="text-white">Open Interest:</strong> ${(data.metrics.openInterest / 1000000).toFixed(1)}M</li>
+                <li><strong className="text-white">Open Interest:</strong> {data.revealed ? `$${(data.metrics.openInterest / 1000000).toFixed(1)}M` : '•••'}</li>
                 <li><strong className="text-white">Funding Rate:</strong> {(data.metrics.fundingRate * 100).toFixed(4)}%</li>
                 <li><strong className="text-white">Long/Short Ratio:</strong> {data.metrics.longShortRatio.toFixed(2)}</li>
              </ul>
@@ -653,10 +686,19 @@ const OpportunityScanner: React.FC<OpportunityScannerProps> = ({ onAnalyze, save
                  {/* 1. Asset & Liquidity */}
                  <div className="flex flex-col w-[15%]">
                     <span className="text-lg font-bold text-white font-mono tracking-tight inline-flex items-center gap-2">
-                       <AssetBadge symbol={opp.pair} size="sm" mostrarNome={false} />
-                       {opp.pair}
+                       {opp.revealed ? (
+                         <>
+                           <AssetBadge symbol={opp.pair} size="sm" mostrarNome={false} />
+                           {opp.pair}
+                         </>
+                       ) : (
+                         <>
+                           <Lock size={14} className="text-gray-500" />
+                           <span className="text-gray-400">•••/USDT</span>
+                         </>
+                       )}
                     </span>
-                    <span className="text-[10px] text-gray-500 mt-1">Vol 24h: {opp.volume24h}</span>
+                    <span className="text-[10px] text-gray-500 mt-1">Vol 24h: {opp.revealed ? opp.volume24h : '•••'}</span>
                     <div className="flex items-center gap-2 mt-3">
                         {opp.exchanges.includes('Binance') && <div className="w-3.5 h-3.5 grayscale group-hover:grayscale-0 transition-all" title="Binance"><BinanceLogo /></div>}
                         {opp.exchanges.includes('Bybit') && <div className="w-3.5 h-3.5 grayscale group-hover:grayscale-0 transition-all" title="Bybit"><BybitLogo /></div>}
@@ -712,7 +754,21 @@ const OpportunityScanner: React.FC<OpportunityScannerProps> = ({ onAnalyze, save
                  </div>
 
                  {/* 5. Action */}
-                 <div className="flex justify-end gap-2 w-[15%]">
+                 <div className="flex flex-col items-end gap-1 w-[15%]">
+                   {!opp.revealed ? (
+                    <>
+                      <button
+                          onClick={() => handleReveal(opp)}
+                          disabled={revealing[opp.id]}
+                          className="bg-genesis-accent/10 hover:bg-genesis-accent hover:text-black text-genesis-accent px-4 py-3 rounded text-[10px] font-bold uppercase tracking-widest transition-all cursor-pointer disabled:opacity-50 disabled:cursor-wait inline-flex items-center gap-2"
+                      >
+                          <Lock size={12} />
+                          {revealing[opp.id] ? 'Revelando...' : `Revelar — ${RADAR_REVEAL_COST} créditos`}
+                      </button>
+                      {revealError[opp.id] && <span className="text-[9px] text-amber-400 text-right">{revealError[opp.id]}</span>}
+                    </>
+                   ) : (
+                   <div className="flex justify-end gap-2">
                     <button 
                         onClick={() => fetchSearchInfo(opp.symbolRaw)}
                         className={`bg-white/5 hover:bg-white/10 text-white p-3 rounded transition-all  ${isSearching[opp.symbolRaw] ? 'animate-pulse' : ''}`}
@@ -726,6 +782,8 @@ const OpportunityScanner: React.FC<OpportunityScannerProps> = ({ onAnalyze, save
                     >
                         ANALISAR
                     </button>
+                   </div>
+                   )}
                  </div>
 
               </motion.div>

@@ -291,38 +291,26 @@ describe('Bug 4: Zonas de entrada devem ser clicáveis', () => {
 // ─── Bug 3: Scanner revela ativo sem consumo de créditos ─────────────────────
 
 describe('Bug 3: Scanner deve ocultar ativo até consumo de créditos', () => {
-  // PENDENTE (23/09/2026): funcionalidade nunca implementada — decisão de produto do Felipe.
-  it.skip('OpportunityScanner deve ter lógica de ofuscação/reveal de ativos', async () => {
+  // Implementado em 24/09/2026: revelar por ativo, cobrança tipo 'radar' via /credits/consume.
+  it('OpportunityScanner deve ter lógica de ofuscação/reveal de ativos', async () => {
     const fs = await import('fs');
     const path = await import('path');
-    const scannerPath = path.resolve(__dirname, '../components/OpportunityScanner.tsx');
-    const content = fs.readFileSync(scannerPath, 'utf-8');
+    const content = fs.readFileSync(path.resolve(__dirname, '../components/OpportunityScanner.tsx'), 'utf-8');
 
-    // O scanner deve ter lógica de paywall: ocultar o ativo até pagamento
-    const hasPaywall = /revealedAssets|ofusca|blur.*pair|mask.*symbol|\?\?\?/i.test(content);
-    const hasConsumeCall = /consume.*scanner|\/consume\/scanner/i.test(content);
-
-    // ESPERADO: deve existir lógica de ofuscação E consumo de créditos
-    expect(hasPaywall).toBe(true);
-    expect(hasConsumeCall).toBe(true);
+    expect(content).toMatch(/consumeCredits\('radar'/);
+    expect(content).toMatch(/revealed:\s*false/);
+    expect(content).toMatch(/revealKey:\s*crypto\.randomUUID\(\)/);
   });
 
-  // PENDENTE (23/09/2026): funcionalidade nunca implementada — decisão de produto do Felipe.
-  it.skip('OpportunityScanner NÃO deve exibir pair/symbolRaw diretamente sem gate de crédito', async () => {
+  it('OpportunityScanner NÃO deve exibir pair/symbolRaw diretamente sem gate de crédito', async () => {
     const fs = await import('fs');
     const path = await import('path');
-    const scannerPath = path.resolve(__dirname, '../components/OpportunityScanner.tsx');
-    const content = fs.readFileSync(scannerPath, 'utf-8');
+    const content = fs.readFileSync(path.resolve(__dirname, '../components/OpportunityScanner.tsx'), 'utf-8');
 
-    // No render dos resultados, o par/ativo NÃO deve ser exibido diretamente
-    // Deve haver uma condição (revealedAssets.has(opp.id)) antes de mostrar
-    const renderSection = content.match(/\{opp\.pair\}/g);
-    
-    // Se opp.pair é renderizado sem condicional, o ativo é revelado sem crédito
-    // Após fix: deve ser condicional (ex: revealedAssets.has(opp.id) ? opp.pair : '???/USDT')
-    const hasConditionalReveal = /revealedAssets.*\?.*pair|revealed.*\?.*symbol/i.test(content);
-    
-    expect(hasConditionalReveal).toBe(true);
+    // Todo render do par/volume/busca/analisar fica atrás de opp.revealed.
+    expect(content).toMatch(/opp\.revealed \? \(\s*<>\s*<AssetBadge symbol=\{opp\.pair\}/);
+    expect(content).toMatch(/opp\.revealed \? opp\.volume24h : '•••'/);
+    expect(content).toMatch(/!opp\.revealed \? \([\s\S]*?handleReveal\(opp\)[\s\S]*?fetchSearchInfo\(opp\.symbolRaw\)[\s\S]*?onAnalyze\(/);
   });
 });
 
@@ -363,8 +351,7 @@ describe('Bug 10: CarteiraCripto deve carregar sem erro de runtime', () => {
 // ─── Bug 9: Falta endpoint admin para verificação de TPs ────────────────────
 
 describe('Bug 9: Endpoint admin para verificação de TPs deve existir', () => {
-  // PENDENTE (23/09/2026): funcionalidade nunca implementada — decisão de produto do Felipe.
-  it.skip('API deve ter rota GET /admin/analises/zonas', async () => {
+  it('API deve ter rota GET /admin/analises/zonas', async () => {
     const fs = await import('fs');
     const path = await import('path');
     const apiRoutesPath = 'e:\\Programas\\wamp64\\www\\genesis-api\\routes\\api.php';
@@ -374,8 +361,7 @@ describe('Bug 9: Endpoint admin para verificação de TPs deve existir', () => {
     expect(hasZonasRoute).toBe(true);
   });
 
-  // PENDENTE (23/09/2026): funcionalidade nunca implementada — decisão de produto do Felipe.
-  it.skip('API deve ter rota GET /admin/analises/tps', async () => {
+  it('API deve ter rota GET /admin/analises/tps', async () => {
     const fs = await import('fs');
     const path = await import('path');
     const apiRoutesPath = 'e:\\Programas\\wamp64\\www\\genesis-api\\routes\\api.php';
