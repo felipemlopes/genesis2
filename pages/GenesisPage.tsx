@@ -368,7 +368,6 @@ const GenesisPage: React.FC = () => {
 
         if (unifiedResult.timeframe) {
           const tfMap: Record<string, string> = {
-            '1M': '1M', 'MONTHLY': '1M', 'M': '1M', 'MONTH': '1M',
             '1W': '1w', 'WEEKLY': '1w', 'W': '1w', 'WEEK': '1w', 'SEMANAL': '1w',
             '1D': '1d', 'DAILY': '1d', 'D': '1d', 'DAY': '1d', 'DIARIO': '1d', 'DIÁRIO': '1d',
             '4H': '4h', 'H4': '4h',

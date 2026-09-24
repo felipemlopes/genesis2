@@ -26,7 +26,6 @@ import {
 const ROUTE_MAP: Record<string, string> = {
   genesis: '/dashboard',
   carteira: '/dashboard/carteira',
-  active_trades: '/dashboard/trades',
   analysis_history: '/dashboard/performance',
   scanner: '/dashboard/scanner',
   patterns: '/dashboard/padroes',

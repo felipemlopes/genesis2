@@ -835,7 +835,7 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, onSaveTrade, onRe
                   <button
                     disabled={!podeSelecionarPlano}
                     onClick={() => handleZoneSelect('A')}
-                    className={`w-full text-left p-2.5 rounded-lg border transition-all duration-200 ${!podeSelecionarPlano ? 'opacity-40 cursor-not-allowed' : ''} ${
+                    className={`w-full text-left p-2.5 rounded-lg border transition-all duration-200 ${!podeSelecionarPlano ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'} ${
                       zonaEfetiva === 'A'
                         ? 'bg-genesis-accent/10 border-genesis-accent ring-1 ring-genesis-accent'
                         : 'bg-black/20 border-white/5 hover:border-white/10 hover:bg-black/30'
@@ -882,7 +882,7 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, onSaveTrade, onRe
                     <button
                       disabled={!podeSelecionarPlano}
                       onClick={() => handleZoneSelect('B')}
-                      className={`w-full text-left p-2.5 rounded-lg border transition-all duration-200 ${!podeSelecionarPlano ? 'opacity-40 cursor-not-allowed' : ''} ${
+                      className={`w-full text-left p-2.5 rounded-lg border transition-all duration-200 ${!podeSelecionarPlano ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'} ${
                         zonaEfetiva === 'B'
                           ? 'bg-genesis-accent/10 border-genesis-accent ring-1 ring-genesis-accent'
                           : 'bg-black/20 border-white/5 hover:border-white/10 hover:bg-black/30'

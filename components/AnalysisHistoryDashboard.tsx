@@ -596,15 +596,15 @@ const AnalysisHistoryDashboard: React.FC = () => {
                               <td className="py-4 px-2 text-center">
                                 {item.target_price !== undefined && item.target_price !== null ? (
                                   <div className="flex flex-col items-center gap-0.5">
-                                    <div className="relative w-8 h-8">
+                                    <div className={`relative w-8 h-8 ${progressMap[item.id] ? '' : 'animate-pulse'}`}>
                                       <svg className="w-8 h-8 -rotate-90" viewBox="0 0 36 36">
                                         <circle cx="18" cy="18" r="15" fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth="3" />
                                         <circle cx="18" cy="18" r="15" fill="none" stroke="#22c55e" strokeWidth="3"
-                                          strokeDasharray={`${(progressMap[item.id]?.tp1 || 0) * 0.9425} 94.25`}
+                                          strokeDasharray={`${(progressMap[item.id]?.tp1 ?? 0) * 0.9425} 94.25`}
                                           strokeLinecap="round" />
                                       </svg>
                                       <span className="absolute inset-0 flex items-center justify-center text-[7px] font-mono text-white">
-                                        {Math.round(progressMap[item.id]?.tp1 || 0)}%
+                                        {progressMap[item.id] ? `${Math.round(progressMap[item.id].tp1)}%` : '…'}
                                       </span>
                                     </div>
                                     <span className="text-[9px] font-mono text-gray-500">{item.target_price.toLocaleString()}</span>
@@ -614,15 +614,15 @@ const AnalysisHistoryDashboard: React.FC = () => {
                               <td className="py-4 px-2 text-center">
                                 {item.target_price2 !== undefined && item.target_price2 !== null ? (
                                   <div className="flex flex-col items-center gap-0.5">
-                                    <div className="relative w-8 h-8">
+                                    <div className={`relative w-8 h-8 ${progressMap[item.id] ? '' : 'animate-pulse'}`}>
                                       <svg className="w-8 h-8 -rotate-90" viewBox="0 0 36 36">
                                         <circle cx="18" cy="18" r="15" fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth="3" />
                                         <circle cx="18" cy="18" r="15" fill="none" stroke="#22c55e" strokeWidth="3"
-                                          strokeDasharray={`${(progressMap[item.id]?.tp2 || 0) * 0.9425} 94.25`}
+                                          strokeDasharray={`${(progressMap[item.id]?.tp2 ?? 0) * 0.9425} 94.25`}
                                           strokeLinecap="round" />
                                       </svg>
                                       <span className="absolute inset-0 flex items-center justify-center text-[7px] font-mono text-white">
-                                        {Math.round(progressMap[item.id]?.tp2 || 0)}%
+                                        {progressMap[item.id] ? `${Math.round(progressMap[item.id].tp2)}%` : '…'}
                                       </span>
                                     </div>
                                     <span className="text-[9px] font-mono text-gray-500">{item.target_price2.toLocaleString()}</span>
@@ -632,15 +632,15 @@ const AnalysisHistoryDashboard: React.FC = () => {
                               <td className="py-4 px-2 text-center">
                                 {item.target_price3 !== undefined && item.target_price3 !== null ? (
                                   <div className="flex flex-col items-center gap-0.5">
-                                    <div className="relative w-8 h-8">
+                                    <div className={`relative w-8 h-8 ${progressMap[item.id] ? '' : 'animate-pulse'}`}>
                                       <svg className="w-8 h-8 -rotate-90" viewBox="0 0 36 36">
                                         <circle cx="18" cy="18" r="15" fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth="3" />
                                         <circle cx="18" cy="18" r="15" fill="none" stroke="#22c55e" strokeWidth="3"
-                                          strokeDasharray={`${(progressMap[item.id]?.tp3 || 0) * 0.9425} 94.25`}
+                                          strokeDasharray={`${(progressMap[item.id]?.tp3 ?? 0) * 0.9425} 94.25`}
                                           strokeLinecap="round" />
                                       </svg>
                                       <span className="absolute inset-0 flex items-center justify-center text-[7px] font-mono text-white">
-                                        {Math.round(progressMap[item.id]?.tp3 || 0)}%
+                                        {progressMap[item.id] ? `${Math.round(progressMap[item.id].tp3)}%` : '…'}
                                       </span>
                                     </div>
                                     <span className="text-[9px] font-mono text-gray-500">{item.target_price3.toLocaleString()}</span>
