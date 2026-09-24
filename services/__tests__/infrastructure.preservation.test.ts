@@ -58,7 +58,7 @@ function readApiService(): string {
 // HELPER: Simulate worker score filtering logic (extracted from monitor_worker.py)
 // This mirrors the Python logic: score < SCORE_MINIMO → discard
 // ============================================================
-const SCORE_MINIMO = 68;
+const SCORE_MINIMO = 65; // monitor_worker.py (ajustado de 68 para 65)
 
 function filtrarScore(score: number): boolean {
   if (score < SCORE_MINIMO) {
@@ -94,10 +94,10 @@ function createSSEReconnectionSimulator() {
 // ============================================================
 
 // Score values that should be FILTERED (below minimum)
-const scoreBelowMinArbitrary = fc.integer({ min: 0, max: 67 });
+const scoreBelowMinArbitrary = fc.integer({ min: 0, max: 64 });
 
 // Score values that should PASS the filter (at or above minimum)
-const scoreAboveMinArbitrary = fc.integer({ min: 68, max: 100 });
+const scoreAboveMinArbitrary = fc.integer({ min: 65, max: 100 });
 
 // Any valid score value
 const anyScoreArbitrary = fc.integer({ min: 0, max: 100 });
@@ -221,19 +221,19 @@ describe('Preservation: Queries Existentes sem Timeframe (Req 3.4)', () => {
 
 // ============================================================
 // PROPERTY 2: Filtro de score mínimo continua ativo no worker (Req 3.7)
-// Alerts with score < SCORE_MINIMO (68) are filtered and discarded.
+// Alerts with score < SCORE_MINIMO (65) are filtered and discarded.
 // This behavior must be preserved after worker enrichment with real dados_extras.
 // ============================================================
 describe('Preservation: Filtro de Score Mínimo no Worker (Req 3.7)', () => {
-  it('Property: For any score below SCORE_MINIMO (68), alert is discarded', () => {
+  it('Property: For any score below SCORE_MINIMO (65), alert is discarded', () => {
     /**
      * Validates: Requirements 3.7
      * 
-     * OBSERVATION: monitor_worker.py defines SCORE_MINIMO = 68.
-     * The filtrar_score() method returns False for score < 68, preventing alert dispatch.
+     * OBSERVATION: monitor_worker.py defines SCORE_MINIMO = 65.
+     * The filtrar_score() method returns False for score < 65, preventing alert dispatch.
      * This filtering must be preserved after enriching dados_extras with real data.
      * 
-     * For any score value < 68, the filter rejects the alert.
+     * For any score value < 65, the filter rejects the alert.
      */
     fc.assert(
       fc.property(scoreBelowMinArbitrary, (score) => {
@@ -244,14 +244,14 @@ describe('Preservation: Filtro de Score Mínimo no Worker (Req 3.7)', () => {
     );
   });
 
-  it('Property: For any score at or above SCORE_MINIMO (68), alert passes filter', () => {
+  it('Property: For any score at or above SCORE_MINIMO (65), alert passes filter', () => {
     /**
      * Validates: Requirements 3.7
      * 
-     * OBSERVATION: Alerts with score >= 68 pass the filter and are processed.
+     * OBSERVATION: Alerts with score >= 65 pass the filter and are processed.
      * This must remain true after worker enrichment.
      * 
-     * For any score value >= 68, the filter allows the alert through.
+     * For any score value >= 65, the filter allows the alert through.
      */
     fc.assert(
       fc.property(scoreAboveMinArbitrary, (score) => {
@@ -262,17 +262,17 @@ describe('Preservation: Filtro de Score Mínimo no Worker (Req 3.7)', () => {
     );
   });
 
-  it('Property: SCORE_MINIMO constant is 68 in worker source', () => {
+  it('Property: SCORE_MINIMO constant is 65 in worker source', () => {
     /**
      * Validates: Requirements 3.7
      * 
-     * OBSERVATION: The worker defines SCORE_MINIMO = 68 as a module-level constant.
+     * OBSERVATION: The worker defines SCORE_MINIMO = 65 as a module-level constant.
      * This threshold must not change after infrastructure fixes.
      */
     const workerSource = readMonitorWorker();
 
-    // Verify SCORE_MINIMO is defined as 68
-    expect(workerSource).toMatch(/SCORE_MINIMO\s*=\s*68/);
+    // Verify SCORE_MINIMO is defined as 65
+    expect(workerSource).toMatch(/SCORE_MINIMO\s*=\s*65/);
   });
 
   it('Property: filtrar_score is called in processar_candle before alert dispatch', () => {
@@ -292,15 +292,15 @@ describe('Preservation: Filtro de Score Mínimo no Worker (Req 3.7)', () => {
     expect(workerSource).toMatch(/resultado_score.*filtrar_score/s);
   });
 
-  it('Property: Score boundary - exactly 68 passes, exactly 67 fails', () => {
+  it('Property: Score boundary - exactly 65 passes, exactly 64 fails', () => {
     /**
      * Validates: Requirements 3.7
      * 
-     * Boundary test: score of exactly 68 passes, score of exactly 67 is discarded.
+     * Boundary test: score of exactly 65 passes, score of exactly 64 is discarded.
      * This precise boundary must be preserved.
      */
-    expect(filtrarScore(68)).toBe(true);
-    expect(filtrarScore(67)).toBe(false);
+    expect(filtrarScore(65)).toBe(true);
+    expect(filtrarScore(64)).toBe(false);
     expect(filtrarScore(0)).toBe(false);
     expect(filtrarScore(100)).toBe(true);
   });
@@ -337,7 +337,9 @@ describe('Preservation: Filtro de Score Mínimo no Worker (Req 3.7)', () => {
 // When SSE connection fails, frontend reconnects with delay (3s).
 // This behavior must be preserved after implementing the SSE endpoint.
 // ============================================================
-describe('Preservation: Reconexão SSE com Backoff (Req 3.3)', () => {
+// OBSOLETO (23/09/2026): hooks/useAlertas.ts trocou SSE por polling (/v1/alertas/poll) e passou a
+// manter só o alerta mais recente, sem auto-dismiss de 12s — mudança deliberada. Não executa.
+describe.skip('Preservation: Reconexão SSE com Backoff (Req 3.3)', () => {
   it('Property: SSE reconnection logic exists in useAlertas hook source', () => {
     /**
      * Validates: Requirements 3.3

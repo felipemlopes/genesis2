@@ -56,7 +56,10 @@ describe('isModelOverloadOrTimeout', () => {
 // unifiedChartAnalysis(), que chamava /v1/unified-scan (rota que não existe mais no backend real,
 // só no pacote V6.4 arquivado). Nenhum código de produção chamava a função.
 
-describe('analyzeChart fallback behavior', () => {
+// OBSOLETO (23/09/2026): o fallback de modelo saiu do frontend — Fonte Brain V2 §85 ("não criar
+// fallback no frontend") e §64-67: failover é do backend (FailoverDecisionProvider, reserva
+// gemini_secondary). Mantido como registro, não executa.
+describe.skip('analyzeChart fallback behavior', () => {
   let originalFetch: typeof globalThis.fetch;
   let warnSpy: ReturnType<typeof vi.spyOn>;
 

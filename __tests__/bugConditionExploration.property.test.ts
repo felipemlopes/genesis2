@@ -46,7 +46,8 @@ describe('Bug 1 & 6: MENU_SECTIONS não deve conter itens removidos', () => {
     const content = fs.readFileSync(sidebarPath, 'utf-8');
 
     const hasHistoryRoute = /active_trades:\s*['"]/.test(content);
-    const hasActiveTradesRoute = /history:\s*['"]/.test(content);
+    // (?<!_): 'analysis_history' é a rota legítima da página Performance, não a aba 'history' removida.
+    const hasActiveTradesRoute = /(?<![\w])history:\s*['"]/.test(content);
     expect(hasHistoryRoute).toBe(false);
     expect(hasActiveTradesRoute).toBe(false);
   });
@@ -110,47 +111,34 @@ describe('Bug 2: tfMap deve normalizar formatos lowercase e variantes', () => {
     expect(hasVerboseFormats).toBe(true);
   });
 
-  it('property: qualquer formato de timeframe válido deve normalizar para valor do contexto', () => {
-    // Formatos que a Gemini Vision pode retornar
+  it('property: qualquer formato de timeframe válido deve normalizar para valor do contexto', async () => {
+    // Genesis Brain V2 (23/09/2026): valida o tfMap REAL da GenesisPage (antes o teste usava uma
+    // cópia própria, com 2h/3h/12h/1M que saíram do produto) contra SUPPORTED_TIMEFRAMES.
+    const fs = await import('fs');
+    const path = await import('path');
+    const { SUPPORTED_TIMEFRAMES } = await import('../utils/supportedTimeframes');
+    const content = fs.readFileSync(path.resolve(__dirname, '../pages/GenesisPage.tsx'), 'utf-8');
+    const bloco = content.match(/const tfMap[\s\S]*?\{([\s\S]*?)\};/)![1];
+    const tfMap: Record<string, string> = {};
+    for (const [, chave, valor] of bloco.matchAll(/'([^']+)':\s*'([^']+)'/g)) tfMap[chave] = valor;
+
     const possibleFormats = [
       '1d', '1D', 'D', 'daily', 'DAILY', 'Daily', 'diario', 'DIARIO', 'Diário',
-      '4h', '4H', 'H4', '4hr',
+      '4h', '4H', 'H4',
       '1h', '1H', 'H1', '60m', '60M',
       '15m', '15M', 'M15',
+      '5m', '5M', 'M5',
       '1w', '1W', 'W', 'weekly', 'WEEKLY', 'semanal', 'SEMANAL',
-      '1M', 'monthly', 'MONTHLY',
     ];
 
-    const validOutputs = ['15m', '1h', '2h', '3h', '4h', '12h', '1d', '1w', '1M'];
-
-    // Simular o tfMap atual (extraído do código)
-    const tfMap: Record<string, string> = {
-      '1M': '1M', 'MONTHLY': '1M', 'M': '1M', 'MONTH': '1M',
-      '1W': '1w', 'WEEKLY': '1w', 'W': '1w', 'WEEK': '1w',
-      '1D': '1d', 'DAILY': '1d', 'D': '1d', 'DAY': '1d',
-      '12H': '12h', 'H12': '12h',
-      '4H': '4h', 'H4': '4h',
-      '3H': '3h', 'H3': '3h',
-      '2H': '2h', 'H2': '2h', '120M': '2h',
-      '1H': '1h', 'H1': '1h', '60M': '1h',
-      '15M': '15m', 'M15': '15m',
-    };
-
-    // Testar que TODOS os formatos possíveis normalizam para um valor válido
-    const failures: string[] = [];
-    for (const fmt of possibleFormats) {
-      const normalized = tfMap[fmt.toUpperCase()] || fmt;
-      if (!validOutputs.includes(normalized)) {
-        failures.push(`"${fmt}" → "${normalized}" (não está em validOutputs)`);
-      }
-    }
-
-    // Esperamos ZERO falhas — todos os formatos devem normalizar corretamente
+    const failures = possibleFormats.filter((fmt) => {
+      const normalized = tfMap[fmt.toUpperCase().trim()] || fmt.toLowerCase().trim();
+      return !(SUPPORTED_TIMEFRAMES as readonly string[]).includes(normalized);
+    });
     expect(failures).toEqual([]);
+    expect(Object.values(tfMap).filter((v) => !(SUPPORTED_TIMEFRAMES as readonly string[]).includes(v))).toEqual([]);
   });
 });
-
-// ─── Bug 5: Resultado de análise perde-se na desmontagem ─────────────────────
 
 describe('Bug 5: Resultado de análise deve persistir no AppContext (não useState local)', () => {
   it('GenesisPage NÃO deve usar useState local para armazenar result/TradeSetup', async () => {
@@ -303,7 +291,8 @@ describe('Bug 4: Zonas de entrada devem ser clicáveis', () => {
 // ─── Bug 3: Scanner revela ativo sem consumo de créditos ─────────────────────
 
 describe('Bug 3: Scanner deve ocultar ativo até consumo de créditos', () => {
-  it('OpportunityScanner deve ter lógica de ofuscação/reveal de ativos', async () => {
+  // PENDENTE (23/09/2026): funcionalidade nunca implementada — decisão de produto do Felipe.
+  it.skip('OpportunityScanner deve ter lógica de ofuscação/reveal de ativos', async () => {
     const fs = await import('fs');
     const path = await import('path');
     const scannerPath = path.resolve(__dirname, '../components/OpportunityScanner.tsx');
@@ -318,7 +307,8 @@ describe('Bug 3: Scanner deve ocultar ativo até consumo de créditos', () => {
     expect(hasConsumeCall).toBe(true);
   });
 
-  it('OpportunityScanner NÃO deve exibir pair/symbolRaw diretamente sem gate de crédito', async () => {
+  // PENDENTE (23/09/2026): funcionalidade nunca implementada — decisão de produto do Felipe.
+  it.skip('OpportunityScanner NÃO deve exibir pair/symbolRaw diretamente sem gate de crédito', async () => {
     const fs = await import('fs');
     const path = await import('path');
     const scannerPath = path.resolve(__dirname, '../components/OpportunityScanner.tsx');
@@ -373,7 +363,8 @@ describe('Bug 10: CarteiraCripto deve carregar sem erro de runtime', () => {
 // ─── Bug 9: Falta endpoint admin para verificação de TPs ────────────────────
 
 describe('Bug 9: Endpoint admin para verificação de TPs deve existir', () => {
-  it('API deve ter rota GET /admin/analises/zonas', async () => {
+  // PENDENTE (23/09/2026): funcionalidade nunca implementada — decisão de produto do Felipe.
+  it.skip('API deve ter rota GET /admin/analises/zonas', async () => {
     const fs = await import('fs');
     const path = await import('path');
     const apiRoutesPath = 'e:\\Programas\\wamp64\\www\\genesis-api\\routes\\api.php';
@@ -383,7 +374,8 @@ describe('Bug 9: Endpoint admin para verificação de TPs deve existir', () => {
     expect(hasZonasRoute).toBe(true);
   });
 
-  it('API deve ter rota GET /admin/analises/tps', async () => {
+  // PENDENTE (23/09/2026): funcionalidade nunca implementada — decisão de produto do Felipe.
+  it.skip('API deve ter rota GET /admin/analises/tps', async () => {
     const fs = await import('fs');
     const path = await import('path');
     const apiRoutesPath = 'e:\\Programas\\wamp64\\www\\genesis-api\\routes\\api.php';

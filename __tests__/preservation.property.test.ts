@@ -88,7 +88,7 @@ describe('Preservation 3.1: Navegação para abas restantes (Performance, Radar,
       ['oi_monitor', 'OI & Liq.'],
       ['liquidity_map', 'Liquidity Map'],
       ['smart_money', 'Smart Money'],
-      ['geopolitical_radar', 'Radar Geopolítico'],
+      ['geopolitical_radar', 'Radar News'], // renomeado de 'Radar Geopolítico' (módulo Radar News)
       ['risk', 'Gestão de Risco'],
       ['new_listings', 'Nova Listagem'],
       ['learn', 'Aprenda Futuros'],
@@ -290,8 +290,8 @@ describe('Preservation 3.4: POST /consume/{type} debita créditos corretamente',
     expect(content).toContain("consume/{type}");
     expect(content).toContain('CreditController');
 
-    // Verificar que está dentro do grupo middleware auth:sanctum
-    const authGroupMatch = content.match(/middleware\(\['auth:sanctum'\]\)[\s\S]*?consume/);
+    // Desde o corte pro [AUTH] (10/09/2026) o grupo autenticado usa 'genesis.auth', não 'auth:sanctum'.
+    const authGroupMatch = content.match(/middleware\(\[[^\]]*'genesis\.auth'[^\]]*\]\)[\s\S]*?consume/);
     expect(authGroupMatch).not.toBeNull();
   });
 
