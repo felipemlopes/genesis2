@@ -399,8 +399,8 @@ export const mapGraphicalToLegacy = (v64: GraphicalAnalysisResult): GenesisAnaly
       executable_setup: exec.executable_setup,
       // Genesis Brain V2 (Fase 5.1, item 16.3): `planoB` (formato bruto legado) não é mais
       // repassado — `planos[]` abaixo é a única fonte desde a task 16.3 (zero consumidor
-      // restante, grep confirmado). O backend pode continuar mandando `exec.planoB`; simplesmente
-      // não entra mais no objeto que este adaptador devolve.
+      // restante, grep confirmado). Desde 23/09/2026 o backend também deixou de mandar
+      // `exec.planoB` (ExecucaoService) — análises antigas ainda o têm e ele é ignorado aqui.
       // Spec genesis-v6-10-implementacao (Fase 5, item 5.1/5.3): qual plano vem pré-selecionado —
       // achado real ao implementar o item 3.6 da V6.11: este campo nunca tinha sido acrescentado
       // aqui, então `execution.plano_primario` (lido em AnalysisResult.tsx desde a V6.10) sempre

@@ -22,6 +22,7 @@ import LiquidationHeatmap from '../components/LiquidationHeatmap';
 import SectorSentiment from '../components/SectorSentiment';
 import { analyzeChart, scanChartMetadata, ChartMetadataBlockedError, mapGraphicalToLegacy } from '../services/geminiService';
 import { normalizarPar } from '../services/normalizarPar';
+import { SUPPORTED_TIMEFRAMES, isSupportedTimeframe } from '../utils/supportedTimeframes';
 import { getAnaliseByUuid } from '../services/api';
 import { GenesisAnalysisResult, ChartMetadata, UnifiedChartResult, PlanoSetup } from '../types';
 import { fetchBinanceData, fetchBybitData, fetchBitgetData, fetchOkxData, ExchangeData } from '../services/cryptoApi';
@@ -212,8 +213,7 @@ const GenesisPage: React.FC = () => {
     }
 
     if (timeframeParam) {
-      const validTimeframes = ['15m', '1h', '2h', '3h', '4h', '12h', '1d', '1w', '1M'];
-      if (validTimeframes.includes(timeframeParam)) {
+      if (isSupportedTimeframe(timeframeParam)) {
         setTimeframe(timeframeParam);
       }
     }
@@ -371,10 +371,7 @@ const GenesisPage: React.FC = () => {
             '1M': '1M', 'MONTHLY': '1M', 'M': '1M', 'MONTH': '1M',
             '1W': '1w', 'WEEKLY': '1w', 'W': '1w', 'WEEK': '1w', 'SEMANAL': '1w',
             '1D': '1d', 'DAILY': '1d', 'D': '1d', 'DAY': '1d', 'DIARIO': '1d', 'DIÁRIO': '1d',
-            '12H': '12h', 'H12': '12h',
             '4H': '4h', 'H4': '4h',
-            '3H': '3h', 'H3': '3h',
-            '2H': '2h', 'H2': '2h', '120M': '2h',
             '1H': '1h', 'H1': '1h', '60M': '1h', 'HOURLY': '1h',
             '15M': '15m', 'M15': '15m',
             '5M': '5m', 'M5': '5m',
@@ -382,7 +379,7 @@ const GenesisPage: React.FC = () => {
           const rawTf = unifiedResult.timeframe;
           const upperTf = rawTf.toUpperCase().trim();
           const normalizedTf = tfMap[upperTf] || rawTf.toLowerCase().trim();
-          const validTimeframes = ['15m', '5m', '1h', '2h', '3h', '4h', '12h', '1d', '1w', '1M'];
+          const validTimeframes: readonly string[] = SUPPORTED_TIMEFRAMES;
 
           console.log('[TF-DEBUG] Raw timeframe from scan:', JSON.stringify(rawTf));
           console.log('[TF-DEBUG] Uppercase lookup key:', JSON.stringify(upperTf));
@@ -598,11 +595,9 @@ const GenesisPage: React.FC = () => {
                       onChange={(e) => setTimeframe(e.target.value)}
                       className="w-full bg-[#050505] border border-white/5 rounded-md px-3 py-2.5 text-xs text-white appearance-none focus:border-white/20 focus:outline-none transition-all"
                     >
-                      <option value="15m">15m</option>
-                      <option value="1h">1h</option>
-                      <option value="4h">4h</option>
-                      <option value="1d">1d</option>
-                      <option value="1w">1w</option>
+                      {SUPPORTED_TIMEFRAMES.map((tf) => (
+                        <option key={tf} value={tf}>{tf}</option>
+                      ))}
                     </select>
                     <ChevronDown className="absolute right-3 top-3.5 text-genesis-text-muted pointer-events-none" size={14} />
                   </div>
