@@ -26,7 +26,7 @@ Regras: sem `RefreshDatabase` (sqlite persistente + `DatabaseTransactions`); nen
     - _Requisitos: 3.1_
   - [ ] 1.2 **[API]** `MacroContextCache`: TTL 24h, chave com data UTC + schema, lock, negative cache 15 min, `observed_at` do cache
     - _Requisitos: 2.1, 2.2, 2.3, 2.4, 2.5_
-  - [ ] 1.3 **[API]** `SentimentContextCache`: por ativo, TTL `GENESIS_SENTIMENT_CACHE_TTL_MINUTES` (padrão 60, confirmar)
+  - [ ] 1.3 **[API]** `SentimentContextCache`: por ativo, TTL `GENESIS_SENTIMENT_CACHE_TTL_MINUTES` (padrão 360 = 6h, decidido)
     - _Requisitos: 3.2, 3.3_
   - [ ] 1.4 **[API]** `MacroController::today`/`sentimento` passam a ler dos mesmos caches
     - _Requisitos: 2.6, 7.3_
@@ -69,8 +69,8 @@ Regras: sem `RefreshDatabase` (sqlite persistente + `DatabaseTransactions`); nen
 - [ ] 4. Fase 4 — Menos repair
   - [ ] 4.1 **[API]** Fallback de stop já na 1ª tentativa (remover `attempts() > 1`)
     - _Requisitos: 6.1_
-  - [ ] 4.2 Decisão do Felipe: número não rastreado → remover frase ou rebaixar a aviso
-  - [ ] 4.3 **[API]** Implementar a decisão 4.2 em `DecisionMechanicalRepair`
+  - [x] 4.2 Decisão do Felipe (25/09/2026): número que não bate → remover a frase inteira
+  - [ ] 4.3 **[API]** `DecisionMechanicalRepair`: remover a frase com número não rastreado/divergente (`UNACCOUNTED_NUMERIC_LITERAL`, `NUMERIC_CITATION_VALUE_MISMATCH`) e revalidar; texto curto demais → repair normal
     - _Requisitos: 6.1_
   - [ ] 4.4 **[API]** Confirmar a cobertura de `MONEY_FORMAT_RAW_NUMBER`/`TEXT_FORBIDDEN` pela correção mecânica
     - _Requisitos: 6.1_

@@ -55,7 +55,7 @@ A auditoria de código que embasa estes requisitos está em `design.md` → "Est
 #### Critérios de Aceitação
 
 1. O SISTEMA DEVE separar a geração de sentimento (por ativo) da geração de macro (global). Hoje as duas saem da mesma chamada.
-2. O sentimento DEVE ter cache por ativo com TTL configurável (`GENESIS_SENTIMENT_CACHE_TTL_MINUTES`, padrão **60**, *a confirmar com o Felipe*).
+2. O sentimento DEVE ter cache por ativo com TTL configurável (`GENESIS_SENTIMENT_CACHE_TTL_MINUTES`, padrão **360** = 6 horas, decisão do Felipe em 25/09/2026).
 3. Falha segue a mesma regra do Requisito 2.3 (não cacheia falha longa, fica `UNAVAILABLE`).
 
 ### Requisito 4: Uma chamada por etapa no caminho normal
@@ -92,7 +92,7 @@ A auditoria de código que embasa estes requisitos está em `design.md` → "Est
 1. Os erros abaixo DEVEM ser tratados em código (correção mecânica, fallback ou rebaixamento a aviso), sem nova chamada à IA:
    - `STOP_SELECTION_UNKNOWN` / erros de seleção de stop → fallback automático do `NivelService` **já na 1ª tentativa** (hoje só a partir da 2ª);
    - `NARRATIVE_MENTIONS_UNAVAILABLE_VISUAL:*` → Requisito 5.3;
-   - `UNACCOUNTED_NUMERIC_LITERAL` / `NUMERIC_CITATION_VALUE_MISMATCH` → remover o número não rastreado do texto ou rebaixar a aviso (**decisão do Felipe**: qual dos dois);
+   - `UNACCOUNTED_NUMERIC_LITERAL` / `NUMERIC_CITATION_VALUE_MISMATCH` → **remover a frase inteira** que contém o número que não bate e revalidar (decisão do Felipe, 25/09/2026). Nunca corrigir o número nem rebaixar a aviso;
    - `MONEY_FORMAT_RAW_NUMBER`, `TEXT_FORBIDDEN` → já cobertos por `DecisionMechanicalRepair`/`PublicVocabularyService`, confirmar.
 2. Repair via IA fica reservado para erros estruturais que o código não resolve (ex.: `MISSING_FIELD:plano_primario`, `PLAN_B_MISSING`, score fora do enum).
 3. Nenhuma correção mecânica pode alterar `direction`, `score`, entrada, stop ou alvos escolhidos pela IA (regra inviolável do Brain V2).

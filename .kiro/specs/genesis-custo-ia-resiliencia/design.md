@@ -56,7 +56,7 @@ GeminiContextService::collect($symbol, $timeframe)
  │    Cache::lock('genesis:macro:lock')->block(…)
  │    hit → payload + observed_at
  │    miss → 1 chamada (google_search) → ok: put 24h | falha: put negativo 15min → UNAVAILABLE
- └─ SentimentContextCache::get($symbol)       ← por ativo, TTL 60min (config)
+ └─ SentimentContextCache::get($symbol)       ← por ativo, TTL 6h (config)
       mesma mecânica, chave genesis:sentiment:{SYMBOL}
 ```
 
@@ -92,7 +92,7 @@ Ordem no job após a decisão:
 1. `DecisionResponseValidator::validate()` (uma vez só, como hoje).
 2. `DecisionMechanicalRepair::attempt()`, estendido com:
    - remoção de menções a dados indisponíveis;
-   - números não rastreados: remover a frase ou rebaixar a aviso (**decisão pendente**, ver abaixo).
+   - números não rastreados ou que não batem com o bundle: remover a frase inteira (decisão do Felipe). Se o texto ficar abaixo do mínimo, cai no repair normal.
 3. Fallback de stop (`StopSelectionValidator::apenasErrosDeSelecao`) **sem** a condição `attempts() > 1`.
 4. Só então repair via IA, para erros estruturais.
 
@@ -102,12 +102,16 @@ Ordem no job após a decisão:
 - Log `genesis.ia.chamada` em todo cliente HTTP de IA (`GeminiInteractionsClient`, `OpenAiInteractionsClient`, `ChartMetadataScanService`, `UtilityGeminiProxyController`, `MacroController`, `GeoEventService`).
 - `php artisan genesis:custo-ia --desde=YYYY-MM-DD` agrega a partir de `analises.provider_telemetry` mais o log.
 
+## Decisões do Felipe (25/09/2026)
+
+- **Macro**: cache de 24h.
+- **Sentimento por ativo**: cache de 6h.
+- **Número que não bate no texto da IA**: remover a frase inteira.
+
 ## Decisões Pendentes (Felipe)
 
-1. **TTL do sentimento por ativo**: 60 min proposto.
-2. **Números não rastreados no texto**: remover a frase (texto mais curto, sempre consistente) **ou** rebaixar a aviso (texto intacto, pode publicar um número sem evidência).
-3. **Contexto na análise**: se, com o cache, ainda valer a pena manter a busca de sentimento por análise ou só mostrar o do cache/última geração.
-4. **Thinking**: reduzir só depois do benchmark (Req. 8).
+1. **Contexto na análise**: se, com o cache, ainda valer a pena manter a busca de sentimento por análise ou só mostrar o do cache/última geração.
+2. **Thinking**: reduzir só depois do benchmark (Req. 8).
 
 ## Riscos
 
