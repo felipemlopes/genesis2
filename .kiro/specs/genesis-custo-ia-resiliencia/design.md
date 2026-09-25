@@ -108,10 +108,7 @@ Ordem no job após a decisão:
 - **Sentimento por ativo**: cache de 6h.
 - **Número que não bate no texto da IA**: remover a frase inteira.
 
-## Decisões Pendentes (Felipe)
-
-1. **Contexto na análise**: se, com o cache, ainda valer a pena manter a busca de sentimento por análise ou só mostrar o do cache/última geração.
-2. **Thinking**: reduzir só depois do benchmark (Req. 8).
+Thinking (HIGH vs MEDIUM) não é decisão pendente: é resolvido com os números do benchmark da Fase 6 (Req. 8).
 
 ## Riscos
 
