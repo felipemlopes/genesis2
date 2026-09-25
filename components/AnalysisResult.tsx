@@ -111,6 +111,13 @@ const MOTIVO_PLANO_B: Record<string, string> = {
 const limparTexto = (t: string) =>
   t.replace(/[ \t]{2,}/g, ' ').replace(/[ \t]+\n/g, '\n').trim();
 
+// Spec genesis-custo-ia-resiliencia (Fase 1): data/hora local da geração do contexto (vem de cache).
+const formatarGeradoEm = (iso: string): string => {
+  const data = new Date(iso);
+  if (Number.isNaN(data.getTime())) return '';
+  return `${data.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })} às ${data.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`;
+};
+
 const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, onSaveTrade, onReset, analiseId }) => {
   const [showIndicators, setShowIndicators] = useState(false);
   // G13 (V6.9): Plano A pré-selecionado — o backend já publica os dois planos completos e
@@ -1387,6 +1394,11 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, onSaveTrade, onRe
               {publicText(macroInfo?.resumo) && (
                 <p className="text-[10px] text-gray-400 leading-relaxed mb-4 mt-3">
                     {publicText(macroInfo.resumo)}
+                    {/* Spec genesis-custo-ia-resiliencia (Fase 1, Req. 2.5): o macro vem de um cache
+                        de 24h — mostra quando foi gerado, não a hora da análise. */}
+                    {macroInfo?.observed_at && formatarGeradoEm(macroInfo.observed_at) && (
+                      <span className="block text-[8px] text-gray-600 mt-1">gerado em {formatarGeradoEm(macroInfo.observed_at)}</span>
+                    )}
                 </p>
               )}
               {/* V6.9 pacote final (spec genesis-v6-9-pacote-final, Fase 11, item 11.1/11.4, doc §16):
@@ -1444,6 +1456,9 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ data, onSaveTrade, onRe
               {publicText(sentimento?.narrativa) && (
                 <p className="text-[10px] text-gray-400 leading-relaxed mb-4  pb-3 mt-3">
                     {publicText(sentimento.narrativa)}
+                    {sentimento?.observed_at && formatarGeradoEm(sentimento.observed_at) && (
+                      <span className="block text-[8px] text-gray-600 mt-1">gerado em {formatarGeradoEm(sentimento.observed_at)}</span>
+                    )}
                 </p>
               )}
               <div className="grid grid-cols-2 gap-3">

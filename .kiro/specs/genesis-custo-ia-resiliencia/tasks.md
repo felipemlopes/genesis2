@@ -35,20 +35,27 @@ Regras: sem `RefreshDatabase` (sqlite persistente + `DatabaseTransactions`); nen
     - _Requisitos: 1.4_
   - [ ] 0.5 Checkpoint: revisar com o Felipe onde está o maior custo antes de seguir
 
-- [ ] 1. Fase 1 — Cache de contexto (macro 24h, sentimento por ativo)
-  - [ ] 1.1 **[API]** Dividir `GeminiContextService::tentarColeta()` em geração de macro (global) e de sentimento (por ativo), mantendo o formato de `context_payload`
+- [x] 1. Fase 1 — Cache de contexto (macro 24h, sentimento por ativo)
+  - [x] 1.1 **[API]** Dividir `GeminiContextService::tentarColeta()` em geração de macro (global) e de sentimento (por ativo), mantendo o formato de `context_payload`
     - _Requisitos: 3.1_
-  - [ ] 1.2 **[API]** `MacroContextCache`: TTL 24h, chave com data UTC + schema, lock, negative cache 15 min, `observed_at` do cache
+    - `tentarBloco()` + um prompt por bloco; o parser aceita resposta com os dois blocos e lê só o pedido. Macro gerado com os eventos CRITICAL/HIGH globais (sem excluir ativo); eventos exibidos continuam por análise
+  - [x] 1.2 **[API]** `MacroContextCache`: TTL 24h, chave com data UTC + schema, lock, negative cache 15 min, `observed_at` do cache
     - _Requisitos: 2.1, 2.2, 2.3, 2.4, 2.5_
-  - [ ] 1.3 **[API]** `SentimentContextCache`: por ativo, TTL `GENESIS_SENTIMENT_CACHE_TTL_MINUTES` (padrão 360 = 6h, decidido)
+    - Implementado dentro do próprio `GeminiContextService` (`macro()`/`sentimento()`/`blocoCacheado()`), sem classes novas. TTL de 24h conta a partir da geração (chave sem data), não até a meia-noite UTC
+    - Lock: `Cache::lock(...)->block(75s)`; lock ocupado além disso → `CONTEXT_CACHE_LOCK_TIMEOUT` (UNAVAILABLE, sem chamar)
+  - [x] 1.3 **[API]** `SentimentContextCache`: por ativo, TTL `GENESIS_SENTIMENT_CACHE_TTL_MINUTES` (padrão 360 = 6h, decidido)
     - _Requisitos: 3.2, 3.3_
-  - [ ] 1.4 **[API]** `MacroController::today`/`sentimento` passam a ler dos mesmos caches
+  - [x] 1.4 **[API]** `MacroController::today`/`sentimento` passam a ler dos mesmos caches
     - _Requisitos: 2.6, 7.3_
-  - [ ] 1.5 **[API]** Comando `genesis:macro:refresh` (invalidação manual)
-  - [ ] 1.6 **[FE]** Exibir no card "Macro e Geopolítico" a hora de geração do macro (`observed_at`), não a hora da análise
+    - geradores próprios do controller removidos; formato da resposta mantido (+ `observed_at`)
+  - [x] 1.5 **[API]** Comando `genesis:macro:refresh` (invalidação manual)
+    - `--sentimento=SYMBOL` (repetível) e `--so-sentimento`; apaga também o cache negativo
+  - [x] 1.6 **[FE]** Exibir no card "Macro e Geopolítico" a hora de geração do macro (`observed_at`), não a hora da análise
     - _Requisitos: 2.5_
-  - [ ] 1.7 **[API]** Testes: hit/miss/falha/negative cache/lock com `Http::fake` contando chamadas
-  - [ ] 1.8 Checkpoint: suíte [API] verde
+    - "gerado em DD/MM às HH:MM" sob o resumo macro e sob a narrativa de sentimento
+  - [x] 1.7 **[API]** Testes: hit/miss/falha/negative cache/lock com `Http::fake` contando chamadas
+  - [x] 1.8 Checkpoint: suíte [API] verde
+    - **Testes (25/09/2026):** `GeminiContextServiceCacheTest` (7, novo), `GeminiContextServiceTest` ajustado para 2 chamadas, `GeminiContextServicePromptContradictionTest` (+1), `MacroControllerRemovedTest` (+1), `__tests__/geminiService.test.ts` (+1); FE 476 verdes
 
 - [ ] 2. Fase 2 — Uma chamada por etapa
   - [ ] 2.1 **[API]** `GENESIS_GEMINI_CONTEXT_ATTEMPTS=1` (config, `.env.example`, remoção do loop de retry por negócio)

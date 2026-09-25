@@ -443,8 +443,10 @@ export const mapGraphicalToLegacy = (v64: GraphicalAnalysisResult): GenesisAnaly
     // fazia AnalysisResult.tsx (que lê `macroInfo?.resumo`/`sentimento?.narrativa`) sempre cair no
     // fallback "Contexto informativo indisponível...", mesmo com a IA tendo respondido normalmente.
     contexto_informativo: (macroTemDado || sentimentoTemDado) ? {
-      macro: macroTemDado ? { resumo: macroNarrative, ...macroStats } : null,
-      sentimento: sentimentoTemDado ? { narrativa: sentimentNarrative, ...sentimentStats } : null,
+      // Spec genesis-custo-ia-resiliencia (Fase 1): observed_at fora de macroStats/sentimentStats de
+      // propósito — sozinho não conta como "tem dado" (macroTemDado/sentimentoTemDado).
+      macro: macroTemDado ? { resumo: macroNarrative, ...macroStats, observed_at: ctx?.macro?.observed_at ?? null } : null,
+      sentimento: sentimentoTemDado ? { narrativa: sentimentNarrative, ...sentimentStats, observed_at: ctx?.sentiment?.observed_at ?? null } : null,
     } : null,
     ai_meta: {},
     indicadores: {

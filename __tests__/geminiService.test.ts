@@ -402,6 +402,27 @@ describe('analyzeChart preserva evidências antes descartadas (Fase 7)', () => {
     expect(ctx.sentimento['0']).toBeUndefined();
   });
 
+  // Spec genesis-custo-ia-resiliencia (Fase 1): macro vem de cache de 24h e sentimento de 6h — a
+  // hora da geração chega até o card; sozinha, não faz o bloco "ter dado".
+  it('repassa observed_at da geração do macro/sentimento', async () => {
+    const resposta = respostaCompleta();
+    (resposta.informative_context as any).macro.resumo = 'Macro do dia.';
+    (resposta.informative_context as any).macro.observed_at = '2026-09-25T09:00:00+00:00';
+    (resposta.informative_context as any).sentiment.narrativa = 'Sentimento do ativo.';
+    (resposta.informative_context as any).sentiment.observed_at = '2026-09-25T07:30:00+00:00';
+
+    const { analyzeChart } = await import('../services/geminiService');
+    globalThis.fetch = vi.fn(async () => new Response(JSON.stringify(resposta), { status: 200 })) as any;
+
+    const mockFile = new File(['test'], 'chart.png', { type: 'image/png' });
+    const metadata = { pair: 'BTCUSDT', exchange: 'Binance', timeframe: '4h' } as any;
+    const result = await analyzeChart(mockFile, metadata, '', 10);
+
+    const ctx = result.contexto_informativo as any;
+    expect(ctx.macro.observed_at).toBe('2026-09-25T09:00:00+00:00');
+    expect(ctx.sentimento.observed_at).toBe('2026-09-25T07:30:00+00:00');
+  });
+
   it('preserva derivatives_context e visual_observations.objects/fibonacci/vrvp', async () => {
     const { analyzeChart } = await import('../services/geminiService');
     globalThis.fetch = vi.fn(async () => new Response(JSON.stringify(respostaCompleta()), { status: 200 })) as any;

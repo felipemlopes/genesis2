@@ -111,6 +111,9 @@ export interface CanonicalMacroContext extends InformativeBlockBase {
   resumo: string | null;
   score: number | null;
   eventos: RadarNewsEvento[];
+  // Spec genesis-custo-ia-resiliencia (Fase 1): hora em que o resumo foi gerado — o macro vem de
+  // um cache de 24h, então pode ser anterior à análise. null quando não há resumo.
+  observed_at?: string | null;
   vix: DisplayMetric;
   dxy_change_pct: DisplayMetric;
   sp500_change_pct: DisplayMetric;
@@ -123,6 +126,8 @@ export interface CanonicalSentimentContext extends InformativeBlockBase {
   narrativa: string | null;
   score: number | null;
   eventos: RadarNewsEvento[];
+  // Spec genesis-custo-ia-resiliencia (Fase 1): hora da geração (cache de 6h por ativo).
+  observed_at?: string | null;
   gatilhos_positivos: string[];
   gatilhos_negativos: string[];
 }

@@ -60,8 +60,9 @@ GeminiContextService::collect($symbol, $timeframe)
       mesma mecânica, chave genesis:sentiment:{SYMBOL}
 ```
 
-- Store: o driver de cache atual (`database`). Payload pequeno (texto + eventos), sem risco de memória como o do `pending_bundle`.
-- Chave do macro inclui a data UTC e `schema_version` do contexto, para invalidar numa mudança de prompt.
+- Store: o driver de cache atual (`database`, já com `cache_locks`). Payload pequeno (texto + score), sem risco de memória como o do `pending_bundle`.
+- Chaves: `genesis:context:v1:macro` e `genesis:context:v1:sentimento:{SYMBOL}`. **Implementado (25/09/2026):** o TTL de 24h conta a partir da geração, e a chave não leva a data. Assim o macro vale 24h de verdade, como o Felipe pediu, em vez de expirar à meia-noite UTC. `v1` (`CACHE_VERSION`) muda quando o prompt/formato mudar.
+- Cache negativo: `{chave}:falha`, 15 min. Espera do lock: 75s, que é uma geração completa com folga.
 - `MacroController::today`/`sentimento` passam a ler dos mesmos caches (Req. 2.6, 7.3).
 - Negative cache evita martelar o provedor quando ele está fora (Req. 2.3).
 
