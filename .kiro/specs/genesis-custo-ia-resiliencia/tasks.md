@@ -108,19 +108,29 @@ Regras: sem `RefreshDatabase` (sqlite persistente + `DatabaseTransactions`); nen
   - [x] 3.7 Checkpoint: suíte [API] verde
     - **Testes (25/09/2026):** `DecisionMechanicalRepairTest` (+3), `CanonicalBundleBuilderStage1Test` (+1), `TechnicalAnalysisServiceV65Test` (+2), `GraphicalAnalysisAttemptJobTest` (+1, 17/17 isolado)
 
-- [ ] 4. Fase 4 — Menos repair
-  - [ ] 4.1 **[API]** Fallback de stop já na 1ª tentativa (remover `attempts() > 1`)
+- [x] 4. Fase 4 — Menos repair
+  - [x] 4.1 **[API]** Fallback de stop já na 1ª tentativa (remover `attempts() > 1`)
     - _Requisitos: 6.1_
+    - teste do job agora exige 1 chamada ao decisor e `stop_selection.candidate_id` nulo
   - [x] 4.2 Decisão do Felipe (25/09/2026): número que não bate → remover a frase inteira
-  - [ ] 4.3 **[API]** `DecisionMechanicalRepair`: remover a frase com número não rastreado/divergente (`UNACCOUNTED_NUMERIC_LITERAL`, `NUMERIC_CITATION_VALUE_MISMATCH`) e revalidar; texto curto demais → repair normal
+  - [x] 4.3 **[API]** `DecisionMechanicalRepair`: remover a frase com número não rastreado/divergente (`UNACCOUNTED_NUMERIC_LITERAL`, `NUMERIC_CITATION_VALUE_MISMATCH`) e revalidar; texto curto demais → repair normal
     - _Requisitos: 6.1_
-  - [ ] 4.4 **[API]** Confirmar a cobertura de `MONEY_FORMAT_RAW_NUMBER`/`TEXT_FORBIDDEN` pela correção mecânica
+    - `UNACCOUNTED_NUMERIC_LITERAL` sem evidência que o sustente → frase sai (com evidência: continua ganhando a citação, task 6.5 do Brain V2)
+    - `NUMERIC_CITATION_VALUE_MISMATCH`/`_EVIDENCE_INVALID` → frase e citação saem; `_LITERAL_NOT_FOUND` → só a citação sai (o número nem está no texto)
+    - Comportamento antigo de 2 testes mudou de propósito: número inventado e número de evidência indisponível não devolvem mais a decisão intacta
+  - [x] 4.4 **[API]** Confirmar a cobertura de `MONEY_FORMAT_RAW_NUMBER`/`TEXT_FORBIDDEN` pela correção mecânica
     - _Requisitos: 6.1_
-  - [ ] 4.5 **[API]** Teste: nenhuma correção mecânica altera direction/score/entrada/stop/alvos
+    - `MONEY_FORMAT_*`: confirmado. **`TEXT_FORBIDDEN` NÃO estava coberto** — `PublicVocabularyService` só roda depois da validação, então palavra proibida pagava um repair. Agora `TECHNICAL_/SCORE_TEXT_FORBIDDEN[_SPOT|_CONFIRM_SYNONYM]`, `NON_TECHNICAL_TERM` e `TEXT_FORBIDDEN:{derivatives_summary|plan_a_risk_notes|plan_b_entry_notes}` tiram a frase, com a mesma forma de busca do validador (LONG/SHORT em `technical_analysis` por palavra inteira: "ao longo" fica)
+  - [x] 4.5 **[API]** Teste: nenhuma correção mecânica altera direction/score/entrada/stop/alvos
     - _Requisitos: 6.3_
-  - [ ] 4.6 **[API]** Medir a taxa de repair antes/depois com `genesis:custo-ia`
+    - `test_correcao_mecanica_nunca_altera_direcao_score_plano_alvos_nem_stop`: todas as correções juntas; só texto livre e `numeric_citations` podem mudar
+  - [x] 4.6 **[API]** Medir a taxa de repair antes/depois com `genesis:custo-ia`
     - _Requisitos: 6.4_
-  - [ ] 4.7 Checkpoint: suíte [API] verde
+    - `genesis:custo-ia` ganhou a taxa de repair (concluídas com chamada `repair` ÷ concluídas, só consumo completo — o legado não guarda: `repair_last_errors` é limpo ao concluir) e, com `--log`, a classificação de cada `decisao_precisa_de_repair` (`DecisionMechanicalRepair::tratavelEmCodigo()`)
+    - **Antes (log local, 9 repairs reais das análises 165-173):** 8 de 9 (89%) caem em famílias que o código trata hoje; só `TARGET_SELECTION_TOO_CLOSE_TO_PREVIOUS` continua indo para a IA. Limite: é um teto — em `score_description` (exatamente 2 frases) remover uma frase reprova na revalidação e vai para a IA mesmo assim
+    - **Depois:** depende de análises reais novas (sem medição em produção, decisão do Felipe)
+    - **Achado:** `genesis:custo-ia --log` estourava a memória (`fgets()` sem limite; o `laravel.log` local tem uma linha de ~250 MB). Leitura agora em pedaços de 64 KB
+  - [x] 4.7 Checkpoint: suíte [API] verde
 
 - [ ] 5. Fase 5 — Consumidores fora da análise
   - [ ] 5.1 **[FE]** + **[API]** Confirmar se `UtilityGeminiProxyController` tem consumidor real; remover a rota ou aplicar rate limit + telemetria
