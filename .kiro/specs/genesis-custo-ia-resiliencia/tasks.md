@@ -132,17 +132,32 @@ Regras: sem `RefreshDatabase` (sqlite persistente + `DatabaseTransactions`); nen
     - **Achado:** `genesis:custo-ia --log` estourava a memória (`fgets()` sem limite; o `laravel.log` local tem uma linha de ~250 MB). Leitura agora em pedaços de 64 KB
   - [x] 4.7 Checkpoint: suíte [API] verde
 
-- [ ] 5. Fase 5 — Consumidores fora da análise
-  - [ ] 5.1 **[FE]** + **[API]** Confirmar se `UtilityGeminiProxyController` tem consumidor real; remover a rota ou aplicar rate limit + telemetria
+- [x] 5. Fase 5 — Consumidores fora da análise
+  - [x] 5.1 **[FE]** + **[API]** Confirmar se `UtilityGeminiProxyController` tem consumidor real; remover a rota ou aplicar rate limit + telemetria
     - _Requisitos: 7.1_
-  - [ ] 5.2 **[API]** Confirmar que `GET /v1/geo-events` só lê do banco
+    - Consumidor real: botão de busca por ativo do `components/OpportunityScanner.tsx` (`/v1/gemini-proxy` com google_search). Rota fica; telemetria já existia desde a Fase 0 (`genesis.ia.chamada`, etapa `utility_proxy`)
+    - **Achado (afeta toda rota `genesis.auth`):** o limite NUNCA foi por usuário. O `$middlewarePriority` do Kernel põe `ThrottleRequests` antes de `SubstituteBindings` (do grupo `api`), e com isso todo `throttle:*` rodava ANTES do `genesis.auth` — sem usuário, o limite caía no IP. Corrigido: `VerifyGenesisAuthToken implements AuthenticatesRequests` (o marcador que a prioridade usa para rodar autenticação antes do throttle). Vale para `graphical-analysis` (10/min), `scangraph` (20/min), `gemini-proxy` (5/min), `reprice` (60/min) e o limitador `api` (60/min)
+    - Efeito colateral a saber: token inválido agora recebe 401 antes de contar no limite do IP
+    - Atenção para produção: `TrustProxies::$proxies` é null. Se o CloudPanel entrega a requisição ao PHP por proxy HTTP local, o IP visto era o do proxy e o limite antigo era um balde GLOBAL. Não verificado (sem acesso a produção)
+    - `UtilityGeminiProxyLimitTest` (3): limite por usuário com contagem exata do cabeçalho (reprova sem a correção), consumo registrado, sem login não chama o Gemini
+  - [x] 5.2 **[API]** Confirmar que `GET /v1/geo-events` só lê do banco
     - _Requisitos: 7.2_
+    - confirmado: `GeoEventController::index` → `getUnnotifiedForUser` + `markAsNotified`, só banco. `GeoEventsPollSemIaTest`: 3 polls sem eventos, nenhuma chamada a Gemini/OpenAI
+    - Observações: `GeoEventService::getContextoMacroSemanal()` dispara `fetchAndStore()` (Gemini) quando não há eventos, mas não tem nenhum chamador (código morto). O agendamento de `geo:fetch-events` está comentado em `Console/Kernel.php` — o banco de eventos só é preenchido rodando o comando à mão
 
-- [ ] 6. Fase 6 — Thinking por etapa
-  - [ ] 6.1 **[API]** Benchmark HIGH vs MEDIUM (decisão e visão) com `BenchmarkGenesisBrainV2`
+- [x] 6. Fase 6 — Thinking por etapa
+  - [x] 6.1 **[API]** Benchmark HIGH vs MEDIUM (decisão e visão) com `BenchmarkGenesisBrainV2`
     - _Requisitos: 8.1_
+    - Comando ganhou `--thinking=`, tokens médios por rodada no relatório e `--vision-runs=N --vision-thinking=` (só visão, compara as leituras)
+    - Rodado local em 25/09/2026, com o modelo de produção forçado por env (`GENESIS_GEMINI_DECISION_MODEL=gemini-3.7-flash`, reserva 3.6-flash; o `.env` local está em 3.5-flash). Bundle congelado de 23/09 (BTCUSDT 15m) — o mesmo para os dois níveis. Gemini instável (503/timeouts): várias rodadas caíram no 3.6-flash
+    - **Decisão, só no 3.7-flash:** HIGH = SHORT 5 de 6 (score 65-70); MEDIUM = LONG 4 de 4 (score 65). MEDIUM muda a leitura majoritária, não é só ruído. No 3.6-flash os dois deram SHORT
+    - **Decisão, tokens por chamada (3.7-flash):** thinking ~12 mil (HIGH) vs ~4,4 mil (MEDIUM); saída ~5 mil nos dois; entrada 172 mil (com o bundle repetido, ~170 mil vieram do cache implícito do Gemini — na 1ª chamada de uma análise real não há cache)
+    - **Visão (3.6-flash, 5+5 leituras):** as 10 idênticas (preço 84,525, sem objetos nem padrões — o gráfico não tinha desenho, teste fraco para figuras). Thinking ~1.050 (HIGH) vs ~710 (MEDIUM): economia de ~335 tokens por análise, desprezível
+    - Relatórios: `storage/app/benchmarks/fase6-*.log` e `brain-v2-20260925-*/`
+    - Baseline HIGH já não passa no critério da Fonte §92 (qualquer flip reprova): 1 flip em 7 aqui, e flips nos benchmarks de 23/09 sobre o mesmo bundle
   - [ ] 6.2 Decisão do Felipe com base no benchmark
     - _Requisitos: 8.2_
+    - Recomendação: manter HIGH na decisão (MEDIUM mudou a direção); visão pode ficar em HIGH (economia desprezível, e o teste não tinha figura desenhada)
 
 - [ ] 8. Fase 8 — Bundle da decisão menor (achado da Fase 0; candidata a vir antes da Fase 1)
   - [ ] 8.1 **[API]** Resumir `flow.cvd_series` em PHP para o decisor (ou mover para `DISPLAY_ONLY`), mantendo a série completa para exibição
