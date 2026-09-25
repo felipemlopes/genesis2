@@ -155,19 +155,28 @@ Regras: sem `RefreshDatabase` (sqlite persistente + `DatabaseTransactions`); nen
     - **Visão (3.6-flash, 5+5 leituras):** as 10 idênticas (preço 84,525, sem objetos nem padrões — o gráfico não tinha desenho, teste fraco para figuras). Thinking ~1.050 (HIGH) vs ~710 (MEDIUM): economia de ~335 tokens por análise, desprezível
     - Relatórios: `storage/app/benchmarks/fase6-*.log` e `brain-v2-20260925-*/`
     - Baseline HIGH já não passa no critério da Fonte §92 (qualquer flip reprova): 1 flip em 7 aqui, e flips nos benchmarks de 23/09 sobre o mesmo bundle
-  - [ ] 6.2 Decisão do Felipe com base no benchmark
+  - [x] 6.2 Decisão do Felipe com base no benchmark
     - _Requisitos: 8.2_
-    - Recomendação: manter HIGH na decisão (MEDIUM mudou a direção); visão pode ficar em HIGH (economia desprezível, e o teste não tinha figura desenhada)
+    - **Decisão do Felipe (25/09/2026): manter HIGH na decisão e na visão.** MEDIUM mudou a direção majoritária (3.7-flash); na visão a economia é desprezível. Reavaliar depois da Fase 8, com o bundle menor, mais rodadas e 2-3 gráficos
 
-- [ ] 8. Fase 8 — Bundle da decisão menor (achado da Fase 0; candidata a vir antes da Fase 1)
-  - [ ] 8.1 **[API]** Resumir `flow.cvd_series` em PHP para o decisor (ou mover para `DISPLAY_ONLY`), mantendo a série completa para exibição
+- [x] 8. Fase 8 — Bundle da decisão menor (achado da Fase 0)
+  - [x] 8.1 **[API]** Resumir `flow.cvd_series` em PHP para o decisor (ou mover para `DISPLAY_ONLY`), mantendo a série completa para exibição
     - _Requisitos: 9.1_
-  - [ ] 8.2 **[API]** Auditar `structure.local_pivots`, `structure.labels` e `structure.structural_pivots` pelo mesmo critério
+    - `CanonicalBundleBuilder::forStage1()` → `recorteParaDecisao()`: o decisor recebe os 48 pontos mais recentes (de 1.499), com `window: {kept_most_recent, total}`. Tendência, divergência e dinâmica já chegavam resumidas (`flow.cvd_slope`, `flow.cvd_divergence`, `flow.cvd_dynamics`). A evidência continua AVAILABLE (CVD pode ser citado). `build()`, `manifest_hash` e exibição ficam com a série inteira
+    - Limites em `config('genesis_graphical_v6.decision_bundle_recent_items')`, com env por item (`GENESIS_DECISION_CVD_SERIES_POINTS` etc.; 0 = lista inteira)
+  - [x] 8.2 **[API]** Auditar `structure.local_pivots`, `structure.labels` e `structure.structural_pivots` pelo mesmo critério
     - _Requisitos: 9.2_
-  - [ ] 8.3 **[API]** Benchmark antes/depois (`BenchmarkGenesisBrainV2`): direção/score equivalentes
+    - Listas cronológicas com o histórico inteiro da janela (208+211 pivôs locais, 97+99 estruturais, 196 rótulos). O decisor recebe os mais recentes: 15 por lado nos pivôs, 30 rótulos. Nenhum gate/validador lê essas listas no bundle da decisão (só `NarrativeFidelityGate` usa o id `flow.cvd_series` para saber se CVD está disponível, e ele continua AVAILABLE)
+    - Teste: `CanonicalBundleBuilderStage1Test::test_listas_historicas_chegam_recortadas_so_na_decisao`
+    - **Resultado no bundle real (BTCUSDT 15m, 23/09):** 315.207 → 72.404 bytes (−77%). O que mais pesa agora: `stop_candidates` (~22 KB) e `target_candidates` (~17 KB) — fora do escopo desta fase
+  - [~] 8.3 **[API]** Benchmark antes/depois (`BenchmarkGenesisBrainV2`): direção/score equivalentes
     - _Requisitos: 9.3_
-  - [ ] 8.4 **[API]** Medir a entrada média por chamada de decisão antes/depois com `genesis:custo-ia`
+    - Mesmo bundle de 23/09, HIGH. **Antes (bundle inteiro):** 7 rodadas, SHORT 6 / LONG 1, score 65-70. **Depois (recortado):** 7 rodadas, SHORT 7 de 7, score 65-70, sempre o mesmo stop (`sc_7ff2c5e0bec0f6e8`)
+    - **Pendente:** as 7 rodadas do "depois" caíram todas no 3.6-flash (3.7-flash só devolvia 503). Repetir no 3.7-flash quando estiver estável: `GENESIS_GEMINI_DECISION_MODEL=gemini-3.7-flash php artisan genesis:benchmark-brain-v2 --bundle=storage/app/benchmarks/fase8-bundle-recortado.json --runs=10 --retries=2`
+  - [~] 8.4 **[API]** Medir a entrada média por chamada de decisão antes/depois com `genesis:custo-ia`
     - _Requisitos: 9.4_
+    - Pelo benchmark (tokens reais do Gemini): entrada por chamada **172.068 → 37.972 tokens (−78%)**. Thinking e saída na mesma faixa (~12-15 mil e ~3-5 mil)
+    - Pendente: confirmar com `genesis:custo-ia` em análises reais novas (sem medição em produção, decisão do Felipe)
 
 - [ ] 7. Aceite
   - [ ] 7.1 Rodar `genesis:custo-ia` em produção 3–7 dias após o deploy e comparar com a linha de base (0.4)
