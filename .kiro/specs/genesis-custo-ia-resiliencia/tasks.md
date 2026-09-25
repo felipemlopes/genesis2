@@ -84,19 +84,29 @@ Regras: sem `RefreshDatabase` (sqlite persistente + `DatabaseTransactions`); nen
     - **Testes (25/09/2026):** visão (+3: 503→reserva, JSON inválido e 400 sem repetir), failover (reescrito: direto pro reserva), contexto (3 reescritos sem retry), job (+1: visão indisponível encerra sem reexecutar; repairs agora 2)
     - **Achado de teste:** a suíte completa deixava jobs órfãos no sqlite de teste e a rodada isolada seguinte de `GraphicalAnalysisAttemptJobTest` falhava em cascata (os ~10 primeiros testes). O `setUp` agora remove só os órfãos. Verificado semeando 3 órfãos: 16/16
 
-- [ ] 3. Fase 3 — Dado indisponível nunca invalida
-  - [ ] 3.1 **[API]** Auditar `0` vs `null` (`safe(..., 0)`, `?? 0`, casts) em `MarketSnapshotService`, `TechnicalAnalysisService`, `DerivativesReadingService`, `SupplementalIndicatorsService`; uma subtarefa por caso real
+- [x] 3. Fase 3 — Dado indisponível nunca invalida
+  - [x] 3.1 **[API]** Auditar `0` vs `null` (`safe(..., 0)`, `?? 0`, casts) em `MarketSnapshotService`, `TechnicalAnalysisService`, `DerivativesReadingService`, `SupplementalIndicatorsService`; uma subtarefa por caso real
     - _Requisitos: 5.1, 5.5_
-  - [ ] 3.2 **[API]** `CanonicalBundleBuilder` publica `availability.unavailable[]` no bundle da decisão
+    - Regra que tornava isso crítico: `EvidenceManifestBuilder` conta `0` como dado real (AVAILABLE) — só `null`/`''`/`[]` viram UNAVAILABLE
+    - [x] 3.1.1 `MarketSnapshotService`: cálculo técnico falhando gravava `preco = 0` e `preco_variacao_pct = 0` → decisor recebia "Preço atual: 0". Preço cai para o fechamento real do último candle; variação sem cálculo = `null`
+    - [x] 3.1.2 `TechnicalAnalysisService::analisarVolume()`: indisponível devolvia `ratio_atual/vol5/vol20 = 0` com `flow.volume` (DECISION) saindo AVAILABLE → agora `null` (UNAVAILABLE). Único consumidor é o manifesto
+    - [x] 3.1.3 `detectarWyckoff()`: sem range, `teto/suporte = 0` em `structure.wyckoff` (DECISION) → `null`. E `classificarFase()` dava `MARKUP` para qualquer preço acima do "teto 0" (fase inventada) → comparação só com range calculado. Latente hoje: exige < 40 candles fechados e o coletor exige ≥ 60
+    - Sem caso real: `DerivativesReadingService` (nenhum zero de preenchimento); `SupplementalIndicatorsService` (zeros matemáticos legítimos: multiplicador do CMF com vela sem amplitude, eficiência sem movimento); DM/DI do ADX (zero por definição)
+  - [x] 3.2 **[API]** `CanonicalBundleBuilder` publica `availability.unavailable[]` no bundle da decisão
     - _Requisitos: 5.2_
-  - [ ] 3.3 **[API]** `GenesisPrompt`: regra de não citar/estimar itens indisponíveis
+    - `availability.unavailable_evidence_ids` + `availability.nao_citar` (termos). Fonte única: `NarrativeFidelityGate::termosIndisponiveis()`, a mesma regra que o validador aplica (indicador sem evidência AVAILABLE + LTA/LTB/canal/figura/POC/HVN/LVN que a visão não reportou). Fora do `manifest_hash`
+  - [x] 3.3 **[API]** `GenesisPrompt`: regra de não citar/estimar itens indisponíveis
     - _Requisitos: 5.2_
-  - [ ] 3.4 **[API]** `DecisionMechanicalRepair`: remover frases que citam indisponíveis e revalidar (texto curto demais → repair normal)
+  - [x] 3.4 **[API]** `DecisionMechanicalRepair`: remover frases que citam indisponíveis e revalidar (texto curto demais → repair normal)
     - _Requisitos: 5.3_
-  - [ ] 3.5 **[API]** Confirmar que `CANDLES_UNAVAILABLE_OR_INSUFFICIENT` continua sendo o único encerramento por dado
+    - `NARRATIVE_MENTIONS_UNAVAILABLE[_VISUAL]` virou erro mecânico; citações numéricas da frase removida saem junto (e `NUMERIC_CITATION_EVIDENCE_INVALID/LITERAL_NOT_FOUND` são tolerados nesse lote — a revalidação completa decide)
+  - [x] 3.5 **[API]** Confirmar que `CANDLES_UNAVAILABLE_OR_INSUFFICIENT` continua sendo o único encerramento por dado
     - _Requisitos: 5.4_
-  - [ ] 3.6 **[API]** Teste feature: indicador forçado a falhar → `COMPLETED`, campo `null`, sem menção no texto
-  - [ ] 3.7 Checkpoint: suíte [API] verde
+    - confirmado (todo o resto passa por `safe()`). **Achado:** Binance sem candles lançava `CANDLES_UNAVAILABLE` (sem o sufixo), que o job não reconhecia → rodava de novo à toa (o `BinanceService` já tenta 3 vezes) e terminava com o motivo genérico. Agora encerra como `MARKET_CANDLES_UNAVAILABLE` com estorno
+  - [x] 3.6 **[API]** Teste feature: indicador forçado a falhar → `COMPLETED`, campo `null`, sem menção no texto
+    - `test_indicador_indisponivel_citado_sai_do_texto_e_analise_conclui_sem_repair`: 1 chamada ao decisor, `nao_citar` contém ATR no pedido, texto final sem ATR
+  - [x] 3.7 Checkpoint: suíte [API] verde
+    - **Testes (25/09/2026):** `DecisionMechanicalRepairTest` (+3), `CanonicalBundleBuilderStage1Test` (+1), `TechnicalAnalysisServiceV65Test` (+2), `GraphicalAnalysisAttemptJobTest` (+1, 17/17 isolado)
 
 - [ ] 4. Fase 4 — Menos repair
   - [ ] 4.1 **[API]** Fallback de stop já na 1ª tentativa (remover `attempts() > 1`)
