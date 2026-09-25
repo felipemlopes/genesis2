@@ -11,11 +11,18 @@ Regras: sem `RefreshDatabase` (sqlite persistente + `DatabaseTransactions`); nen
 ## Tarefas
 
 - [ ] 0. Fase 0 — Medição e linha de base
-  - [ ] 0.1 **[API]** Padronizar `provider_telemetry.{scan,vision,context,decision}` com `usage` (in/out/thinking), `http_calls`, `grounded`, `model`
-    - _Requisitos: 1.1_
+  - [ ] 0.1 **[API]** Tokens por etapa em cada análise
+    - [ ] 0.1.1 `AiUsageRecorder`: coletor que recebe o uso de **cada** chamada (sucesso ou falha) com motivo `primeira`/`retry`/`failover`/`repair`
+    - [ ] 0.1.2 `GeminiVisionService`, `GeminiContextService`, `GeminiDecisionClient`, `OpenAiInteractionsClient`, `FailoverDecisionProvider`: reportar toda tentativa ao coletor, não só a final
+    - [ ] 0.1.3 `GeminiContextService`: registrar `thought_tokens` e `grounding_queries` (`groundingMetadata.webSearchQueries`)
+    - [ ] 0.1.4 Job: merge acumulativo em `provider_telemetry.{etapa}` (soma + `calls[]`), acumulando entre repairs; `total` recalculado, inclusive em `finalizarComoFalha()`/`failed()`
+    - [ ] 0.1.5 Scan: guardar uso em cache por `image_hash` e anexar em `provider_telemetry.scan` na criação da análise
+    - [ ] 0.1.6 Etapa vinda do cache (macro/sentimento/decisão reutilizada) registra `cache_hit: true` e tokens 0
+    - [ ] 0.1.7 Testes com `Http::fake`: 1 chamada, retry, failover e repair produzem somas e `calls[]` corretos; chamada falha entra com tokens `null`
+    - _Requisitos: 1.1, 1a–1g_
   - [ ] 0.2 **[API]** Log `genesis.ia.chamada` em todos os clientes HTTP de IA (incluindo `UtilityGeminiProxyController`, `MacroController`, `GeoEventService`, `ChartMetadataScanService`)
     - _Requisitos: 1.2_
-  - [ ] 0.3 **[API]** Comando `genesis:custo-ia --desde=` agregando por etapa/modelo/dia e chamadas por análise concluída
+  - [ ] 0.3 **[API]** Comando `genesis:custo-ia --desde=` agregando por etapa/modelo/dia e chamadas por análise concluída; `--analise=ID` detalha uma análise
     - _Requisitos: 1.3_
   - [ ] 0.4 **[API]** Rodar em produção (com autorização) e registrar a linha de base em `design.md`
     - _Requisitos: 1.4_

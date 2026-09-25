@@ -30,9 +30,21 @@ A auditoria de código que embasa estes requisitos está em `design.md` → "Est
 
 #### Critérios de Aceitação
 
-1. QUANDO qualquer Etapa de IA terminar (sucesso ou falha), O SISTEMA DEVE registrar em `provider_telemetry` os tokens de entrada, saída e thinking, o modelo, o número de chamadas HTTP reais e se houve grounding (`google_search`).
+1. **Cada análise DEVE registrar os tokens gastos em cada etapa** (Scan, Visão, Contexto, Decisão) em `provider_telemetry.{etapa}` (coluna JSON já existente, sem migração), com:
+   - `input_tokens`, `output_tokens`, `thought_tokens`, `cached_tokens`;
+   - `model` e `provider`;
+   - `http_calls`: número real de chamadas HTTP feitas;
+   - `grounding_queries`: número de buscas `google_search` (cobradas por consulta, não por token, por isso contadas à parte);
+   - `cache_hit`: `true` quando a etapa veio do cache (tokens = 0).
+1a. Os tokens DEVEM ser **acumulados** entre todas as chamadas da etapa: retries internos, retries de transporte, failover para o modelo reserva e repairs do job. Nenhuma tentativa pode sobrescrever a anterior (hoje só a última chamada fica registrada).
+1b. Além do total acumulado, cada etapa DEVE guardar a lista `calls[]` (modelo, tokens, status HTTP, latência, motivo: `primeira`/`retry`/`failover`/`repair`), para mostrar de onde veio o gasto extra.
+1c. Chamadas que falharam (timeout, 5xx, JSON inválido) DEVEM entrar em `calls[]` e no `http_calls`, com os tokens que o provedor tiver devolvido (`null` se não devolveu nada, nunca `0`).
+1d. O Contexto DEVE registrar também `thought_tokens` (hoje só registra entrada e saída).
+1e. O Scan roda no upload, antes de a análise existir. O consumo dele DEVE ser guardado em cache pela `image_hash` e anexado a `provider_telemetry.scan` quando a análise for criada com a mesma imagem.
+1f. A análise DEVE ter um total geral `provider_telemetry.total` (soma dos tokens de todas as etapas + `http_calls` + `grounding_queries`).
+1g. O registro DEVE ser feito também quando a análise terminar em `FAILED`/`REJECTED_IMAGE`, porque essas também custaram.
 2. O SISTEMA DEVE registrar também as chamadas de IA que não pertencem a uma análise (Scan, `UtilityGeminiProxyController`, `MacroController`, `GeoEventService`), com um log estruturado único por chamada (`genesis.ia.chamada`).
-3. O SISTEMA DEVE oferecer um comando artisan (`genesis:custo-ia`) que agrega por etapa, modelo e dia: nº de chamadas, tokens e chamadas por análise concluída.
+3. O SISTEMA DEVE oferecer um comando artisan (`genesis:custo-ia`) que agrega por etapa, modelo e dia: nº de chamadas, tokens e chamadas por análise concluída; e, com `--analise=ID`, mostra o detalhamento por etapa de uma análise.
 4. ANTES de qualquer mudança dos Requisitos 2–6 ir para produção, a medição DEVE ser rodada contra a base de produção e anexada ao `design.md` como linha de base.
 
 ### Requisito 2: Macro com cache de 24 horas

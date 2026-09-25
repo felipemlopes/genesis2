@@ -98,9 +98,30 @@ Ordem no job após a decisão:
 
 ### Telemetria
 
-- `provider_telemetry.{etapa}` passa a ter `usage` (tokens in/out/thinking), `http_calls` e `grounded`. Parte disso já existe em `comTelemetria()` e precisa ser padronizada.
+Estado atual: Visão (`GeminiVisionService`), Contexto (`GeminiContextService`) e Decisão (`GeminiDecisionClient`, `OpenAiInteractionsClient`) já leem `usageMetadata`/`usage` e o job grava em `provider_telemetry` via `comTelemetria()`. Lacunas: (1) só a última chamada fica, retries e repairs são sobrescritos; (2) chamada que falha não é registrada; (3) Contexto não guarda `thought_tokens`; (4) Scan não é ligado à análise; (5) `google_search` não é contado.
+
+Formato por etapa (sem migração, é a coluna JSON existente):
+
+```json
+"decision": {
+  "model": "gemini-3.5-flash", "provider": "gemini",
+  "input_tokens": 41200, "output_tokens": 3100, "thought_tokens": 9800, "cached_tokens": 0,
+  "http_calls": 3, "grounding_queries": 0, "cache_hit": false,
+  "calls": [
+    {"motivo": "primeira", "model": "gemini-3.5-flash", "status": 200, "latency_ms": 38000, "input_tokens": 13700, "output_tokens": 1000, "thought_tokens": 3300},
+    {"motivo": "repair",   "model": "gemini-3.5-flash", "status": 200, "latency_ms": 41000, "input_tokens": 14100, "output_tokens": 1100, "thought_tokens": 3400}
+  ]
+},
+"total": {"input_tokens": ..., "output_tokens": ..., "thought_tokens": ..., "http_calls": 7, "grounding_queries": 2}
+```
+
+- Os clientes HTTP de IA passam a devolver o `usage` de **toda** tentativa (inclusive as que falharam) num coletor (`AiUsageRecorder`), em vez de só o da tentativa final. O job faz o merge acumulativo em `provider_telemetry` (nunca `=` sobre a etapa, sempre soma + append em `calls[]`).
+- Repair: como o job reexecuta, a soma lê o `provider_telemetry` já persistido da tentativa anterior e acumula.
+- Scan: `ChartMetadataScanService` grava o uso em `Cache::put("genesis:scan_usage:{image_hash}", …, 1h)`; ao criar a análise, o controller anexa em `provider_telemetry.scan`.
+- `grounding_queries`: contado a partir de `groundingMetadata.webSearchQueries` da resposta do Gemini.
+- `total` recalculado a cada merge e também em `finalizarComoFalha()`/`failed()`.
 - Log `genesis.ia.chamada` em todo cliente HTTP de IA (`GeminiInteractionsClient`, `OpenAiInteractionsClient`, `ChartMetadataScanService`, `UtilityGeminiProxyController`, `MacroController`, `GeoEventService`).
-- `php artisan genesis:custo-ia --desde=YYYY-MM-DD` agrega a partir de `analises.provider_telemetry` mais o log.
+- `php artisan genesis:custo-ia --desde=YYYY-MM-DD` agrega a partir de `analises.provider_telemetry` mais o log; `--analise=ID` mostra uma análise por etapa.
 
 ## Decisões do Felipe (25/09/2026)
 
