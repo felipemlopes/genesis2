@@ -77,7 +77,8 @@ A auditoria de código que embasa estes requisitos está em `design.md` → "Est
 #### Critérios de Aceitação
 
 1. Contexto (macro/sentimento): **1 chamada** (`GENESIS_GEMINI_CONTEXT_ATTEMPTS=1`). Resposta vazia ou inválida vira `UNAVAILABLE` e a análise segue. Isso já é o comportamento pós-retry, só que sem o retry.
-2. Visão: **1 chamada**, com no máximo 1 retry **apenas** em erro de transporte (timeout/429/5xx). Nunca por conteúdo.
+2. Visão: **1 chamada**, com no máximo 1 retry **apenas** em erro de transporte (timeout/429/5xx). Nunca por conteúdo. O retry DEVE usar um **modelo reserva** (como já fazem decisão e scan), não o mesmo modelo que acabou de falhar.
+2a. Falha de transporte da visão que já esgotou o retry interno NÃO DEVE reexecutar o job inteiro (hoje: 2 internas × 3 do job = 6 chamadas por análise, medido em 25/09/2026).
 3. Decisão: o retry de transporte no mesmo provedor cai de 3 para **1** tentativa antes do failover (hoje são 3 no primário mais o fallback).
 4. Job: `GENESIS_GEMINI_MAX_ATTEMPTS` cai de 3 para **2** (proposta do Felipe na transcrição).
 5. Scan: no máximo 2 chamadas (modelo primário + reserva, já implementado em `37aebff`). Nenhum retry adicional.

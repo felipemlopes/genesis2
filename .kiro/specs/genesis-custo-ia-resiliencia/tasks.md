@@ -29,9 +29,9 @@ Regras: sem `RefreshDatabase` (sqlite persistente + `DatabaseTransactions`); nen
     - _Requisitos: 1.2_
   - [x] 0.3 **[API]** Comando `genesis:custo-ia --desde=` agregando por etapa/modelo/dia e chamadas por análise concluída; `--analise=ID` detalha uma análise
     - _Requisitos: 1.3_
-  - [ ] 0.4 **[API]** Rodar em produção (com autorização) e registrar a linha de base em `design.md`
-    - Rodado no banco **local** (25/09/2026, só leitura): ver design.md → "Linha de base local". Produção pendente: depende de deploy + autorização do Felipe
-    - Análises antigas só têm o consumo da última chamada de cada etapa (o comando mostra como "legado"). O consumo completo só existe para análises feitas depois do deploy desta fase
+  - [~] 0.4 **[API]** Linha de base: **local**, não produção (decisão do Felipe, 25/09/2026: nada de medição em produção; deploy só com tudo pronto)
+    - Legado local medido (design.md → "Linha de base local")
+    - 2 análises reais locais (175 BTC, 176 APT) com o código novo: Gemini em 503/timeout na visão, nenhuma chegou à decisão. Falta repetir quando o Gemini estiver estável (`php artisan teste:v611-analise` + `queue:work --stop-when-empty`)
     - _Requisitos: 1.4_
   - [ ] 0.5 Checkpoint: revisar com o Felipe onde está o maior custo antes de seguir
 
@@ -53,8 +53,10 @@ Regras: sem `RefreshDatabase` (sqlite persistente + `DatabaseTransactions`); nen
 - [ ] 2. Fase 2 — Uma chamada por etapa
   - [ ] 2.1 **[API]** `GENESIS_GEMINI_CONTEXT_ATTEMPTS=1` (config, `.env.example`, remoção do loop de retry por negócio)
     - _Requisitos: 4.1_
-  - [ ] 2.2 **[API]** Visão: retry só em erro de transporte (timeout/429/5xx), nunca por conteúdo
+  - [ ] 2.2 **[API]** Visão: retry só em erro de transporte (timeout/429/5xx), nunca por conteúdo, usando modelo reserva
     - _Requisitos: 4.2_
+  - [ ] 2.2a **[API]** Visão sem resposta depois do retry interno: não reexecutar o job inteiro (encerrar com estorno)
+    - _Requisitos: 4.2a_
   - [ ] 2.3 **[API]** `FailoverDecisionProvider`: 1 tentativa no primário antes do failover
     - _Requisitos: 4.3_
   - [ ] 2.4 **[API]** `GENESIS_GEMINI_MAX_ATTEMPTS=2`

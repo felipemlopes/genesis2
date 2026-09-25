@@ -139,7 +139,9 @@ Uma chamada de decisão (análise 173) usou **186.391 tokens de entrada**, 6.400
 
 Consequência: cortar repair (Fase 4) e reduzir o bundle (Req. 9) multiplicam-se. Cada repair evitado economiza ~190 mil tokens hoje. O contexto (busca no Google) pesa pouco em tokens, mas cada busca é cobrada à parte e só passa a ser medida a partir desta fase.
 
-Produção ainda não foi medida (0.4).
+Produção não será medida (decisão do Felipe, 25/09/2026). A linha de base é local.
+
+**Análises reais locais com o código novo (25/09/2026, 175 BTC / 176 APT):** o Gemini estava em alta demanda. Cada análise fez **6 chamadas de visão** (2 internas × 3 tentativas do job), com 1 timeout de 45s e 503 no restante, ~1,5 a 2 min, e terminou `FAILED` sem chegar à decisão. A visão não tem modelo reserva: insiste no mesmo `gemini-3.5-flash`. Virou Req. 4.2/4.2a.
 
 ## Decisões do Felipe (25/09/2026)
 
