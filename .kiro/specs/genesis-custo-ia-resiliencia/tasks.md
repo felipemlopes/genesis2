@@ -11,20 +11,27 @@ Regras: sem `RefreshDatabase` (sqlite persistente + `DatabaseTransactions`); nen
 ## Tarefas
 
 - [ ] 0. Fase 0 — Medição e linha de base
-  - [ ] 0.1 **[API]** Tokens por etapa em cada análise
-    - [ ] 0.1.1 `AiUsageRecorder`: coletor que recebe o uso de **cada** chamada (sucesso ou falha) com motivo `primeira`/`retry`/`failover`/`repair`
-    - [ ] 0.1.2 `GeminiVisionService`, `GeminiContextService`, `GeminiDecisionClient`, `OpenAiInteractionsClient`, `FailoverDecisionProvider`: reportar toda tentativa ao coletor, não só a final
-    - [ ] 0.1.3 `GeminiContextService`: registrar `thought_tokens` e `grounding_queries` (`groundingMetadata.webSearchQueries`)
-    - [ ] 0.1.4 Job: merge acumulativo em `provider_telemetry.{etapa}` (soma + `calls[]`), acumulando entre repairs; `total` recalculado, inclusive em `finalizarComoFalha()`/`failed()`
-    - [ ] 0.1.5 Scan: guardar uso em cache por `image_hash` e anexar em `provider_telemetry.scan` na criação da análise
-    - [ ] 0.1.6 Etapa vinda do cache (macro/sentimento/decisão reutilizada) registra `cache_hit: true` e tokens 0
-    - [ ] 0.1.7 Testes com `Http::fake`: 1 chamada, retry, failover e repair produzem somas e `calls[]` corretos; chamada falha entra com tokens `null`
+  - [x] 0.1 **[API]** Tokens por etapa em cada análise
+    - [x] 0.1.1 `AiUsageRecorder`: coletor que recebe o uso de **cada** chamada (sucesso ou falha) com motivo `primeira`/`retry`/`failover`/`repair`
+    - [x] 0.1.2 `GeminiVisionService`, `GeminiContextService`, `GeminiDecisionClient`, `OpenAiDecisionClient`, `FailoverDecisionProvider`: reportar toda tentativa ao coletor, não só a final
+      - `OpenAiInteractionsClient`/`GeminiInteractionsClient`/`VisualLevelsService`/`GraphicalAnalysisAttemptService` ficaram de fora: órfãos, só o benchmark usa
+    - [x] 0.1.3 `GeminiContextService`: registrar `thought_tokens` e `grounding_queries` (`groundingMetadata.webSearchQueries`)
+    - [x] 0.1.4 Job: merge acumulativo em `provider_telemetry.{etapa}` (soma + `calls[]`), acumulando entre repairs; `total` recalculado, inclusive em `finalizarComoFalha()`/`failed()`
+      - `handle()` virou try/finally em volta de `processar()`: o `finally` grava o que sobrou em qualquer saída antecipada
+    - [x] 0.1.5 Scan: guardar uso em cache por `image_hash` e anexar em `provider_telemetry.scan` na criação da análise
+      - chave `genesis:scan_usage:{user_id}:{sha256}`, 1h; scans repetidos da mesma imagem somam
+    - [~] 0.1.6 Etapa vinda do cache (macro/sentimento/decisão reutilizada) registra `cache_hit: true` e tokens 0
+      - feito para a decisão reutilizada por `manifest_hash`; macro/sentimento entram junto com o cache da Fase 1
+    - [x] 0.1.7 Testes com `Http::fake`: 1 chamada, retry, failover e repair produzem somas e `calls[]` corretos; chamada falha entra com tokens `null`
     - _Requisitos: 1.1, 1a–1g_
-  - [ ] 0.2 **[API]** Log `genesis.ia.chamada` em todos os clientes HTTP de IA (incluindo `UtilityGeminiProxyController`, `MacroController`, `GeoEventService`, `ChartMetadataScanService`)
+    - **Testes (25/09/2026):** `tests/Unit/AiUsageRecorderTest.php` (5), `ChartMetadataScanFallbackTest::test_consumo_registra_as_duas_tentativas`, `GraphicalAnalysisAttemptJobTest` (+2: caminho feliz e 3 repairs até FAILED, `--process-isolation`)
+  - [x] 0.2 **[API]** Log `genesis.ia.chamada` em todos os clientes HTTP de IA (incluindo `UtilityGeminiProxyController`, `MacroController`, `GeoEventService`, `ChartMetadataScanService`)
     - _Requisitos: 1.2_
-  - [ ] 0.3 **[API]** Comando `genesis:custo-ia --desde=` agregando por etapa/modelo/dia e chamadas por análise concluída; `--analise=ID` detalha uma análise
+  - [x] 0.3 **[API]** Comando `genesis:custo-ia --desde=` agregando por etapa/modelo/dia e chamadas por análise concluída; `--analise=ID` detalha uma análise
     - _Requisitos: 1.3_
   - [ ] 0.4 **[API]** Rodar em produção (com autorização) e registrar a linha de base em `design.md`
+    - Rodado no banco **local** (25/09/2026, só leitura): ver design.md → "Linha de base local". Produção pendente: depende de deploy + autorização do Felipe
+    - Análises antigas só têm o consumo da última chamada de cada etapa (o comando mostra como "legado"). O consumo completo só existe para análises feitas depois do deploy desta fase
     - _Requisitos: 1.4_
   - [ ] 0.5 Checkpoint: revisar com o Felipe onde está o maior custo antes de seguir
 
@@ -98,6 +105,16 @@ Regras: sem `RefreshDatabase` (sqlite persistente + `DatabaseTransactions`); nen
     - _Requisitos: 8.1_
   - [ ] 6.2 Decisão do Felipe com base no benchmark
     - _Requisitos: 8.2_
+
+- [ ] 8. Fase 8 — Bundle da decisão menor (achado da Fase 0; candidata a vir antes da Fase 1)
+  - [ ] 8.1 **[API]** Resumir `flow.cvd_series` em PHP para o decisor (ou mover para `DISPLAY_ONLY`), mantendo a série completa para exibição
+    - _Requisitos: 9.1_
+  - [ ] 8.2 **[API]** Auditar `structure.local_pivots`, `structure.labels` e `structure.structural_pivots` pelo mesmo critério
+    - _Requisitos: 9.2_
+  - [ ] 8.3 **[API]** Benchmark antes/depois (`BenchmarkGenesisBrainV2`): direção/score equivalentes
+    - _Requisitos: 9.3_
+  - [ ] 8.4 **[API]** Medir a entrada média por chamada de decisão antes/depois com `genesis:custo-ia`
+    - _Requisitos: 9.4_
 
 - [ ] 7. Aceite
   - [ ] 7.1 Rodar `genesis:custo-ia` em produção 3–7 dias após o deploy e comparar com a linha de base (0.4)

@@ -123,6 +123,24 @@ Formato por etapa (sem migração, é a coluna JSON existente):
 - Log `genesis.ia.chamada` em todo cliente HTTP de IA (`GeminiInteractionsClient`, `OpenAiInteractionsClient`, `ChartMetadataScanService`, `UtilityGeminiProxyController`, `MacroController`, `GeoEventService`).
 - `php artisan genesis:custo-ia --desde=YYYY-MM-DD` agrega a partir de `analises.provider_telemetry` mais o log; `--analise=ID` mostra uma análise por etapa.
 
+## Linha de base local (Fase 0, 25/09/2026)
+
+`php artisan genesis:custo-ia --desde=2026-09-01` contra o banco **local** (18 análises, todas anteriores à Fase 0, ou seja, só a última chamada de cada etapa, subestimando retries/repairs):
+
+| Etapa | Chamadas | Tokens (entrada+saída+thinking) | % |
+|---|---|---|---|
+| decisão | 10 | 1.827.864 | **93,6%** |
+| visão | 18 | 110.855 | 5,7% |
+| contexto | 18 | 13.613 | 0,7% |
+
+Uma chamada de decisão (análise 173) usou **186.391 tokens de entrada**, 6.400 de thinking e 3.997 de saída.
+
+**Causa:** o bundle enviado ao decisor tem ~314 KB, e **`flow.cvd_series` sozinho ocupa ~196 KB (~62%)**: a série de CVD bruta com 1.499 pontos, papel `CONTEXT`. `BrainBundleGuard::stripDisplayOnly()` só remove `DISPLAY_ONLY`, então ela vai inteira em **toda** chamada de decisão, inclusive em cada repair. Depois dela vêm `structure.local_pivots` (~36 KB), `pipeline.execution` (~27 KB, `DISPLAY_ONLY`, já removido), `structure.labels` (~19 KB, 195 itens) e `structure.structural_pivots` (~17 KB).
+
+Consequência: cortar repair (Fase 4) e reduzir o bundle (Req. 9) multiplicam-se. Cada repair evitado economiza ~190 mil tokens hoje. O contexto (busca no Google) pesa pouco em tokens, mas cada busca é cobrada à parte e só passa a ser medida a partir desta fase.
+
+Produção ainda não foi medida (0.4).
+
 ## Decisões do Felipe (25/09/2026)
 
 - **Macro**: cache de 24h.

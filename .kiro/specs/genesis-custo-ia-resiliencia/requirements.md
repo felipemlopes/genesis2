@@ -128,3 +128,14 @@ A auditoria de código que embasa estes requisitos está em `design.md` → "Est
 
 1. Com a medição do Requisito 1 em mãos, O SISTEMA DEVE rodar o benchmark existente (`BenchmarkGenesisBrainV2`) comparando `decision_thinking_level` HIGH vs MEDIUM e `vision_thinking_level` HIGH vs MEDIUM.
 2. O nível só é reduzido em produção se o benchmark mostrar direção/score equivalentes, com a decisão registrada pelo Felipe.
+
+### Requisito 9: Tamanho do bundle da decisão (achado da Fase 0)
+
+**User Story:** Como dono do produto, quero que a IA de decisão receba só o que ela usa, porque a entrada da decisão é o maior custo por análise.
+
+#### Critérios de Aceitação
+
+1. `flow.cvd_series` (série de CVD bruta, ~1.500 pontos) NÃO DEVE ir inteira para o decisor. O decisor DEVE receber um resumo calculado em PHP (tendência, divergência, últimos N pontos; N a definir) ou a série DEVE passar a `DISPLAY_ONLY`.
+2. `structure.local_pivots`, `structure.labels` e `structure.structural_pivots` DEVEM ser auditados com o mesmo critério: o decisor recebe o que ele cita/usa, não o histórico inteiro.
+3. A redução NÃO PODE mudar direção/score de forma relevante: validar com o benchmark existente (`BenchmarkGenesisBrainV2`) antes/depois.
+4. A medição (Req. 1) DEVE mostrar a entrada média por chamada de decisão antes e depois.
