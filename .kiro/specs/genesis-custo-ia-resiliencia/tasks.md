@@ -57,23 +57,32 @@ Regras: sem `RefreshDatabase` (sqlite persistente + `DatabaseTransactions`); nen
   - [x] 1.8 Checkpoint: suíte [API] verde
     - **Testes (25/09/2026):** `GeminiContextServiceCacheTest` (7, novo), `GeminiContextServiceTest` ajustado para 2 chamadas, `GeminiContextServicePromptContradictionTest` (+1), `MacroControllerRemovedTest` (+1), `__tests__/geminiService.test.ts` (+1); FE 476 verdes
 
-- [ ] 2. Fase 2 — Uma chamada por etapa
-  - [ ] 2.1 **[API]** `GENESIS_GEMINI_CONTEXT_ATTEMPTS=1` (config, `.env.example`, remoção do loop de retry por negócio)
+- [x] 2. Fase 2 — Uma chamada por etapa
+  - [x] 2.1 **[API]** `GENESIS_GEMINI_CONTEXT_ATTEMPTS=1` (config, `.env.example`, remoção do loop de retry por negócio)
     - _Requisitos: 4.1_
-  - [ ] 2.2 **[API]** Visão: retry só em erro de transporte (timeout/429/5xx), nunca por conteúdo, usando modelo reserva
+    - loop removido e chave `context_max_attempts` removida da config (1 chamada por bloco, sem knob); falha fica no cache negativo de 15 min da Fase 1
+  - [x] 2.2 **[API]** Visão: retry só em erro de transporte (timeout/429/5xx), nunca por conteúdo, usando modelo reserva
     - _Requisitos: 4.2_
-  - [ ] 2.2a **[API]** Visão sem resposta depois do retry interno: não reexecutar o job inteiro (encerrar com estorno)
+    - `GENESIS_GEMINI_VISION_FALLBACK_MODEL` (padrão `gemini-3.6-flash`); 4xx e JSON inválido falham na hora; consumo da 2ª tentativa sai como `failover`
+  - [x] 2.2a **[API]** Visão sem resposta depois do retry interno: não reexecutar o job inteiro (encerrar com estorno)
     - _Requisitos: 4.2a_
-  - [ ] 2.3 **[API]** `FailoverDecisionProvider`: 1 tentativa no primário antes do failover
+    - `failure_reason_code=VISION_UNAVAILABLE`, mensagem pública sem estado interno
+  - [x] 2.3 **[API]** `FailoverDecisionProvider`: 1 tentativa no primário antes do failover
     - _Requisitos: 4.3_
-  - [ ] 2.4 **[API]** `GENESIS_GEMINI_MAX_ATTEMPTS=2`
+  - [x] 2.4 **[API]** `GENESIS_GEMINI_MAX_ATTEMPTS=2`
     - _Requisitos: 4.4_
-  - [ ] 2.5 **[API]** Conferir que o scan não tem retry além de primário + reserva
+    - padrão da config e `.env.example`; `.env` local (gitignored) também ajustado. **No deploy: ajustar o `.env` de produção**
+  - [x] 2.5 **[API]** Conferir que o scan não tem retry além de primário + reserva
     - _Requisitos: 4.5_
-  - [ ] 2.6 **[API]** Conferir e ajustar o limiar de `FinalizarAnalisesTravadas` com os novos valores
+    - conferido: `ChartMetadataScanService` = principal + `scan_fallback_model`, sem retry adicional
+  - [x] 2.6 **[API]** Conferir e ajustar o limiar de `FinalizarAnalisesTravadas` com os novos valores
     - _Requisitos: 4.6_
-  - [ ] 2.7 **[API]** Teste feature: caminho feliz com exatamente 1 chamada por etapa
-  - [ ] 2.8 Checkpoint: suíte [API] verde
+    - o limiar deriva de `max_attempts × orcamentoTimeoutSegundos()` e se ajusta sozinho. **Achado:** o orçamento contava 1 chamada de decisão, mas o failover faz até 2 (antes até 4). Como `$timeout` do job = orçamento, o worker podia matar o job no meio do failover. Corrigido (decisão × 2 + espera do lock do contexto): 545s com decisor Gemini; `retry_after` 540 → **650** (config e `.env.example`). Boot loga `GENESIS_QUEUE_RETRY_AFTER_ABAIXO_DO_ORCAMENTO` se o decisor for trocado (OpenAI = 705s) sem subir o `retry_after`
+  - [x] 2.7 **[API]** Teste feature: caminho feliz com exatamente 1 chamada por etapa
+    - coberto por `test_consumo_de_tokens_por_etapa_no_caminho_feliz` (visão 1, decisão 1) + testes unitários de contexto (1 por bloco) e scan
+  - [x] 2.8 Checkpoint: suíte [API] verde
+    - **Testes (25/09/2026):** visão (+3: 503→reserva, JSON inválido e 400 sem repetir), failover (reescrito: direto pro reserva), contexto (3 reescritos sem retry), job (+1: visão indisponível encerra sem reexecutar; repairs agora 2)
+    - **Achado de teste:** a suíte completa deixava jobs órfãos no sqlite de teste e a rodada isolada seguinte de `GraphicalAnalysisAttemptJobTest` falhava em cascata (os ~10 primeiros testes). O `setUp` agora remove só os órfãos. Verificado semeando 3 órfãos: 16/16
 
 - [ ] 3. Fase 3 — Dado indisponível nunca invalida
   - [ ] 3.1 **[API]** Auditar `0` vs `null` (`safe(..., 0)`, `?? 0`, casts) em `MarketSnapshotService`, `TechnicalAnalysisService`, `DerivativesReadingService`, `SupplementalIndicatorsService`; uma subtarefa por caso real
