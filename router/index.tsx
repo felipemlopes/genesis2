@@ -4,6 +4,7 @@ import AppLayout from '../layouts/AppLayout';
 import ProtectedRoute from '../components/ProtectedRoute';
 import LoginPage from '../pages/LoginPage';
 import VersionSelector from '../components/VersionSelector';
+import RouteErrorPage from '../components/RouteErrorPage';
 
 const GenesisPage = lazy(() => import('../pages/GenesisPage'));
 const CarteiraPage = lazy(() => import('../pages/CarteiraPage'));
@@ -40,14 +41,17 @@ export const router = createBrowserRouter([
   {
     path: '/select-version',
     element: <VersionSelector />,
+    errorElement: <RouteErrorPage />,
   },
   {
     path: '/login',
     element: <LoginPage />,
+    errorElement: <RouteErrorPage />,
   },
   {
     path: '/',
     element: <ProtectedRoute />,
+    errorElement: <RouteErrorPage />,
     children: [
       {
         index: true,
