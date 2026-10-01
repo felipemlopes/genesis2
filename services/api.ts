@@ -1,3 +1,5 @@
+import type { TradeDoServidor } from '../utils/posicoes';
+import { apagarToken, gravarToken, lerToken } from './tokenStorage';
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
 
 // spec genesis-microservico-auth-creditos, Fase 7 — CONSTRUÍDO, NÃO ATIVADO por padrão (mesma
@@ -14,7 +16,7 @@ function authPath(novoPath: string, legadoPath: string): string {
 }
 
 function getAuthHeaders(): Record<string, string> {
-  const token = localStorage.getItem('genesis_token');
+  const token = lerToken();
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     'Accept': 'application/json',
@@ -26,7 +28,7 @@ function getAuthHeaders(): Record<string, string> {
 }
 
 function getFormDataHeaders(): Record<string, string> {
-  const token = localStorage.getItem('genesis_token');
+  const token = lerToken();
   const headers: Record<string, string> = {
     'Accept': 'application/json',
   };
@@ -57,7 +59,7 @@ export async function login(email: string, password: string) {
   });
   const data = await res.json().catch(() => ({}));
   if (res.ok && data.access_token) {
-    localStorage.setItem('genesis_token', data.access_token);
+    gravarToken(data.access_token);
     return { success: true, user: data.user };
   }
   return { success: false, message: data.message || 'Credenciais invalidas' };
@@ -73,11 +75,11 @@ export async function logout() {
   try {
     await fetch(authPath('/auth/logout', '/v1/logout'), { method: 'POST', headers: getAuthHeaders() });
   } catch (_) {}
-  localStorage.removeItem('genesis_token');
+  apagarToken();
 }
 
 export function isAuthenticated(): boolean {
-  return !!localStorage.getItem('genesis_token');
+  return !!lerToken();
 }
 
 export async function fetchCredits(): Promise<number | null> {
@@ -286,9 +288,22 @@ export interface RepriceResponse {
     distance_to_liquidation_pct: number | null;
   };
   rr: { tp1: number | null; tp2: number | null; tp3: number | null };
-  risk: { distance_pct: number; risk_usd: number | null };
-  position: { quantity: number | null; notional: number | null; margin: number | null };
-  liquidation: { price: number | null; status: string | null };
+  // V6.12 (§7.3): campos novos — tudo que a tela mostra de risco passa a vir do reprice.
+  rr_bruto: { tp1: number | null; tp2: number | null; tp3: number | null };
+  risk: {
+    distance_pct: number;
+    risk_usd: number | null;
+    pct_capital_base: number | null;
+    pct_margem: number | null;
+    stop_alem_da_liquidacao: boolean;
+  };
+  position: { quantity: number | null; notional: number | null; margin: number | null; margin_pct_capital: number | null };
+  liquidation: {
+    price: number | null;
+    status: string | null;
+    verification: 'SEGURO' | 'INSEGURO' | null;
+    classification: 'LIQ_ANTES_DO_STOP' | 'LIQ_FOLGA_CURTA' | null;
+  };
 }
 
 export async function reprecificar(
@@ -311,6 +326,78 @@ export async function reprecificar(
     return { success: true, data: data as RepriceResponse };
   } catch (err: any) {
     return { success: false, error: err.message || 'Erro de rede ao reprecificar' };
+  }
+}
+
+// V6.12 (§8.3): posição confirmada gravada no servidor com o plano e o stop efetivo. O servidor
+// reprecifica com o stop recebido — nenhum outro preço sai daqui.
+export async function confirmarPosicao(
+  analiseId: string,
+  plano: 'A' | 'B',
+  stopEffective: number,
+  alavancagem: number,
+  capitalBase: number,
+  exchange?: string | null,
+): Promise<{ success: true; data: { trade: TradeDoServidor } } | { success: false; error: string }> {
+  try {
+    const res = await fetch(`${API_BASE}/v1/analises/${analiseId}/confirmar-posicao`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ plano, stop_effective: stopEffective, alavancagem, capital_base: capitalBase, exchange: exchange ?? null }),
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      return { success: false, error: json?.error || json?.message || 'Falha ao confirmar posição' };
+    }
+    return { success: true, data: json?.data ?? json };
+  } catch (err: any) {
+    return { success: false, error: err?.message ?? 'Erro de rede ao confirmar posição' };
+  }
+}
+
+export async function listarPosicoes(): Promise<{ success: true; data: TradeDoServidor[] } | { success: false; error: string }> {
+  try {
+    const res = await fetch(`${API_BASE}/v1/trades`, { headers: getAuthHeaders() });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      return { success: false, error: json?.message || 'Falha ao carregar as posições' };
+    }
+    return { success: true, data: Array.isArray(json?.data) ? json.data : [] };
+  } catch (err: any) {
+    return { success: false, error: err?.message ?? 'Erro de rede ao carregar as posições' };
+  }
+}
+
+export async function atualizarStatusPosicao(
+  tradeId: string,
+  status: 'Pendente' | 'Executada' | 'Finalizada',
+): Promise<{ success: true } | { success: false; error: string }> {
+  try {
+    const res = await fetch(`${API_BASE}/v1/trades/${tradeId}`, {
+      method: 'PATCH',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ status }),
+    });
+    if (!res.ok) {
+      const json = await res.json().catch(() => ({}));
+      return { success: false, error: json?.message || 'Falha ao atualizar a posição' };
+    }
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err?.message ?? 'Erro de rede ao atualizar a posição' };
+  }
+}
+
+export async function removerPosicao(tradeId: string): Promise<{ success: true } | { success: false; error: string }> {
+  try {
+    const res = await fetch(`${API_BASE}/v1/trades/${tradeId}`, { method: 'DELETE', headers: getAuthHeaders() });
+    if (!res.ok) {
+      const json = await res.json().catch(() => ({}));
+      return { success: false, error: json?.message || 'Falha ao remover a posição' };
+    }
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err?.message ?? 'Erro de rede ao remover a posição' };
   }
 }
 
@@ -491,7 +578,7 @@ export async function fetchEstatisticas() {
 // ─── ALERTAS SSE ──────────────────────────────────────────────
 
 export function connectAlertasSSE(onMessage: (data: any) => void): EventSource {
-  const token = localStorage.getItem('genesis_token');
+  const token = lerToken();
   const url = `${API_BASE}/v1/alertas/stream${token ? `?token=${token}` : ''}`;
   const es = new EventSource(url);
   es.onmessage = (event) => {

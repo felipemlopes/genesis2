@@ -167,6 +167,10 @@ export interface CandidateSetup {
   stop_recommended: number | null;
   stop_effective: number | null;
   stop_source: StopSource;
+  // V6.12 (§9.2): zona do stop pela régua única (StopRiskZoneClassifier) — o aviso "stop largo"
+  // segue isto. Ausente em análise antiga.
+  stop_risk_zone?: 'TOO_CLOSE_NOISE' | 'CAUTION_CLOSE' | 'TECHNICAL_ZONE' | 'CAUTION_WIDE' | 'TOO_WIDE_LIQUIDATION_RISK' | null;
+  stop_distance_atr?: number | null;
   // V6.7 (B-20): verificação de segurança de liquidação — null quando não há stop.
   verificacao: 'SEGURO' | 'INSEGURO' | null;
   verificacao_motivo: string | null;
@@ -182,6 +186,11 @@ export interface CandidateSetup {
   capital_base_usd: number | null;
   margem_comprometida_usd: number | null;
   margem_comprometida_pct_capital: number | null;
+  // Item 6.7 (V6.10): desvio do risco realizado contra o planejado depois do arredondamento pro
+  // stepSize — o backend sempre enviou, o tipo nunca declarou. V6.12: null no plano reprecificado.
+  risco_planejado?: number | null;
+  risco_real?: number | null;
+  risco_desvio_pct?: number | null;
   // Hotfix V6.11 final (spec genesis-v6-11-hotfix-final, Fase 4, item P0.9, 10/09/2026):
   // plan_a_risk_notes da decisão, mesclado em entry_notes por AnalysisPersistenceService.
   entry_notes: string | null;
@@ -244,6 +253,10 @@ export interface PlanoSetup {
   capital_base_usd: number | null;
   margem_comprometida_usd: number | null;
   margem_comprometida_pct_capital: number | null;
+  // Item 6.7 (V6.10): mesmo contrato do CandidateSetup acima. V6.12: null no plano reprecificado.
+  risco_planejado?: number | null;
+  risco_real?: number | null;
+  risco_desvio_pct?: number | null;
   // V6.5 (G02): substituem 'invalidacao' (string) — o backend montava a frase com o nível cru embutido
   // (ex.: "$65370.9262", sem separador de milhar); agora devolve direção + nível numéricos, o frontend
   // formata e monta o texto.
@@ -275,6 +288,10 @@ export interface PlanoSetup {
   stop_recommended: number | null;
   stop_effective: number | null;
   stop_source: StopSource;
+  // V6.12 (§9.2): zona do stop pela régua única (StopRiskZoneClassifier) — o aviso "stop largo"
+  // segue isto. Ausente em análise antiga.
+  stop_risk_zone?: 'TOO_CLOSE_NOISE' | 'CAUTION_CLOSE' | 'TECHNICAL_ZONE' | 'CAUTION_WIDE' | 'TOO_WIDE_LIQUIDATION_RISK' | null;
+  stop_distance_atr?: number | null;
   // V6.7 (B-20/B-21): verificação de segurança de liquidação — presente nos dois planos, cada um
   // calculado contra o próprio stop.
   verificacao: 'SEGURO' | 'INSEGURO' | null;
@@ -355,6 +372,9 @@ export interface GenesisAnalysisResult {
     // sinal de que o primário declarado (B) precisou degradar pra A nesta análise.
     planoB_motivo?: string | null;
     plano_primario_degradado?: boolean;
+    // V6.12 (§9.2): limiares da régua do stop publicados pelo backend (snake_case) — null em
+    // análise antiga; a tela cai nos padrões de utils/stopRiskZone.ts.
+    stop_slider_limiares?: Record<string, number> | null;
     // V6.5 (E08): 1 item (só Plano A) ou 2 (A e B), mesmo formato completo pros dois — ver PlanoSetup.
     planos: PlanoSetup[];
     // V6.5 (G02): invalidacao (string) substituída por direção + nível numéricos — campo legado,
@@ -468,6 +488,11 @@ export interface ActiveTrade {
   // services/futuresCalculations.ts, calculateLiquidationPrice() removida).
   liquidationPrice: number | null;
   amount: number;
+  // V6.12 (§8.3): posição confirmada no servidor — análise, plano escolhido e stop efetivo gravado.
+  analysisUuid?: string | null;
+  plano?: 'A' | 'B' | null;
+  stopPrice?: number | null;
+  stopSource?: string | null;
 }
 
 export interface SavedAnalysis {

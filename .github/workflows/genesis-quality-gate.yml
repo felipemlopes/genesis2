@@ -1,0 +1,38 @@
+# V6.12 (§13.5): gate de qualidade obrigatório do front v2.
+# Política (README, "Gate de qualidade"): crítico não mitigado bloqueia o merge; alto explorável em
+# produção bloqueia; moderado exige triagem registrada no PR — por isso o audit barra a partir de
+# `high`. Triagem de 30/09/2026: depois de remover o servidor Node (express, mysql2), 1 moderada e 1 baixa, nenhuma alta.
+name: Genesis Quality Gate
+
+on:
+  pull_request:
+  push:
+    branches: [staging, master]
+
+permissions:
+  contents: read
+
+jobs:
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm audit --omit=dev --audit-level=high
+      - run: npx tsc --noEmit
+      - run: npm test
+      - run: npm run build
+
+  secrets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { lerToken } from '../services/tokenStorage';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
 
@@ -38,7 +39,7 @@ let lastAlertId: number = 0;
 
 async function fetchNewAlertas() {
     try {
-        const token = localStorage.getItem('genesis_token');
+        const token = lerToken();
         const headers: Record<string, string> = { 'Content-Type': 'application/json' };
         if (token) headers['Authorization'] = `Bearer ${token}`;
 

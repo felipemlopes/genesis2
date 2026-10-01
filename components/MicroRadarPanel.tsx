@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Radar, AlertTriangle } from 'lucide-react';
+import { lerToken } from '../services/tokenStorage';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
 
@@ -13,7 +14,7 @@ interface RadarAlerta {
 }
 
 function getAuthHeaders(): Record<string, string> {
-  const token = localStorage.getItem('genesis_token');
+  const token = lerToken();
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     Accept: 'application/json',

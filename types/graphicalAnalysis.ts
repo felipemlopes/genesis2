@@ -586,6 +586,8 @@ export interface ExecutionPipelineResult {
   // degrada pra 'A' em silêncio no `plano_primario` acima; este campo é o que permite a tela
   // avisar em vez de só trocar sem explicação.
   plano_primario_degradado?: boolean;
+  // V6.12 (§9.2): limiares da régua do stop (ExecucaoService::limiaresReguaStop()).
+  stop_slider_limiares?: Record<string, number> | null;
   zonaInteresse: { tipo: string; zona: string; invalidacao_direcao: 'acima' | 'abaixo' | null; invalidacao_nivel: number | null } | null;
   avisos: string[];
   stop_ancora: { tipo: string; valor: number } | null;

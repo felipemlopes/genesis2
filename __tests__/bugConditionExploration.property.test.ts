@@ -290,27 +290,28 @@ describe('Bug 4: Zonas de entrada devem ser clicáveis', () => {
 
 // ─── Bug 3: Scanner revela ativo sem consumo de créditos ─────────────────────
 
-describe('Bug 3: Scanner deve ocultar ativo até consumo de créditos', () => {
-  // Implementado em 24/09/2026: revelar por ativo, cobrança tipo 'radar' via /credits/consume.
-  it('OpportunityScanner deve ter lógica de ofuscação/reveal de ativos', async () => {
+describe('Bug 3: Scanner só mostra ativos depois de cobrar a busca', () => {
+  // 24/09/2026: revelar por ativo. 01/10/2026 (pedido do Felipe): cobrança única por busca.
+  it('cobra uma vez por busca, com chave de idempotência da busca', async () => {
     const fs = await import('fs');
     const path = await import('path');
     const content = fs.readFileSync(path.resolve(__dirname, '../components/OpportunityScanner.tsx'), 'utf-8');
 
-    expect(content).toMatch(/consumeCredits\('radar'/);
-    expect(content).toMatch(/revealed:\s*false/);
-    expect(content).toMatch(/revealKey:\s*crypto\.randomUUID\(\)/);
+    expect(content).toMatch(/const chaveCobranca = crypto\.randomUUID\(\);/);
+    expect(content).toMatch(/consumeCredits\('radar', chave\)/);
+    expect(content.match(/consumeCredits\(/g)).toHaveLength(1);
+    // Sem cobrança por ativo.
+    expect(content).not.toMatch(/handleReveal|revealKey|opp\.revealed/);
   });
 
-  it('OpportunityScanner NÃO deve exibir pair/symbolRaw diretamente sem gate de crédito', async () => {
+  it('a lista só é preenchida depois da cobrança, e busca vazia não cobra', async () => {
     const fs = await import('fs');
     const path = await import('path');
     const content = fs.readFileSync(path.resolve(__dirname, '../components/OpportunityScanner.tsx'), 'utf-8');
 
-    // Todo render do par/volume/busca/analisar fica atrás de opp.revealed.
-    expect(content).toMatch(/opp\.revealed \? \(\s*<>\s*<AssetBadge symbol=\{opp\.pair\}/);
-    expect(content).toMatch(/opp\.revealed \? opp\.volume24h : '•••'/);
-    expect(content).toMatch(/!opp\.revealed \? \([\s\S]*?handleReveal\(opp\)[\s\S]*?fetchSearchInfo\(opp\.symbolRaw\)[\s\S]*?onAnalyze\(/);
+    expect(content).toMatch(
+      /if \(finalBatch\.length > 0\) \{\s*const erro = await cobrarBusca\(chaveCobranca\);\s*if \(erro\) \{\s*setScanError\(erro\);\s*return;\s*\}\s*\}\s*setOpportunities\(finalBatch\);/
+    );
   });
 });
 

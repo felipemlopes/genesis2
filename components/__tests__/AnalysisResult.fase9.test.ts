@@ -82,7 +82,8 @@ describe('AnalysisResult — hotfix V6.11 final, item P0.12: autoridade do plano
 describe('AnalysisResult — hotfix V6.11 final, item P0.13: seleção separada de confirmação', () => {
   it('podeInteragir deu lugar a podeSelecionarPlano/podeConfirmarPosicao', () => {
     expect(fonte).toContain('const podeSelecionarPlano = execution.action !== null;');
-    expect(fonte).toContain('const podeConfirmarPosicao = podeSelecionarPlano && planoAtivoCompleto && gatilhoBPronto;');
+    // V6.12 (§7.3): + a matemática do stop ajustado já confirmada pelo /reprice.
+    expect(fonte).toContain('const podeConfirmarPosicao = podeSelecionarPlano && planoAtivoCompleto && gatilhoBPronto && repriceConsistente(repriceAtivo);');
   });
 
   it('os botões de A/B usam podeSelecionarPlano, não podeConfirmarPosicao', () => {
@@ -93,7 +94,8 @@ describe('AnalysisResult — hotfix V6.11 final, item P0.13: seleção separada 
 
   it('o botão de confirmação usa podeConfirmarPosicao, não mais o antigo podeInteragir', () => {
     const botaoConfirmar = fonte.slice(fonte.indexOf('Botão de Confirmação'), fonte.indexOf('confirmar-alerta') + 200);
-    expect(botaoConfirmar).toContain('disabled={!podeConfirmarPosicao}');
+    // V6.12 (§8.3): também trava enquanto a posição é gravada no servidor.
+    expect(botaoConfirmar).toContain('disabled={!podeConfirmarPosicao || salvandoPosicao}');
     expect(botaoConfirmar).not.toContain('podeInteragir');
     // podeInteragir só sobrevive em comentários históricos explicando a renomeação — nunca mais
     // como identificador declarado ou usado em JSX (`={!podeInteragir}`, `{podeInteragir &&`).

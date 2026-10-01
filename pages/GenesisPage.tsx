@@ -23,7 +23,8 @@ import SectorSentiment from '../components/SectorSentiment';
 import { analyzeChart, scanChartMetadata, ChartMetadataBlockedError, mapGraphicalToLegacy } from '../services/geminiService';
 import { normalizarPar } from '../services/normalizarPar';
 import { SUPPORTED_TIMEFRAMES, isSupportedTimeframe } from '../utils/supportedTimeframes';
-import { getAnaliseByUuid } from '../services/api';
+import { getAnaliseByUuid, confirmarPosicao } from '../services/api';
+import { tradeDoServidor } from '../utils/posicoes';
 import { GenesisAnalysisResult, ChartMetadata, UnifiedChartResult, PlanoSetup } from '../types';
 import { fetchBinanceData, fetchBybitData, fetchBitgetData, fetchOkxData, ExchangeData } from '../services/cryptoApi';
 
@@ -447,60 +448,46 @@ const GenesisPage: React.FC = () => {
     }
   };
 
-  // V6.7 (B-24): recebe o plano selecionado na tela (A ou B) — antes não recebia nenhum argumento e
-  // sempre usava result.execution.executable_setup (Plano A), mesmo com o Plano B visivelmente
-  // selecionado em AnalysisResult.tsx. Sem planoSelecionado (resposta cacheada de antes de
-  // execution.planos[] existir, E08), cai no Plano A como fallback — nunca o ticker.
-  const handleSaveTrade = (planoSelecionado: PlanoSetup | null) => {
-    if (!result) return;
+  // V6.7 (B-24): recebe o plano selecionado na tela (A ou B) — nunca mais o Plano A por padrão.
+  // V6.12 (§8.3): recebe o plano EFETIVO (com o stop do slider) e grava no servidor antes de mostrar
+  // a posição — o servidor reprecifica com o stop confirmado e devolve a posição gravada. Antes a
+  // posição só existia no estado local e sumia no F5.
+  const handleSaveTrade = async (planoSelecionado: PlanoSetup | null, plano: 'A' | 'B') => {
+    if (!result || !planoSelecionado || !currentAnaliseId) return;
 
-    if (!result.execution.executable || !result.execution.executable_setup) {
+    if (!result.execution.executable) {
       alert(result.execution.motivo || 'Esta análise não possui execução validada.');
       return;
     }
 
-    const setup = planoSelecionado ?? result.execution.executable_setup;
     const direction = result.execution.action;
     if (!direction) return;
 
-    const now = new Date();
-    const formattedDate = `${now.getDate().toString().padStart(2, '0')}/${(now.getMonth() + 1).toString().padStart(2, '0')}/${now.getFullYear()}, ${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+    // V6.7 (B-17): alavancagem do plano é sempre a escolha do membro; o formulário é só defesa.
+    const stopEfetivo = toNullableNumber(planoSelecionado.stop_effective ?? planoSelecionado.stop);
+    const levVal = toNullableNumber(planoSelecionado.alavancagem) ?? Number(leverage);
+    const capital = toNullableNumber(planoSelecionado.capital_base_usd) ?? parseFloat(equity);
+    if (stopEfetivo === null || !levVal || !capital) {
+      alert('Não foi possível confirmar: stop, alavancagem ou capital indisponível.');
+      return;
+    }
 
-    // V6.7 (B-24): entrada gravada é SEMPRE a entrada calculada do plano escolhido — nunca mais o
-    // preço vivo do ticker (currentPrice), que sobrescrevia a entrada real do setup (do Plano B,
-    // inclusive, que costuma ser bem diferente do preço atual por definição — é uma zona de
-    // pullback/repique).
-    const entryP = toNullableNumber(setup.entrada) ?? 0;
-    const targetP = toNullableNumber(setup.tp1) ?? 0;
-    // V6.7 (B-17): setup.alavancagem já é sempre a escolha do membro (nunca mais reduzida em
-    // silêncio) — o fallback pra `leverage` (estado do formulário) continua só por segurança
-    // defensiva, para o caso raro de um setup sem o campo preenchido.
-    const levVal = setup.alavancagem ?? leverage;
-    // D10 (V6.9): calculateLiquidationPrice() (futuresCalculations.ts) era uma SEGUNDA autoridade de
-    // liquidação, com fórmula própria (MMR fixo por corretora) e independente da real
-    // (MotorExecucaoService::calcularLiquidacao(), que usa manutenção real por bracket quando
-    // disponível — ver D3) — podia divergir do número já calculado e publicado pelo backend. Sem
-    // dado do backend, a liquidação fica indisponível (null), nunca recalculada no cliente.
-    const liqPrice = setup.liquidacao ?? null;
+    const resposta = await confirmarPosicao(String(currentAnaliseId), plano, stopEfetivo, levVal, capital, exchange);
+    if (resposta.success === false) {
+      alert(resposta.error);
+      return;
+    }
 
+    // A posição mostrada é a que o servidor gravou (entrada, alvo, stop e liquidação dele);
+    // financialTarget e o preço vivo continuam vindo da tela, como sempre.
     const newTrade = {
-      id: Date.now().toString(),
-      exchange: exchange,
-      date: formattedDate,
-      asset: selectedPair.includes('/') ? selectedPair : selectedPair.replace('USDT', '/USDT'),
-      leverage: `${levVal}x`,
-      direction: direction,
-      status: 'Pendente',
-      pnl: '$0.00 (0.00%)',
-      entryPrice: entryP,
+      ...tradeDoServidor(resposta.data.trade),
       currentPriceStr: currentPrice || '-',
-      targetPrice: targetP,
       financialTarget: parseFloat(targetProfit) || 0,
-      liquidationPrice: liqPrice,
-      amount: parseFloat(equity),
+      amount: capital,
     };
 
-    setActiveTrades((prev) => [newTrade, ...prev]);
+    setActiveTrades((prev) => [newTrade, ...prev.filter((t) => t.id !== newTrade.id)]);
     navigate('/dashboard/performance');
   };
 

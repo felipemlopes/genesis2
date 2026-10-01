@@ -33,22 +33,6 @@ function readMonitorWorker(): string {
 }
 
 // ============================================================
-// HELPER: Read server routes to check SSE endpoint existence
-// ============================================================
-function readServerRoutes(): string {
-  const serverPath = path.resolve(__dirname, '../../server.ts');
-  return fs.readFileSync(serverPath, 'utf-8');
-}
-
-function readApiRoutes(): string {
-  const routesPath = path.resolve(__dirname, '../../routes/api.js');
-  if (fs.existsSync(routesPath)) {
-    return fs.readFileSync(routesPath, 'utf-8');
-  }
-  return '';
-}
-
-// ============================================================
 // Arbitraries
 // ============================================================
 
@@ -210,81 +194,6 @@ describe('Bug Condition Exploration: Worker dados_extras Zerados (Req 1.3)', () 
   });
 });
 
-// ============================================================
-// PROPERTY 3: Bug Condition — SSE Endpoint 404 (Req 1.2)
-// The Node.js backend does NOT have an SSE endpoint at /api/v1/alertas/stream.
-// After fix: endpoint exists and returns text/event-stream responses.
-// ============================================================
-describe('Bug Condition Exploration: SSE Endpoint 404 (Req 1.2)', () => {
-  it('Property: Backend should define SSE route /api/v1/alertas/stream', () => {
-    /**
-     * Validates: Requirements 1.2
-     * 
-     * The server.ts or routes/api.js should define a route for
-     * GET /api/v1/alertas/stream that returns Server-Sent Events.
-     * 
-     * BEFORE FIX: FAILS because no SSE route exists in Node.js backend
-     * AFTER FIX: PASSES because SSE endpoint is implemented
-     */
-    const serverCode = readServerRoutes();
-    const apiRoutes = readApiRoutes();
-    const allRouteCode = serverCode + '\n' + apiRoutes;
-
-    fc.assert(
-      fc.property(fc.constant(null), () => {
-        // The correct behavior: route for alertas/stream should exist
-        const hasSSERoute = /alertas.*stream|alerta.*stream/i.test(allRouteCode);
-        expect(hasSSERoute).toBe(true);
-      }),
-      { numRuns: 1 }
-    );
-  });
-
-  it('Property: SSE endpoint should set correct headers (text/event-stream)', () => {
-    /**
-     * Validates: Requirements 1.2
-     * 
-     * The SSE endpoint implementation should set the Content-Type header
-     * to 'text/event-stream' for proper SSE protocol compliance.
-     * 
-     * BEFORE FIX: FAILS because endpoint doesn't exist
-     * AFTER FIX: PASSES because endpoint sets correct headers
-     */
-    const serverCode = readServerRoutes();
-    const apiRoutes = readApiRoutes();
-    const allRouteCode = serverCode + '\n' + apiRoutes;
-
-    fc.assert(
-      fc.property(fc.constant(null), () => {
-        // The correct behavior: SSE implementation should reference event-stream content type
-        const hasEventStreamHeader = /text\/event-stream/i.test(allRouteCode);
-        expect(hasEventStreamHeader).toBe(true);
-      }),
-      { numRuns: 1 }
-    );
-  });
-
-  it('Property: SSE endpoint should poll genesis_alertas and transmit new alerts', () => {
-    /**
-     * Validates: Requirements 1.2
-     * 
-     * The SSE endpoint should query genesis_alertas for unsent alerts
-     * (WHERE enviado_sse = 0) and transmit them to connected clients.
-     * 
-     * BEFORE FIX: FAILS because no SSE logic exists in Node.js backend
-     * AFTER FIX: PASSES because endpoint polls and transmits alerts
-     */
-    const serverCode = readServerRoutes();
-    const apiRoutes = readApiRoutes();
-    const allRouteCode = serverCode + '\n' + apiRoutes;
-
-    fc.assert(
-      fc.property(fc.constant(null), () => {
-        // The correct behavior: SSE should reference enviado_sse for polling
-        const hasPollingLogic = /enviado_sse|enviado.*sse/i.test(allRouteCode);
-        expect(hasPollingLogic).toBe(true);
-      }),
-      { numRuns: 1 }
-    );
-  });
-});
+// Spec genesis-seguranca-correcoes (S8, 29/09/2026): o stream SSE do Node (routes/api.js) foi removido —
+// respondia sem login e expunha todos os alertas. O stream que o frontend usa é o da API Laravel
+// (AlertaController::stream, com genesis.auth), fora deste repositório.

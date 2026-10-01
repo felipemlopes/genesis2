@@ -2,9 +2,12 @@ import React from 'react';
 import { History } from 'lucide-react';
 import { useAppContext } from '../contexts/AppContext';
 import { price as formatPrice } from '../utils/canonicalMoney';
+import { useCarregarPosicoes } from '../hooks/useCarregarPosicoes';
 
 const HistoryPage: React.FC = () => {
   const { closedTrades } = useAppContext();
+  // V6.12 (§8.3): histórico de posições vem do servidor.
+  useCarregarPosicoes();
 
   return (
     <div className="bg-[#0b0b0f] rounded-2xl p-4 shadow-inner white/.0.05. rounded-[10px] p-4 shadow-[0_0_30px_rgba(139,92,246,0.05)] h-full flex flex-col">

@@ -2,17 +2,29 @@ import React from 'react';
 import { PlayCircle, Trash2 } from 'lucide-react';
 import { useAppContext } from '../contexts/AppContext';
 import { price as formatPrice } from '../utils/canonicalMoney';
+import { atualizarStatusPosicao, removerPosicao } from '../services/api';
+import { useCarregarPosicoes } from '../hooks/useCarregarPosicoes';
 
 const ActiveTradesPage: React.FC = () => {
   const { activeTrades, setActiveTrades, closedTrades, setClosedTrades } = useAppContext();
+  // V6.12 (§8.3): posições vêm do servidor e as ações persistem — nada volta no F5.
+  useCarregarPosicoes();
 
-  const handleClearTrades = () => {
+  const handleClearTrades = async () => {
     if (confirm('Tem certeza que deseja limpar todo o histórico de operações ATIVAS?')) {
-      setActiveTrades([]);
+      const resultados = await Promise.all(activeTrades.map((t) => removerPosicao(t.id)));
+      const falhas = activeTrades.filter((_, i) => resultados[i].success === false);
+      setActiveTrades(falhas);
+      if (falhas.length > 0) alert('Algumas posições não puderam ser removidas. Tente de novo.');
     }
   };
 
-  const handleExecuteTrade = (tradeId: string) => {
+  const handleExecuteTrade = async (tradeId: string) => {
+    const resultado = await atualizarStatusPosicao(tradeId, 'Executada');
+    if (resultado.success === false) {
+      alert(resultado.error);
+      return;
+    }
     setActiveTrades((prev) =>
       prev.map((t) => {
         if (t.id === tradeId) {
@@ -23,9 +35,14 @@ const ActiveTradesPage: React.FC = () => {
     );
   };
 
-  const handleCloseTrade = (tradeId: string) => {
+  const handleCloseTrade = async (tradeId: string) => {
     const trade = activeTrades.find((t) => t.id === tradeId);
     if (!trade) return;
+    const resultado = await atualizarStatusPosicao(tradeId, 'Finalizada');
+    if (resultado.success === false) {
+      alert(resultado.error);
+      return;
+    }
     const finalTrade = { ...trade, status: 'Finalizada' };
     setClosedTrades((prev) => [finalTrade, ...prev]);
     setActiveTrades((prev) => prev.filter((t) => t.id !== tradeId));

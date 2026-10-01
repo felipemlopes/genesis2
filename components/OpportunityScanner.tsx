@@ -1,16 +1,18 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { motion } from 'framer-motion';
-import { Radar, Zap, Activity, ChevronDown, Sparkles, BarChart2, Layers, ShieldCheck, Search, Lock } from 'lucide-react';
+import { Radar, Zap, Activity, ChevronDown, Sparkles, BarChart2, Layers, ShieldCheck, Search } from 'lucide-react';
 import { RSI, MACD, EMA, BollingerBands } from 'technicalindicators';
 import AssetBadge from './AssetBadge';
 import { consumeCredits } from '../services/api';
+import { lerToken } from '../services/tokenStorage';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
 
-// Paywall do Radar (bug relatado por cliente, 23/09/2026): o ativo só aparece depois de revelado.
+// Paywall do Radar: cobrança única por busca (pedido do Felipe, 01/10/2026 — antes era 50 por ativo
+// revelado). Pagou a busca, as oportunidades dela aparecem todas abertas; busca sem resultado não cobra.
 // A cobrança é o tipo 'radar' de /credits/consume — no [AUTH] o valor vem de GENESIS_COST_RADAR
 // (padrão 50, mesmo valor exibido pelo AlertCard). Se esse env mudar, atualizar aqui também.
-const RADAR_REVEAL_COST = 50;
+const RADAR_SCAN_COST = 50;
 
 // --- ICONS ---
 const BinanceLogo = () => (
@@ -51,10 +53,6 @@ interface ScannerOpportunity {
   };
   justification: string;
   timestamp: string;
-  /** Paywall: false até o membro pagar para revelar este ativo. */
-  revealed?: boolean;
-  /** Chave de idempotência da cobrança — uma por oportunidade por scan (retry não cobra duas vezes). */
-  revealKey?: string;
 }
 
 interface OpportunityScannerProps {
@@ -113,25 +111,17 @@ const OpportunityScanner: React.FC<OpportunityScannerProps> = ({ onAnalyze, save
   const [searchInfo, setSearchInfo] = useState<Record<string, string>>({});
   const [isSearching, setIsSearching] = useState<Record<string, boolean>>({});
   const [activeSearch, setActiveSearch] = useState<string | null>(null);
-  const [revealing, setRevealing] = useState<Record<string, boolean>>({});
-  const [revealError, setRevealError] = useState<Record<string, string>>({});
+  const [scanError, setScanError] = useState('');
 
-  const handleReveal = async (opp: ScannerOpportunity) => {
-    if (revealing[opp.id] || opp.revealed) return;
-    setRevealing(prev => ({ ...prev, [opp.id]: true }));
-    setRevealError(prev => ({ ...prev, [opp.id]: '' }));
+  /** Cobra a busca uma vez (chave por busca: retry não cobra duas vezes). Devolve a mensagem de erro, ou null. */
+  const cobrarBusca = async (chave: string): Promise<string | null> => {
     try {
-      const result = await consumeCredits('radar', opp.revealKey ?? `radar-${opp.id}-${opp.timestamp}`);
-      if (!result.success) {
-        setRevealError(prev => ({ ...prev, [opp.id]: result.error || 'Não foi possível revelar o ativo.' }));
-        return;
-      }
-      setOpportunities(prev => prev.map(o => (o.id === opp.id ? { ...o, revealed: true } : o)));
+      const result = await consumeCredits('radar', chave);
+      if (!result.success) return result.error || 'Não foi possível cobrar a busca.';
       window.dispatchEvent(new Event('refreshCredits'));
+      return null;
     } catch {
-      setRevealError(prev => ({ ...prev, [opp.id]: 'Falha de conexão. Tente novamente.' }));
-    } finally {
-      setRevealing(prev => ({ ...prev, [opp.id]: false }));
+      return 'Falha de conexão. Tente novamente.';
     }
   };
 
@@ -142,7 +132,7 @@ const OpportunityScanner: React.FC<OpportunityScannerProps> = ({ onAnalyze, save
     }
     setIsSearching(prev => ({ ...prev, [symbol]: true }));
     try {
-      const token = localStorage.getItem('genesis_token');
+      const token = lerToken();
       const response = await fetch(`${API_BASE}/v1/gemini-proxy`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
@@ -169,8 +159,11 @@ const OpportunityScanner: React.FC<OpportunityScannerProps> = ({ onAnalyze, save
   }, [hasScanned, opportunities, selectedTimeframe]);
 
   const performScan = async () => {
+    if (isScanning) return;
     setIsScanning(true);
-    
+    setScanError('');
+    const chaveCobranca = crypto.randomUUID();
+
     try {
         // 1. LIQUIDITY & UNIVERSE (Multi-Exchange)
         const [binanceRes, bybitRes, bitgetRes, okxRes] = await Promise.allSettled([
@@ -471,8 +464,6 @@ const OpportunityScanner: React.FC<OpportunityScannerProps> = ({ onAnalyze, save
                         },
                         justification,
                         timestamp: new Date().toLocaleTimeString(),
-                        revealed: false,
-                        revealKey: crypto.randomUUID(),
                     });
                 }
             } catch (e) {}
@@ -486,7 +477,16 @@ const OpportunityScanner: React.FC<OpportunityScannerProps> = ({ onAnalyze, save
 
         // Sort by final score and take exactly 5
         const finalBatch = results.sort((a, b) => b.scores.final - a.scores.final).slice(0, 5);
-        
+
+        // Cobrança única da busca, antes de mostrar qualquer ativo. Sem resultado, não cobra.
+        if (finalBatch.length > 0) {
+            const erro = await cobrarBusca(chaveCobranca);
+            if (erro) {
+                setScanError(erro);
+                return;
+            }
+        }
+
         setOpportunities(finalBatch);
         
         // Add new symbols to seen history to prevent repetition in future scans
@@ -548,7 +548,7 @@ const OpportunityScanner: React.FC<OpportunityScannerProps> = ({ onAnalyze, save
              <span className="font-bold text-purple-400  pb-1 mb-2 block uppercase tracking-wider">Score de Fluxo</span>
              <p className="text-gray-300 mb-2">Mede a pressão institucional e o posicionamento do mercado em tempo real.</p>
              <ul className="text-gray-400 space-y-1 list-disc pl-4">
-                <li><strong className="text-white">Open Interest:</strong> {data.revealed ? `$${(data.metrics.openInterest / 1000000).toFixed(1)}M` : '•••'}</li>
+                <li><strong className="text-white">Open Interest:</strong> {`$${(data.metrics.openInterest / 1000000).toFixed(1)}M`}</li>
                 <li><strong className="text-white">Funding Rate:</strong> {(data.metrics.fundingRate * 100).toFixed(4)}%</li>
                 <li><strong className="text-white">Long/Short Ratio:</strong> {data.metrics.longShortRatio.toFixed(2)}</li>
              </ul>
@@ -621,6 +621,8 @@ const OpportunityScanner: React.FC<OpportunityScannerProps> = ({ onAnalyze, save
                     <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" size={14} />
                   </div>
                   <button onClick={performScan} className="w-full py-3 bg-white text-black hover:bg-genesis-positive font-bold text-xs uppercase tracking-[0.2em] rounded transition-all shadow-lg flex items-center justify-center gap-2">BUSCAR OPORTUNIDADES <Zap size={12} /></button>
+                  <span className="text-[10px] text-gray-500 font-mono uppercase tracking-widest">{RADAR_SCAN_COST} créditos por busca</span>
+                  {scanError && <span className="text-[10px] text-amber-400 text-center">{scanError}</span>}
               </div>
           </div>
       );
@@ -686,19 +688,10 @@ const OpportunityScanner: React.FC<OpportunityScannerProps> = ({ onAnalyze, save
                  {/* 1. Asset & Liquidity */}
                  <div className="flex flex-col w-[15%]">
                     <span className="text-lg font-bold text-white font-mono tracking-tight inline-flex items-center gap-2">
-                       {opp.revealed ? (
-                         <>
-                           <AssetBadge symbol={opp.pair} size="sm" mostrarNome={false} />
-                           {opp.pair}
-                         </>
-                       ) : (
-                         <>
-                           <Lock size={14} className="text-gray-500" />
-                           <span className="text-gray-400">•••/USDT</span>
-                         </>
-                       )}
+                       <AssetBadge symbol={opp.pair} size="sm" mostrarNome={false} />
+                       {opp.pair}
                     </span>
-                    <span className="text-[10px] text-gray-500 mt-1">Vol 24h: {opp.revealed ? opp.volume24h : '•••'}</span>
+                    <span className="text-[10px] text-gray-500 mt-1">Vol 24h: {opp.volume24h}</span>
                     <div className="flex items-center gap-2 mt-3">
                         {opp.exchanges.includes('Binance') && <div className="w-3.5 h-3.5 grayscale group-hover:grayscale-0 transition-all" title="Binance"><BinanceLogo /></div>}
                         {opp.exchanges.includes('Bybit') && <div className="w-3.5 h-3.5 grayscale group-hover:grayscale-0 transition-all" title="Bybit"><BybitLogo /></div>}
@@ -755,19 +748,6 @@ const OpportunityScanner: React.FC<OpportunityScannerProps> = ({ onAnalyze, save
 
                  {/* 5. Action */}
                  <div className="flex flex-col items-end gap-1 w-[15%]">
-                   {!opp.revealed ? (
-                    <>
-                      <button
-                          onClick={() => handleReveal(opp)}
-                          disabled={revealing[opp.id]}
-                          className="bg-genesis-accent/10 hover:bg-genesis-accent hover:text-black text-genesis-accent px-4 py-3 rounded text-[10px] font-bold uppercase tracking-widest transition-all cursor-pointer disabled:opacity-50 disabled:cursor-wait inline-flex items-center gap-2"
-                      >
-                          <Lock size={12} />
-                          {revealing[opp.id] ? 'Revelando...' : `Revelar — ${RADAR_REVEAL_COST} créditos`}
-                      </button>
-                      {revealError[opp.id] && <span className="text-[9px] text-amber-400 text-right">{revealError[opp.id]}</span>}
-                    </>
-                   ) : (
                    <div className="flex justify-end gap-2">
                     <button 
                         onClick={() => fetchSearchInfo(opp.symbolRaw)}
@@ -783,7 +763,6 @@ const OpportunityScanner: React.FC<OpportunityScannerProps> = ({ onAnalyze, save
                         ANALISAR
                     </button>
                    </div>
-                   )}
                  </div>
 
               </motion.div>

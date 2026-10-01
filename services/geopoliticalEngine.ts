@@ -1,3 +1,4 @@
+import { lerToken } from './tokenStorage';
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
 
 // --- TIPAGEM E CATEGORIAS ---
@@ -61,7 +62,7 @@ class GeopoliticalEngine {
 
   private async poll() {
     try {
-      const token = localStorage.getItem('genesis_token');
+      const token = lerToken();
       const response = await fetch(`${API_BASE}/v1/geo-events`, {
         method: 'GET',
         headers: {

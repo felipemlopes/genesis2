@@ -4,6 +4,7 @@ import { GenesisAnalysisResult, TradeDirection, ChartMetadata, CandidateSetup, E
 import { normalizarPar } from "./normalizarPar";
 import { obterChaveIdempotencia, encerrarChaveIdempotencia, hashDaImagem, type SubmissaoAnalise } from "./analysisIdempotency";
 import type { GraphicalAnalysisResult, GraphicalAnalysisPollResult, GraphicalAnalysisTerminalResult } from "../types/graphicalAnalysis";
+import { lerToken } from './tokenStorage';
 
 // V6.8 (CODE-P0-19): newAnalysisIdempotencyKey() gerava uma chave nova a cada chamada — um retry
 // do membro (ou um erro de rede) produzia chave diferente e o backend tratava como submissão nova,
@@ -183,7 +184,7 @@ export const scanChartMetadata = async (file: File, selectedExchange?: string): 
   formData.append('image', file);
   if (selectedExchange) formData.append('exchange', selectedExchange);
 
-  const token = localStorage.getItem('genesis_token');
+  const token = lerToken();
   const headers = token ? { Authorization: `Bearer ${token}` } : {};
 
   const response = await fetch(`${API_BASE}/v1/scangraph`, {
@@ -412,6 +413,8 @@ export const mapGraphicalToLegacy = (v64: GraphicalAnalysisResult): GenesisAnaly
       // ser honrado — os dois ausentes até esta fase, a tela colapsava em frases fixas.
       planoB_motivo: exec.planoB_motivo ?? null,
       plano_primario_degradado: exec.plano_primario_degradado ?? false,
+      // V6.12 (§9.2): limiares da régua do stop — o slider nunca usa constantes duplicadas.
+      stop_slider_limiares: exec.stop_slider_limiares ?? null,
       // V6.5 (E08): campo novo do backend — vazio quando a resposta vier de uma decisão cacheada
       // antes deste campo existir (a tela cai no fallback de candidate_setup pro Plano A nesse
       // caso, legacyMode em AnalysisResult.tsx — o Plano B simplesmente fica indisponível).
@@ -517,7 +520,7 @@ export const analyzeChart = async (
     throw new Error('Metadados obrigatórios ausentes. Refaça a leitura do gráfico.');
   }
 
-  const token = localStorage.getItem('genesis_token');
+  const token = lerToken();
   if (!token) {
     throw new Error('Sessão expirada. Entre novamente.');
   }

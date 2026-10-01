@@ -1,6 +1,7 @@
 import path from 'path';
 import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
+import { injetarCsp } from './csp.config';
 
 export default defineConfig(({ mode }) => {
     const env = loadEnv(mode, process.cwd(), '');
@@ -31,7 +32,11 @@ export default defineConfig(({ mode }) => {
           '.genesislabs.com.br',
         ],
       },
-      plugins: [react()],
+      plugins: [
+        react(),
+        // V6.12 (§12.6): CSP só no build (o dev server injeta scripts inline próprios).
+        { name: 'genesis-csp', apply: 'build', transformIndexHtml: (html: string) => injetarCsp(html, env) },
+      ],
       define: {
         'process.env.API_BASE_URL': JSON.stringify(env.API_BASE_URL),
         'process.env.AI_GATEWAY': JSON.stringify(env.AI_GATEWAY)

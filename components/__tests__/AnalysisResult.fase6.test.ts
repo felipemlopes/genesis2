@@ -121,9 +121,10 @@ describe('AnalysisResult — Fase 6, item 6.7: risco realizado divergente do pla
   // elimina.
   it('mostra os dois lado a lado quando risco_desvio_pct existe', () => {
     expect(fonte).toContain('Risco realizado divergente do planejado');
-    expect(fonte).toContain('planoAtivo?.risco_desvio_pct');
-    expect(fonte).toContain('planoAtivo?.risco_planejado');
-    expect(fonte).toContain('planoAtivo?.risco_real');
-    expect(fonte).not.toMatch(/planoAtivo\?\.risco_desvio_pct \?\? setup/);
+    // V6.12 (§7.3): números de risco leem o plano efetivo (plano original + /reprice confirmado).
+    expect(fonte).toContain('planoEfetivo?.risco_desvio_pct');
+    expect(fonte).toContain('planoEfetivo?.risco_planejado');
+    expect(fonte).toContain('planoEfetivo?.risco_real');
+    expect(fonte).not.toMatch(/planoEfetivo\?\.risco_desvio_pct \?\? setup/);
   });
 });

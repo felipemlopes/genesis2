@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { hasValidNumber, isStopSideValid, type PlanoDirecao } from '../utils/stopValidation';
-import { classifyStopRiskZone, liqGapPctOfEntryToLiquidation, STOP_RISK_ZONE_MICROTEXT, type StopRiskZone } from '../utils/stopRiskZone';
+import { classifyStopRiskZone, liqGapPctOfEntryToLiquidation, STOP_RISK_ZONE_MICROTEXT, STOP_SLIDER_THRESHOLDS, type StopRiskZone, type StopSliderThresholds } from '../utils/stopRiskZone';
 import { price as formatPrice } from '../utils/canonicalMoney';
 import { reprecificar, type RepriceResponse } from '../services/api';
+import { criarGuardaDeSequencia, respostaDoStopAtual, REPRICE_IDLE, type RepriceState } from '../utils/planoEfetivo';
 
 /**
  * Genesis Brain V2 (Fase 4.2/4.3, item 13.1-13.3/14.2, Requisito 12.6-12.9/13.3, Fonte §36/§38):
@@ -34,6 +35,10 @@ export interface StopSliderProps {
   plan?: 'A' | 'B';
   leverage?: number | null;
   equity?: number | null;
+  /** V6.12 (§7.2): entrega ao pai o estado do reprice — pendente, erro, ou resposta confirmada para o stop atual. */
+  onRepriceState?: (state: RepriceState) => void;
+  /** V6.12 (§9.2): limiares publicados pelo servidor — padrão só em análise antiga. */
+  limiares?: StopSliderThresholds;
 }
 
 const ZONE_COLOR: Record<StopRiskZone, string> = {
@@ -59,13 +64,15 @@ const limiteDistante = (entrada: number, direcao: PlanoDirecao, atrSeguro: numbe
 
 export const StopSlider: React.FC<StopSliderProps> = ({
   entrada, stopRecommended, direcao, atr, liquidacao, tickDecimals, onStopEffectiveChange,
-  analysisUuid, plan, leverage, equity,
+  analysisUuid, plan, leverage, equity, onRepriceState, limiares = STOP_SLIDER_THRESHOLDS,
 }) => {
   const [stopEffective, setStopEffective] = useState<number>(stopRecommended);
   const [reprice, setReprice] = useState<RepriceResponse | null>(null);
   const [repricing, setRepricing] = useState(false);
   const [repriceErro, setRepriceErro] = useState<string | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // V6.12 (§7.2): resposta de um stop que o membro já abandonou nunca chega à tela.
+  const guardaRef = useRef(criarGuardaDeSequencia());
 
   // Fonte §38: debounce curto, nunca uma chamada por pixel arrastado. Cancela o timer anterior a
   // cada novo valor — só a ÚLTIMA posição depois de DEBOUNCE_MS parado dispara o /reprice real.
@@ -76,15 +83,29 @@ export const StopSlider: React.FC<StopSliderProps> = ({
     if (debounceRef.current) {
       clearTimeout(debounceRef.current);
     }
+    // Parado no stop recomendado, o plano original já é a matemática certa — o pai nunca fica
+    // esperando (nem travado por um erro de rede) sem o membro ter mexido em nada. Com o stop
+    // ajustado, a tela espera a resposta própria desse stop.
+    const ajustadoAgora = Math.abs(stopEffective - stopRecommended) > (entrada * 1e-9);
+    const avisarPai = (estado: RepriceState): void => onRepriceState?.(ajustadoAgora ? estado : REPRICE_IDLE);
+    avisarPai({ pending: true, error: null, response: null });
     debounceRef.current = setTimeout(() => {
+      const seq = guardaRef.current.proxima();
       const executar = async (): Promise<void> => {
         setRepricing(true);
         setRepriceErro(null);
         const resultado = await reprecificar(analysisUuid, plan, leverage, equity, stopEffective);
+        if (!guardaRef.current.ehAtual(seq)) {
+          return; // resposta de um stop que o membro já abandonou
+        }
         if (resultado.success === false) {
           setRepriceErro(resultado.error);
+          avisarPai({ pending: false, error: resultado.error, response: null });
+        } else if (!respostaDoStopAtual(resultado.data, stopEffective, entrada)) {
+          avisarPai({ pending: false, error: 'Resposta de reprecificação fora de ordem.', response: null });
         } else {
           setReprice(resultado.data);
+          avisarPai({ pending: false, error: null, response: resultado.data });
         }
         setRepricing(false);
       };
@@ -115,7 +136,7 @@ export const StopSlider: React.FC<StopSliderProps> = ({
 
   const stopDistanceAtrLocal = atrSeguro ? Math.abs(entrada - stopEffective) / atrSeguro : null;
   const liqGapPctLocal = liqGapPctOfEntryToLiquidation(stopEffective, entrada, liquidacao);
-  const zonaLocal: StopRiskZone | null = stopDistanceAtrLocal !== null ? classifyStopRiskZone(stopDistanceAtrLocal, liqGapPctLocal) : null;
+  const zonaLocal: StopRiskZone | null = stopDistanceAtrLocal !== null ? classifyStopRiskZone(stopDistanceAtrLocal, liqGapPctLocal, limiares) : null;
   const ladoValido = isStopSideValid(stopEffective, entrada, direcao);
   const ajustadoPeloMembro = Math.abs(stopEffective - stopRecommended) > (entrada * 1e-9);
 

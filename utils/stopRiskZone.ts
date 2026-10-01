@@ -5,9 +5,10 @@
 // ainda resta além do stop — nunca manutenção estimada (Fonte: "Nunca usar maintenance margin
 // estimada para colorir a régua em produção V2").
 //
-// Os limiares abaixo espelham `config('genesis.stop_slider')` (genesis-api) — precisam ficar
-// sincronizados manualmente até o endpoint de repricing (Fase 4.3, task 14) existir pra servir
-// isto do backend.
+// Os limiares abaixo espelham `config('genesis.stop_slider')` (genesis-api) e são só o padrão:
+// V6.12 (§9.2) o backend publica os valores reais em `execution.stop_slider_limiares`, e a tela usa
+// esses (limiaresDoServidor) — nunca constantes duplicadas. A régua em ATR ("stop largo": 3 ATR
+// atenção, 4,5 ATR crítico) é a MESMA do NivelService: um julgamento, uma fonte.
 
 export type StopRiskZone =
   | 'TOO_CLOSE_NOISE'
@@ -21,6 +22,8 @@ export interface StopSliderThresholds {
   noiseYellowBelowAtr: number;
   liqDangerBelowPct: number;
   liqCautionBelowPct: number;
+  wideCautionAboveAtr: number;
+  wideRedAboveAtr: number;
 }
 
 export const STOP_SLIDER_THRESHOLDS: StopSliderThresholds = {
@@ -28,6 +31,31 @@ export const STOP_SLIDER_THRESHOLDS: StopSliderThresholds = {
   noiseYellowBelowAtr: 0.80,
   liqDangerBelowPct: 15.0,
   liqCautionBelowPct: 30.0,
+  wideCautionAboveAtr: 3.0,
+  wideRedAboveAtr: 4.5,
+};
+
+/**
+ * V6.12 (§9.2): limiares publicados pelo backend (`execution.stop_slider_limiares`, snake_case).
+ * Análise antiga, sem o campo, ou valor não numérico cai nos padrões — nunca uma régua parcial.
+ */
+export const limiaresDoServidor = (raw: Record<string, unknown> | null | undefined): StopSliderThresholds => {
+  if (!raw) return STOP_SLIDER_THRESHOLDS;
+  const chaves: Record<keyof StopSliderThresholds, string> = {
+    noiseRedBelowAtr: 'noise_red_below_atr',
+    noiseYellowBelowAtr: 'noise_yellow_below_atr',
+    liqDangerBelowPct: 'liq_danger_below_pct',
+    liqCautionBelowPct: 'liq_caution_below_pct',
+    wideCautionAboveAtr: 'wide_caution_above_atr',
+    wideRedAboveAtr: 'wide_red_above_atr',
+  };
+  const resultado = { ...STOP_SLIDER_THRESHOLDS };
+  for (const [campo, chave] of Object.entries(chaves) as [keyof StopSliderThresholds, string][]) {
+    const valor = raw[chave];
+    if (typeof valor !== 'number' || !Number.isFinite(valor)) return STOP_SLIDER_THRESHOLDS;
+    resultado[campo] = valor;
+  }
+  return resultado;
 };
 
 export const STOP_RISK_ZONE_MICROTEXT: Record<StopRiskZone, string> = {
@@ -78,13 +106,18 @@ export const classifyStopRiskZone = (
   if (stopDistanceAtr < thresholds.noiseYellowBelowAtr) {
     return 'CAUTION_CLOSE';
   }
-  if (liqGapPct !== null) {
-    if (liqGapPct < thresholds.liqDangerBelowPct) {
-      return 'TOO_WIDE_LIQUIDATION_RISK';
-    }
-    if (liqGapPct < thresholds.liqCautionBelowPct) {
-      return 'CAUTION_WIDE';
-    }
+  // V6.12 (§9.2): mesma ordem do StopRiskZoneClassifier (backend).
+  if (liqGapPct !== null && liqGapPct < thresholds.liqDangerBelowPct) {
+    return 'TOO_WIDE_LIQUIDATION_RISK';
+  }
+  if (stopDistanceAtr > thresholds.wideRedAboveAtr) {
+    return 'TOO_WIDE_LIQUIDATION_RISK';
+  }
+  if (liqGapPct !== null && liqGapPct < thresholds.liqCautionBelowPct) {
+    return 'CAUTION_WIDE';
+  }
+  if (stopDistanceAtr > thresholds.wideCautionAboveAtr) {
+    return 'CAUTION_WIDE';
   }
 
   return 'TECHNICAL_ZONE';

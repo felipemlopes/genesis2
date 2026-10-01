@@ -22,8 +22,12 @@ const ROTULOS_FONTE: Record<string, string> = {
   pivo_swing: 'Fundo/topo de swing',
   lvn: 'Nó de baixo volume (LVN)',
   figura_extremidade: 'Extremidade da figura identificada',
-  fibonacci: 'Fibonacci',
+  // V6.12 (§5.10): só existe o Fibonacci desenhado e lido no gráfico — o sistema nunca calcula.
+  fibonacci: 'Fibonacci desenhado no gráfico',
   numero_redondo: 'Número redondo',
+  // V6.12 (§5.9): projeções técnicas medidas pelo backend a partir de âncoras reais.
+  projecao_figura: 'Alvo por medida da figura',
+  projecao_range: 'Projeção do range',
   // V6.7 (A-01/A-13): tipos do pool de âncoras de STOP (NivelService) — distintos das fontes de
   // ALVO acima (mesmo nome de arquivo, tabelas de peso diferentes, ver NivelService::PESO_TIPO_ANCORA).
   tese: 'Nível que definiu a direção (estrutura/rompimento)',
@@ -41,6 +45,14 @@ export function rotularFonte(fonte: string | null | undefined): string | null {
   if (rotulo) return rotulo;
   console.warn(`[genesis] fonte de alvo sem rótulo mapeado em utils/rotulos.ts: "${fonte}"`);
   return 'Nível técnico';
+}
+
+// V6.12 (§5.10): alvo medido (projeção técnica), não uma barreira que o mercado já testou — a tela
+// marca com a etiqueta "Projeção" ao lado do preço.
+const FONTES_PROJECAO = new Set(['projecao_figura', 'projecao_range']);
+
+export function ehProjecao(fonte: string | null | undefined): boolean {
+  return fonte != null && FONTES_PROJECAO.has(fonte);
 }
 
 // V6.7 (A-14): componente vencedor do buffer composto do stop (NivelService::calcularBuffer()) —

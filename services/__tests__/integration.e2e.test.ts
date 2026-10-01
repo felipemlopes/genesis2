@@ -34,10 +34,9 @@ function readMonitorWorker(): string {
   return fs.readFileSync(workerPath, 'utf-8');
 }
 
-function readApiRoutes(): string {
-  const routesPath = path.resolve(__dirname, '../../routes/api.js');
-  return fs.readFileSync(routesPath, 'utf-8');
-}
+// Spec genesis-seguranca-correcoes (S8, 29/09/2026): o stream SSE do Node (routes/api.js) foi removido —
+// respondia sem login e expunha todos os alertas. O stream que o frontend usa é o da API Laravel
+// (AlertaController::stream, com genesis.auth), fora deste repositório.
 
 function readUseAlertas(): string {
   const hookPath = path.resolve(__dirname, '../../hooks/useAlertas.ts');
@@ -462,57 +461,6 @@ describe('13.2 Integration: Worker Flow (WebSocket → Candle → Extras → Ano
 // ============================================================
 describe('13.3 Integration: SSE End-to-End (Worker → SSE → Frontend)', () => {
 
-  it('E2E: SSE endpoint exists, polls genesis_alertas, and excludes direcao/urgencia from payload', () => {
-    /**
-     * Validates: Requirements 2.2
-     * 
-     * Verifies the complete SSE flow:
-     * 1. SSE route exists at /v1/alertas/stream
-     * 2. Sets correct headers (text/event-stream)
-     * 3. Polls genesis_alertas WHERE enviado_sse = 0
-     * 4. Excludes direcao and urgencia from transmitted payload
-     * 5. Marks alerts as enviado_sse = 1 after sending
-     */
-    const apiRoutes = readApiRoutes();
-    
-    // 1. SSE route exists
-    expect(apiRoutes).toMatch(/v1\/alertas\/stream/);
-    expect(apiRoutes).toMatch(/router\.get.*alertas\/stream/s);
-    
-    // 2. Correct SSE headers
-    expect(apiRoutes).toContain('text/event-stream');
-    expect(apiRoutes).toContain('no-cache');
-    expect(apiRoutes).toContain('keep-alive');
-    
-    // 3. Polls for unsent alerts
-    expect(apiRoutes).toContain('enviado_sse = 0');
-    expect(apiRoutes).toContain('genesis_alertas');
-    
-    // 4. Excludes direcao and urgencia from payload
-    expect(apiRoutes).toMatch(/\{\s*direcao\s*,\s*urgencia\s*,\s*\.\.\.payload\s*\}/);
-    
-    // 5. Marks as sent after transmission
-    expect(apiRoutes).toContain('enviado_sse = 1');
-  });
-
-  it('E2E: SSE endpoint sends ping every 30s to keep connection alive', () => {
-    /**
-     * Validates: Requirements 2.2
-     * 
-     * Verifies the keep-alive mechanism:
-     * - Ping is sent as SSE comment (`: ping`)
-     * - Interval is approximately 30 seconds
-     */
-    const apiRoutes = readApiRoutes();
-    
-    // Ping mechanism exists
-    expect(apiRoutes).toMatch(/: ping/);
-    expect(apiRoutes).toMatch(/30000/);
-    
-    // Poll interval is 10 seconds
-    expect(apiRoutes).toMatch(/10000/);
-  });
-
   it('E2E: Frontend connectAlertasSSE creates EventSource with correct URL and handles messages', () => {
     /**
      * Validates: Requirements 3.3
@@ -568,28 +516,7 @@ describe('13.3 Integration: SSE End-to-End (Worker → SSE → Frontend)', () =>
     expect(hookSource).toMatch(/setTimeout.*3000/s);
   });
 
-  it('E2E: SSE payload from backend matches what frontend expects (no direcao/urgencia)', () => {
-    /**
-     * Validates: Requirements 2.2, 3.3
-     * 
-     * Verifies that the SSE payload structure is consistent:
-     * - Backend excludes direcao and urgencia via destructuring
-     * - Frontend AlertaGenesis interface includes timeframe (from schema)
-     * - The flow is: DB row → exclude fields → JSON → EventSource → parse → display
-     */
-    const apiRoutes = readApiRoutes();
-    const hookSource = readUseAlertas();
-    
-    // Backend destructures out direcao and urgencia
-    expect(apiRoutes).toMatch(/direcao.*urgencia.*payload|urgencia.*direcao.*payload/s);
-    
-    // Frontend interface includes timeframe
-    expect(hookSource).toContain('timeframe: string');
-    
-    // Frontend interface does NOT require direcao/urgencia from SSE
-    // (they exist in the interface for test alerts but not from SSE)
-    expect(hookSource).toContain('AlertaGenesis');
-  });
+
 });
 
 // ============================================================
@@ -680,21 +607,14 @@ describe('13.4 Integration: Legacy Alerts Without Timeframe (DEFAULT 1h)', () =>
      * 3. The SSE endpoint queries by enviado_sse (not timeframe)
      */
     const schema = readSchemaSQL();
-    const apiRoutes = readApiRoutes();
     
     // 1. Indices preserved
     expect(schema).toContain('idx_enviado_sse');
     expect(schema).toContain('idx_criado_em');
     expect(schema).toContain('idx_multiplo');
     
-    // 2. SSE endpoint queries by enviado_sse (existing pattern)
-    expect(apiRoutes).toContain('enviado_sse = 0');
-    
-    // 3. SSE endpoint does NOT filter by timeframe (backward compatible)
-    const sseSection = apiRoutes.slice(apiRoutes.indexOf('alertas/stream'));
-    const querySection = sseSection.slice(0, sseSection.indexOf('poll'));
-    // The WHERE clause only uses enviado_sse, not timeframe
-    expect(apiRoutes).toMatch(/WHERE\s+enviado_sse\s*=\s*0/i);
+    // (Itens 2 e 3 verificavam o SSE do routes/api.js, removido pela spec
+    // genesis-seguranca-correcoes, S8.)
   });
 
   it('E2E: Worker sends timeframe in alert payload, but old alerts without it get DEFAULT', () => {
@@ -716,9 +636,6 @@ describe('13.4 Integration: Legacy Alerts Without Timeframe (DEFAULT 1h)', () =>
     // 2. Schema has DEFAULT for backward compatibility
     expect(schema).toMatch(/DEFAULT\s+'1h'/i);
     
-    // 3. The SSE endpoint transmits all fields (including timeframe) except direcao/urgencia
-    const apiRoutes = readApiRoutes();
-    // The destructuring `{ direcao, urgencia, ...payload }` means timeframe IS in payload
-    expect(apiRoutes).toMatch(/\{\s*direcao\s*,\s*urgencia\s*,\s*\.\.\.payload\s*\}/);
+    // (Item 3 verificava o payload do SSE do routes/api.js, removido pela spec genesis-seguranca-correcoes, S8.)
   });
 });
