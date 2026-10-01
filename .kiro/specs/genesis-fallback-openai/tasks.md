@@ -123,6 +123,7 @@ Regras: sem `RefreshDatabase` (sqlite persistente + `DatabaseTransactions`); nen
     - `source` do bloco (`GEMINI_CONTEXT...`) não muda: o frontend não lê esse campo; quem veio da OpenAI fica visível no `model` do cache e na telemetria
   - [x] 4.4 `gerarBloco()`: Gemini → se falha de transporte (`CONTEXT_TIMEOUT`, `CONTEXT_HTTP_429`, `CONTEXT_HTTP_5xx`) e flag ligada → OpenAI; log `genesis.contexto.failover_openai` + `marcarProximaComo('failover')`
     - _Requisitos: 5.1, 5.2_
+    - **Mudança em 01/10/2026 (pedido do Felipe, caso de produção):** o Req. 5.2 caiu — qualquer falha do Gemini (JSON quebrado, bloco vazio, HTTP 4xx, transporte) aciona a OpenAI. Em produção o sentimento de BTC veio `CONTEXT_INVALID_JSON` com `finish_reason: STOP` e 833 caracteres, e ficou "Sem dado" por 15 min. Junto: o texto do Gemini passou a ser lido juntando todas as partes (`textoDasPartes()`, ignora `thought`) — antes só `parts.0.text`, o que cortava o JSON quando a busca do Google divide a resposta
     - Chave Gemini ausente continua saindo antes (em `collect()`/`blocoCacheado()`), sem OpenAI (Req. 5.2)
   - [x] 4.5 `AiUsageRecorder::consultasOpenAi()`: conta `web_search_call` no `output`, registrado em `grounding_queries`
     - _Requisitos: 6.1_
