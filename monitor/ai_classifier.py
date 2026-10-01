@@ -51,6 +51,37 @@ GEMINI_MODEL = os.getenv('GEMINI_ANALYSIS_MODEL', 'gemini-3.6-flash')
 
 GEMINI_TIMEOUT = 45
 MAX_OUTPUT_TOKENS = 8192
+
+
+def _env_bool(nome: str, padrao: bool) -> bool:
+    valor = os.getenv(nome)
+    if valor is None or valor.strip() == '':
+        return padrao
+    return valor.strip().lower() in ('1', 'true', 'yes', 'on')
+
+
+# ─── Reserva OpenAI (01/10/2026, pedido do Felipe) ────────────────────────────
+# Se o Gemini falhar (erro HTTP, timeout, 200 sem texto ou JSON da classificação
+# quebrado), a MESMA chamada vai para a OpenAI (Responses API), mesmo modelo da
+# reserva da API (gpt-6-luna). Tudo pelo monitor/.env; sem chave = desligada.
+#
+# RADAR_OPENAI_FALLBACK=true
+# GENESIS_OPENAI_FALLBACK_KEY=            <- chave da OpenAI (sk-...)
+# GENESIS_OPENAI_FALLBACK_MODEL=gpt-6-luna
+# GENESIS_OPENAI_FALLBACK_BASE_URL=https://api.openai.com/v1
+# GENESIS_OPENAI_FALLBACK_TIMEOUT=90
+# GENESIS_OPENAI_FALLBACK_REASONING_EFFORT=low
+# GENESIS_OPENAI_FALLBACK_MAX_OUTPUT_TOKENS=16000   <- inclui o raciocínio
+# GENESIS_OPENAI_FALLBACK_ATTEMPTS=2
+
+OPENAI_FALLBACK_ENABLED = _env_bool('RADAR_OPENAI_FALLBACK', True)
+OPENAI_FALLBACK_KEY = os.getenv('GENESIS_OPENAI_FALLBACK_KEY', '').strip()
+OPENAI_FALLBACK_MODEL = os.getenv('GENESIS_OPENAI_FALLBACK_MODEL', '').strip() or 'gpt-6-luna'
+OPENAI_FALLBACK_BASE_URL = (os.getenv('GENESIS_OPENAI_FALLBACK_BASE_URL', '').strip() or 'https://api.openai.com/v1').rstrip('/')
+OPENAI_FALLBACK_TIMEOUT = int(os.getenv('GENESIS_OPENAI_FALLBACK_TIMEOUT', '') or 90)
+OPENAI_FALLBACK_REASONING_EFFORT = os.getenv('GENESIS_OPENAI_FALLBACK_REASONING_EFFORT', '').strip() or 'low'
+OPENAI_FALLBACK_MAX_OUTPUT_TOKENS = int(os.getenv('GENESIS_OPENAI_FALLBACK_MAX_OUTPUT_TOKENS', '') or 16000)
+OPENAI_FALLBACK_ATTEMPTS = max(1, int(os.getenv('GENESIS_OPENAI_FALLBACK_ATTEMPTS', '') or 2))
 BATCH_SIZE = 3          # era 5: lote menor cabe no orcamento de tokens com folga
 
 # ─── Categorias oficiais (seção 3 da spec) ────────────────────────────────────
@@ -370,8 +401,8 @@ class AIClassifier:
         if not entries:
             return []
 
-        if not GENESIS_AI_URL:
-            logger.critical("[AI] GENESIS_AI_URL não configurada. Classificação abortada.")
+        if not GENESIS_AI_URL and not (OPENAI_FALLBACK_ENABLED and OPENAI_FALLBACK_KEY):
+            logger.critical("[AI] GENESIS_AI_URL não configurada e reserva OpenAI desligada. Classificação abortada.")
             return []
 
         # Bloco G: telemetria zera a cada ciclo (classify() é chamado 1x por ciclo RSS).
@@ -403,7 +434,7 @@ class AIClassifier:
             entries_text = self._format_entries_for_prompt(batch)
             prompt = CLASSIFICATION_PROMPT.format(carteira_text=carteira_text, entries_text=entries_text)
 
-            raw_response = self._call_gemini(prompt)
+            raw_response = self._call_gemini(prompt, validar=self._classificacao_valida)
             classifications = self._parse_response(raw_response) if raw_response else None
 
             if classifications is None:
@@ -416,7 +447,7 @@ class AIClassifier:
                         carteira_text=carteira_text,
                         entries_text=self._format_entries_for_prompt([entry]),
                     )
-                    raw = self._call_gemini(single_prompt, max_output_tokens=3072)
+                    raw = self._call_gemini(single_prompt, max_output_tokens=3072, validar=self._classificacao_valida)
                     parsed = self._parse_response(raw) if raw else None
                     if parsed:
                         all_classified.extend(self._merge_classifications([entry], parsed, carteira_set))
@@ -583,6 +614,101 @@ class AIClassifier:
         return normalized or raw_clean.upper()
 
     def _call_gemini(
+        self,
+        prompt: str,
+        max_output_tokens: int = MAX_OUTPUT_TOKENS,
+        response_json: bool = True,
+        validar=None,
+    ) -> str | None:
+        """Gemini primeiro; se falhar, a mesma chamada vai para a reserva OpenAI.
+
+        Falha do Gemini = None (erro HTTP, timeout, 200 sem texto) ou, quando
+        `validar` é passado, texto que não passa nele (ex.: JSON da classificação
+        quebrado). Se a OpenAI também falhar, devolve o que o Gemini trouxe (pode
+        ser None) — quem chama segue com o tratamento de falha de sempre.
+        """
+        texto = self._tentar_gemini(prompt, max_output_tokens, response_json)
+        if texto is not None and (validar is None or validar(texto)):
+            return texto
+
+        motivo = 'sem resposta' if texto is None else 'resposta invalida'
+        reserva = self._call_openai(prompt, response_json)
+        if reserva is not None and (validar is None or validar(reserva)):
+            logger.warning(f'[AI] Gemini falhou ({motivo}); resposta pela OpenAI ({OPENAI_FALLBACK_MODEL}).')
+            return reserva
+        if reserva is not None:
+            logger.error('[AI] Reserva OpenAI tambem devolveu resposta invalida.')
+
+        return texto
+
+    def _call_openai(self, prompt: str, response_json: bool = True) -> str | None:
+        """Reserva OpenAI (Responses API, mesmo formato da reserva da API Laravel).
+
+        Sem `text.format` estrito: a classificação pede um ARRAY JSON e o modo
+        json_object da OpenAI só aceita objeto no topo — o prompt já exige JSON e
+        o _parse_response tira cercas de markdown. Nunca loga a chave.
+
+        Returns:
+            Texto da resposta ou None (reserva desligada, sem chave ou falha).
+        """
+        import time
+
+        if not OPENAI_FALLBACK_ENABLED or not OPENAI_FALLBACK_KEY:
+            return None
+
+        url = f'{OPENAI_FALLBACK_BASE_URL}/responses'
+        payload = {
+            'model': OPENAI_FALLBACK_MODEL,
+            'store': False,
+            'input': prompt,
+            'reasoning': {'effort': OPENAI_FALLBACK_REASONING_EFFORT},
+            'max_output_tokens': OPENAI_FALLBACK_MAX_OUTPUT_TOKENS,
+        }
+        headers = {
+            'Content-Type': 'application/json',
+            'Authorization': f'Bearer {OPENAI_FALLBACK_KEY}',
+        }
+
+        for attempt in range(OPENAI_FALLBACK_ATTEMPTS):
+            try:
+                r = requests.post(url, json=payload, headers=headers, timeout=OPENAI_FALLBACK_TIMEOUT)
+                if r.status_code == 200:
+                    texto = self._extrair_texto_openai(r.json() or {})
+                    if texto and texto.strip():
+                        return texto
+                    logger.error('[AI] OpenAI devolveu 200 sem texto utilizavel.')
+                    return None
+                if r.status_code in (429, 500, 502, 503, 504):
+                    logger.warning(f'[AI] OpenAI HTTP {r.status_code}, tentativa {attempt + 1}.')
+                else:
+                    logger.error(f'[AI] OpenAI HTTP {r.status_code}: {r.text[:200]}')
+                    return None
+            except requests.exceptions.Timeout:
+                logger.warning(f'[AI] OpenAI timeout ({OPENAI_FALLBACK_TIMEOUT}s) na tentativa {attempt + 1}.')
+            except Exception as e:
+                logger.warning(f'[AI] OpenAI erro na tentativa {attempt + 1}: {e}')
+
+            if attempt < OPENAI_FALLBACK_ATTEMPTS - 1:
+                time.sleep(5 * (2 ** attempt))
+
+        return None
+
+    @staticmethod
+    def _extrair_texto_openai(data: dict) -> str | None:
+        """Texto de uma resposta da Responses API: output[].content[] do tipo output_text."""
+        partes = []
+        for item in data.get('output') or []:
+            if not isinstance(item, dict):
+                continue
+            for conteudo in item.get('content') or []:
+                if isinstance(conteudo, dict) and conteudo.get('type') == 'output_text' and isinstance(conteudo.get('text'), str):
+                    partes.append(conteudo['text'])
+        if partes:
+            return ''.join(partes)
+        texto = data.get('output_text')
+        return texto if isinstance(texto, str) else None
+
+    def _tentar_gemini(
         self, prompt: str, max_output_tokens: int = MAX_OUTPUT_TOKENS, response_json: bool = True
     ) -> str | None:
         """Chama a API pública do Gemini (Google generativelanguage, v1beta).
@@ -657,13 +783,26 @@ class AIClassifier:
         """Extrai o texto de uma resposta generateContent (formato real do Google).
 
         Shape esperado: {"candidates": [{"content": {"parts": [{"text": "..."}]}}]}.
-        Qualquer desvio (bloqueio de safety, candidates vazio, etc.) devolve None
-        em vez de estourar KeyError/IndexError.
+        Junta TODAS as partes de texto (01/10/2026: o Gemini pode dividir a resposta
+        e ler só a primeira cortava o JSON); partes de raciocínio (`thought`) ficam
+        de fora. Qualquer desvio (bloqueio de safety, candidates vazio, etc.)
+        devolve None em vez de estourar KeyError/IndexError.
         """
         try:
-            return data['candidates'][0]['content']['parts'][0]['text']
+            partes = data['candidates'][0]['content']['parts']
         except (KeyError, IndexError, TypeError):
             return None
+        if not isinstance(partes, list):
+            return None
+        textos = [
+            p['text'] for p in partes
+            if isinstance(p, dict) and not p.get('thought') and isinstance(p.get('text'), str)
+        ]
+        return ''.join(textos) if textos else None
+
+    def _classificacao_valida(self, texto: str) -> bool:
+        """A resposta da classificação só vale se o JSON parseia (senão vai para a reserva)."""
+        return self._parse_response(texto) is not None
 
     def _parse_response(self, raw_text: str) -> list[dict] | None:
         """Parseia resposta JSON do Gemini, tratando markdown code fences.
