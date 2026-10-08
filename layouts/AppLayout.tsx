@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
-import { LogOut, Trophy, X, Menu } from 'lucide-react';
+import { LogOut, Trophy, X, Menu, Plus } from 'lucide-react';
 import { useAppContext } from '../contexts/AppContext';
 import { fetchCredits, logout } from '../services/api';
 import Sidebar from '../components/Sidebar';
@@ -157,6 +157,13 @@ const AppLayout = () => {
                 </div>
               </div>
             </div>
+            <button
+              onClick={() => navigate('/dashboard/creditos')}
+              title="Comprar créditos"
+              className="flex items-center gap-1 text-[9px] font-bold uppercase tracking-widest text-genesis-positive hover:text-white transition-colors"
+            >
+              <Plus size={12} /> <span className="hidden sm:inline">Comprar</span>
+            </button>
             <button onClick={handleLogout} className="text-genesis-text-secondary hover:text-white transition-colors">
               <LogOut size={16} />
             </button>

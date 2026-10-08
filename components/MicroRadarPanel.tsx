@@ -120,6 +120,15 @@ const MicroRadarPanel: React.FC = () => {
         <div className="mt-3 flex items-center gap-2 text-genesis-negative text-[10px]">
           <AlertTriangle size={12} />
           <span>{erro}</span>
+          {erro === 'Créditos insuficientes' && (
+            <button
+              type="button"
+              onClick={() => navigate('/dashboard/creditos')}
+              className="ml-1 underline font-bold text-genesis-positive hover:text-white"
+            >
+              Comprar créditos
+            </button>
+          )}
         </div>
       )}
     </div>

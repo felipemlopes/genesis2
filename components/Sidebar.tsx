@@ -19,6 +19,7 @@ import {
   Calculator,
   GraduationCap,
   Headphones,
+  Coins,
   LogOut,
   X,
 } from 'lucide-react';
@@ -42,6 +43,7 @@ const ROUTE_MAP: Record<string, string> = {
   new_listings: '/dashboard/listagens',
   learn: '/dashboard/aprender',
   support: '/dashboard/suporte',
+  credits: '/dashboard/creditos',
 };
 
 interface MenuItem {
@@ -57,6 +59,7 @@ const MENU_SECTIONS: { title: string; items: MenuItem[] }[] = [
       { id: 'genesis', icon: Zap, label: 'Gênesis' },
       { id: 'carteira', icon: Wallet, label: 'Carteira Cripto' },
       { id: 'analysis_history', icon: BarChart2, label: 'Performance' },
+      { id: 'credits', icon: Coins, label: 'Comprar Créditos' },
     ],
   },
   {

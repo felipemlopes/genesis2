@@ -330,6 +330,8 @@ const GenesisPage: React.FC = () => {
       } else {
         console.error('Analysis Error:', error);
         alert(error.message || 'Falha ao processar análise técnica. Tente novamente.');
+        // Spec genesis-auth-cobranca-centralizada (Fase 6.6): sem saldo, leva direto para a compra.
+        if (error?.statusCode === 402) navigate('/dashboard/creditos');
       }
     } finally {
       analysisAbortControllerRef.current = null;
