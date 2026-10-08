@@ -8,6 +8,7 @@ import PrivacyPage from './PrivacyPage';
 import SupportPage from './SupportPage';
 import RoadmapPage from './RoadmapPage';
 import { login } from '../services/api';
+import { ErroSenha, pedirRecuperacaoSenha } from '../services/recuperacaoSenha';
 
 interface LandingPageProps {
   onLogin: () => void;
@@ -26,6 +27,33 @@ const LandingPage: React.FC<LandingPageProps> = ({ onLogin }) => {
   // Production variables
   const [loginError, setLoginError] = useState("");
   const [isLoggingIn, setIsLoggingIn] = useState(false);
+
+  // Spec genesis-auth-recuperacao-senha (R1): "Esqueci minha senha" pelo [AUTH].
+  const [modoRecuperar, setModoRecuperar] = useState(false);
+  const [recuperarMsg, setRecuperarMsg] = useState("");
+  const [recuperarErro, setRecuperarErro] = useState("");
+  const [enviandoRecuperar, setEnviandoRecuperar] = useState(false);
+
+  const handleRecuperar = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!emailInput.trim() || enviandoRecuperar) return;
+    setEnviandoRecuperar(true);
+    setRecuperarErro("");
+    try {
+      setRecuperarMsg(await pedirRecuperacaoSenha(emailInput));
+    } catch (err) {
+      setRecuperarErro(err instanceof ErroSenha ? err.message : "Não foi possível enviar agora. Tente de novo.");
+    } finally {
+      setEnviandoRecuperar(false);
+    }
+  };
+
+  const alternarRecuperar = (ativo: boolean) => {
+    setModoRecuperar(ativo);
+    setRecuperarMsg("");
+    setRecuperarErro("");
+    setLoginError("");
+  };
 
   const handleStartLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -319,6 +347,36 @@ const LandingPage: React.FC<LandingPageProps> = ({ onLogin }) => {
                        <p className="text-genesis-text-secondary text-[10px] uppercase tracking-[0.3em]">Terminal Educacional</p>
                     </div>
 
+                    {modoRecuperar ? (
+                    <form className="space-y-6" onSubmit={handleRecuperar}>
+                       <p className="text-xs text-white/60 text-center leading-relaxed">
+                         Informe o e-mail da sua conta. Se ele estiver cadastrado, enviaremos um link para criar uma nova senha.
+                       </p>
+                       <div className="relative group/input">
+                          <Mail className="absolute left-5 top-1/2 -translate-y-1/2 text-white/20 transition-colors duration-300 group-focus-within/input:text-genesis-accent" size={16} />
+                          <input
+                            type="email"
+                            value={emailInput}
+                            onChange={(e) => setEmailInput(e.target.value)}
+                            aria-label="E-mail para recuperação"
+                            className="w-full bg-[#0A0A0B] border border-white/5 rounded-2xl py-4 pl-14 pr-4 text-sm text-white focus:outline-none focus:border-genesis-accent/50 transition-all duration-300 font-mono"
+                            placeholder="Email cadastrado"
+                          />
+                       </div>
+                       {recuperarMsg && <div className="text-genesis-positive text-xs text-center font-medium" role="status">{recuperarMsg}</div>}
+                       {recuperarErro && <div className="text-red-500 text-xs text-center font-medium">{recuperarErro}</div>}
+                       <button
+                         type="submit"
+                         disabled={enviandoRecuperar || !emailInput.trim()}
+                         className="w-full h-14 rounded-2xl font-bold text-[10px] uppercase tracking-[0.3em] bg-white/[0.03] border border-genesis-accent/30 text-white hover:border-genesis-accent/60 disabled:opacity-40 disabled:cursor-not-allowed"
+                       >
+                         {enviandoRecuperar ? "Enviando..." : "Enviar link de recuperação"}
+                       </button>
+                       <button type="button" onClick={() => alternarRecuperar(false)} className="w-full text-[10px] text-white/50 hover:text-white uppercase tracking-[0.2em]">
+                         Voltar para o login
+                       </button>
+                    </form>
+                    ) : (
                     <form className="space-y-6" onSubmit={handleStartLogin}>
                        <div className="space-y-3">
                           <label className="text-[10px] font-semibold text-white/50 uppercase tracking-[0.2em] ml-1">E-mail Corporativo</label>
@@ -348,6 +406,12 @@ const LandingPage: React.FC<LandingPageProps> = ({ onLogin }) => {
                           </div>
                        </div>
                        
+                       <div className="text-right -mt-2">
+                          <button type="button" onClick={() => alternarRecuperar(true)} className="text-[10px] text-white/40 hover:text-genesis-accent uppercase tracking-[0.15em] transition-colors">
+                            Esqueci minha senha
+                          </button>
+                       </div>
+
                        {loginError && (
                          <div className="text-red-500 text-xs mt-2 text-center font-medium">
                            {loginError}
@@ -386,6 +450,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onLogin }) => {
                          </button>
                        </div>
                     </form>
+                    )}
 
                     <div className="mt-12 text-center pt-8 border-t border-white/5 relative">
                        <p className="text-[9px] text-white/30 font-mono uppercase leading-relaxed max-w-xs mx-auto">

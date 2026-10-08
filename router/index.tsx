@@ -26,6 +26,8 @@ const NewListingsPage = lazy(() => import('../pages/NewListingsPage'));
 const LearnPage = lazy(() => import('../pages/LearnPage'));
 const MindMetricsPage = lazy(() => import('../pages/MindMetricsPage'));
 const GeopoliticalPage = lazy(() => import('../pages/GeopoliticalPage'));
+const CreditsPage = lazy(() => import('../pages/CreditsPage'));
+const ResetPasswordPage = lazy(() => import('../pages/ResetPasswordPage'));
 
 const Loading = () => (
   <div className="flex items-center justify-center h-full">
@@ -46,6 +48,12 @@ export const router = createBrowserRouter([
   {
     path: '/login',
     element: <LoginPage />,
+    errorElement: <RouteErrorPage />,
+  },
+  {
+    // Spec genesis-auth-recuperacao-senha (D2): link do e-mail de recuperação. Pública.
+    path: '/redefinir-senha',
+    element: <SuspenseWrapper><ResetPasswordPage /></SuspenseWrapper>,
     errorElement: <RouteErrorPage />,
   },
   {
@@ -87,6 +95,8 @@ export const router = createBrowserRouter([
           { path: 'listagens', element: <SuspenseWrapper><NewListingsPage /></SuspenseWrapper> },
           { path: 'aprender', element: <SuspenseWrapper><LearnPage /></SuspenseWrapper> },
           { path: 'suporte', element: <SuspenseWrapper><SupportPageWrapper /></SuspenseWrapper> },
+          // Spec genesis-auth-cobranca-centralizada (Fase 6): compra de pacotes de créditos.
+          { path: 'creditos', element: <SuspenseWrapper><CreditsPage /></SuspenseWrapper> },
           { path: '*', element: <Navigate to="/dashboard" replace /> },
         ],
       },
